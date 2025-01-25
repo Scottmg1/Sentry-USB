@@ -520,6 +520,7 @@ function archive_teslacam_clips () {
   log "There are $event_count event folder(s) with $sentry_count file(s) and $trackmode_count track mode file(s) to move." \
       " $ignore_count short recording(s) will be skipped."
 
+  local archive_success=true
   if [[ "$total_count" -gt 0 ]]
   then
     log "Starting recording archiving"
@@ -575,6 +576,7 @@ function archive_teslacam_clips () {
       message="Archiving completed successfully. "
     else
       message="Error during archiving. "
+      archive_success=false
     fi
 
     local -i sentry_archived=0
@@ -630,7 +632,12 @@ function archive_teslacam_clips () {
 
   if archive_is_reachable
   then
-    clean_cam_mount
+    if [ "$archive_success" = "true" ]
+    then
+      clean_cam_mount
+    else
+      log "Skipping cleaning step after archive error"
+    fi
   else
     log "Archive not reachable, assuming user drove away, skipping cleaning step"
   fi
@@ -850,8 +857,6 @@ if has_cam_disk
 then
   # don't need another fsck because fix_errors_in_images already did that
   /root/bin/make_snapshot.sh nofsck
-
-  clean_cam_mount
 fi
 
 connect_usb_drives_to_host
