@@ -9,6 +9,13 @@
 #
 ######################################################################
 
+# Wifi setup information.
+# You do not need to set these variables if networking is already configured
+# and you ran the "install.sh" script.
+# Note that some devices, like Raspberry Pi Zero W, only support 2.4 GHz wifi.
+export SSID='your_ssid'
+export WIFIPASS='your_pass'
+
 # Variables for CIFS (Windows/Mac file sharing) archiving.
 # If you want to use rsync or rclone, delete or comment out this section
 # and uncomment the rsync or rclone section below.
@@ -94,15 +101,6 @@ export CAM_SIZE=40G
 # be the same share as the share used for backing up recordings, but
 # the folder needs to be different.
 # export MUSIC_SHARE_NAME=your_music_share/music_folder
-
-# Wifi setup information. Note that Raspberry Pi Zero W only supports 2.4 GHz
-# wifi.
-# If you are you are trying to connect to a network with a _hidden_ SSID,
-# edit /boot/wpa_supplicant.conf.sample and un-comment the indicated line.
-# You do not need to set these variables if networking is already configured
-# and you ran the "install.sh" script
-export SSID='your_ssid'
-export WIFIPASS='your_pass'
 
 # Uncomment to use ExFAT filesystem instead of FAT32.
 # ExFAT is the filesystem used by Tesla when the drive is formatted in the car.
