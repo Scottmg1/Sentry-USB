@@ -89,7 +89,7 @@ function get_script () {
 function nm_connect_wifi () {
   IFS=". " read -r start_time _ < /proc/uptime
 
-  while ! nmcli device wifi connect "$SSID" password "$WIFIPASS"
+  while ! nmcli device wifi connect "$SSID" password "$WIFIPASS" hidden yes
   do
     IFS=". " read -r now _ < /proc/uptime
     if [ $((now - start_time)) -gt 60 ]
