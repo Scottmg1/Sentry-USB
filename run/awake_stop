@@ -1,28 +1,45 @@
 #!/bin/bash -eu
 
-if [[ ( ( ! -x /root/bin/tesla_api.py) || ( ! -s /mutable/cache.json ) ) && ( -z "${TESLAFI_API_TOKEN:+x}" ) && ( -z "${TESSIE_API_TOKEN:+x}" ) ]]
+if [[ ( -n "${TESLAFI_API_TOKEN:+x}" ) ]]
+# Use TeslaFi API to disable Sentry Mode
 then
-  exit
+  curl -s -H "Authorization: Bearer $TESLAFI_API_TOKEN" "https://www.teslafi.com/feed.php?command=set_sentry_mode&sentryMode=false&noWake=true"
+  log "TeslaFi: Command sent to disable Sentry Mode."
 fi
 
-# If Sentry Mode was previously disabled, restore it to that state
-if [ -e /tmp/disable_sentry_after_archiving ]
+if [[ -n "${TESSIE_API_TOKEN:+x}" ]]
+# Use Tessie API to disable Sentry Mode
 then
-  log "Restoring Sentry Mode to its previous state (disabled)..."
-  /root/bin/tesla_api.py disable_sentry_mode &>> "${LOG_FILE}"
-  rm -f /tmp/disable_sentry_after_archiving
-fi
+  http_response=$(curl -s -w "%{http_code}" \
+    -H "Authorization: Bearer $TESSIE_API_TOKEN" \
+    -H "Accept: application/json" \
+    -H "User-Agent: github.com/marcone/teslausb" \
+    "https://api.tessie.com/$TESSIE_VIN/command/disable_sentry")
 
-if [ -e /tmp/keep_awake_task_pid ]
-then
-  log "Stopping wake car background task."
-  kill "$(cat /tmp/keep_awake_task_pid)" || true
-  rm -f /tmp/keep_awake_task_pid
+  log "Tessie: Command sent to disable Sentry Mode."
+  # Extract HTTP status code
+  http_status="${http_response: -3}"
+          
+  # Extract response body (excluding status code)
+  response_body="${http_response:0:${#http_response}-3}"
 
-  if [[ ( -n "${TESLAFI_API_TOKEN:+x}" ) ]]
-  # TeslaFi Sleep command suspends its polling for the next 15 minutes (by default) to faciliate car's sleep.
+  # Check if HTTP status code is not 200 (OK)
+  if [ "$http_status" != "200" ]
   then
-    curl -H "Authorization: Bearer $TESLAFI_API_TOKEN" "https://www.teslafi.com/feed.php?command=sleep"
-    log "also initiated TeslaFi Sleep Mode to give the car a chance to fall asleep." 
+    # Log an error
+    log "Tessie: Failed to set Sentry Mode. Check your TESSIE_API_TOKEN and TESSIE_VIN are set correctly. If they are, your car may not have a good connection."
+  else
+    # Check if the response is in JSON format
+    if ! jq -e . >/dev/null 2>&1 <<<"$response_body"
+    then
+      log "Tessie: Failed to set Sentry Mode. Response data: $response_body"
+    else
+      # Parse JSON and check if "result" is true
+      result=$(jq -r '.result' <<<"$response_body")
+      if [[ "$result" != "true" ]]
+      then
+        log "Tessie: Failed to set Sentry Mode. Response data: $response_body"
+      fi
+    fi
   fi
 fi

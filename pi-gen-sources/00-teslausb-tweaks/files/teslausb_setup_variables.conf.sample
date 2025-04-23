@@ -240,52 +240,80 @@ export CAM_SIZE=40G
 # export TRIGGER_FILE_RECENT=ARCHIVE_UPLOADED
 # export TRIGGER_FILE_ANY=ARCHIVE_UPLOADED
 
-############################################################################
-# KEEPING THE CAR AWAKE DURING ARCHIVING USING THE TESLA API NO LONGER WORKS
+################################################################################
+# !!!!!!!!!!!!!!!!!!!!!! IMPORTANT KEEP CAR AWAKE CHANGES !!!!!!!!!!!!!!!!!!!!!!
 #
-# Recent car firmware turns off USB ports very shortly after you get out of
-# the car, and changes to the Tesla API make it impossible for TeslaUSB to
-# keep the car awake or turn on Sentry mode in order to keep the USB ports
-# powered. This means that to keep the USB ports powered so that TeslaUSB
-# can finish archiving you need to turn on Sentry mode manually using the
-# Tesla app (or have it enabled by default for your home location).
-# Turning on Camp mode keeps the USB ports powered as well, but turns on
-# climate control which uses a lot of power.
-# If you turn on Sentry or Camp mode manually, you should probably set up
-# one of the notification mechanisms (see above) to let you know when
-# archiving finishes, so you can remember to turn Sentry/Camp mode off again.
-# It has been reported that some car models keep the USB ports powered
-# while the car is charging.
-# You could also consider using a power bank or UPS hat to keep TeslaUSB
-# powered independent of the power state of the car's USB ports. See the
-# TeslaUSB wiki for more info.
+# Recent car firmware turns off USB ports shortly after you exit the car,
+# affecting the ability for TeslaUSB to finish archiving. Sending ‘wake’ or
+# ‘Sentry On’ command through (unofficial) Tesla API, and by extension TeslaFi,
+# or Tessie, were ways to keep the car alive. The unofficial Tesla API is now
+# deprecated with the launch of the official Tesla Fleet API (a paid service
+# for 3rd-party developers). While TeslaFi and Tessie will continue to work,
+# the ability to leverage ‘wake’ command is no longer realistic (only 25 wake
+# calls per month are allowed without additional cost). Some adjustments need
+# to be made for TeslaFi and Tessie subscribers. Please read those sections
+# carefully.
 #
-# It may also be possible to use Tessie or TeslaFi to keep the USB ports
-# powered (both are paid services) by defining the variables below.
+# Other ways to keep the USB ports powered for TeslaUSB to finish archiving
+# involves manually turning on Sentry Mode or Camp Mode from the Tesla App.
+# However, neither are great solutions as they keep the car on indefinitely,
+# thus unnecessarily consuming the car’s high-voltage battery. For that reason,
+# it’s a good idea to setup notification mechanisms (see preceeding sections) so
+# you know when to manually turn Off Sentry/Camp Mode from the Tesla App.
 #
-# IMPORTANT: Only ONE API should be used at the same time. 
-# Do not include API tokens for both TeslaFi and Tessie.
+# Another alternative is using a power bank or UPS hat to keep TeslaUSB powered
+# independent of the power state of the car's USB ports. See the TeslaUSB wiki
+# for more info.
+#
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+# TeslaFi and Tessie users, define the variables below according to your
+# Sentry Mode use case. Check your in-car settings menu: Safety -> Sentry Mode.
+#
+# Case 1: You want Sentry Mode On everywhere, except when parked safely at home.
 # 
-# How to generate TeslaFi API Tokens
-# GENERATE/REVOKE TESLAFI API TOKEN: Log into your TeslaFi account.
-#   Navigate to Settings -> Tesla API -> API Token (tab)
+#         !!! IMPORTANT: Verify your in-car Sentry Mode setting is set to ON
+#                        and uncheck 'Exclude Home'.
+# 
+#         Upon arriving home, Sentry Mode will remain ON to power TeslaUSB
+#         through archiving. Once archiving completes, a command will be sent
+#         to turn OFF Sentry Mode, thus allowing the car to go back to sleep.
+#         Whenever you leave home, Sentry will re-arm itself by default.
 #
-# ENABLE/DISABLE TESLAFI API COMMANDS: Verify the 'Resume Polling' (wake)
-#   command is enabled. Do not confused this with the 'Wake Vehicle' command.
-#   Navigate to Settings -> Tesla API -> Commands (tab)
+# Case 2: You don't want Sentry Mode anywhere, unless archiving.
+#
+#         !!! IMPORTANT: Verify your in-car Sentry Mode setting is set to OFF.
+#
+#         Upon arriving home, TeslaUSB will send a command to turn ON Sentry
+#         Mode. Once archiving completes, a command will be sent to turn OFF
+#         Sentry Mode, thus allow the car to go back to sleep.
+#         Whenever you leave home, Sentry will not re-arm itself by default. 
+#
+#export SENTRY_CASE=1
+#
+# Additional Tessie & TeslaFi Requirements:
+#
+# !!! IMPORTANT: Only ONE API should be used at a time. 
+#                Do not include API tokens for both TeslaFi and Tessie.
+# 
+# How to generate TeslaFi API Tokens:
+#   Log into your TeslaFi account.
+#   Navigate to Settings -> Tesla API -> API Token (tab).
+#
+# Enable TeslaFi API Command:
+#   Navigate to Settings -> Tesla API -> Commands (tab).
+#   Verify 'Sentry Mode' command is checked (enabled).
 #
 # How to generate Tessie API Tokens
-# GENERATE/REVOKE TESSIE API TOKEN: Log into your Tessie account.
-#   Navigate to Settings -> Developer API -> Generate access token
+#   Log into your Tessie account.
+#   Navigate to Settings -> Developer API -> Generate access token.
+#export TESLAFI_API_TOKEN='YOUR_TESLAFI_API_TOKEN_GOES_HERE'
+#export TESSIE_API_TOKEN='YOUR_TESSIE_API_TOKEN_GOES_HERE'
 #
-# export TESLAFI_API_TOKEN='YOUR_TESLAFI_API_TOKEN_GOES_HERE'
-# export TESSIE_API_TOKEN='YOUR_TESSIE_API_TOKEN_GOES_HERE'
-#
-# TESSIE API ONLY (Do not configure if using TeslaFi API):
-# The Tessie API requires the vehicle's VIN number to issue commands to it,
-# regardless of whether you only have one vehicle on the account or not.
-# export TESSIE_VIN=5YJ3E1EA4JF000001
-############################################################################
+# Tessie API ONLY (Do not configure if using TeslaFi API):
+#   The Tessie API requires the vehicle's VIN number to issue commands to it,
+#   regardless of whether you only have one vehicle on the account or not.
+#export TESSIE_VIN=5YJ3E1EA4JF000001
+################################################################################
 
 
 # Uncomment if you want to increase the size of the root

@@ -178,58 +178,10 @@ function pip3_install () {
   pip3 install "$@"
 }
 
-function install_and_configure_tesla_api () {
-  # Install the tesla_api.py script only if the user provided credentials for its use.
-
-  if [ -e /root/bin/tesla_api.py ]
-  then
-    # if tesla_api.py already exists, update it
-    log_progress "Updating tesla_api.py"
-    copy_script run/tesla_api.py /root/bin
-    install_python3_pip
-    pip3_install teslapy
-    # check if the json file needs to be updated
-    readonly json=/mutable/tesla_api.json
-    if [ -e $json ] && ! grep -q '"id"' $json
-    then
-      log_progress "Updating tesla_api.py config file"
-      sed -i 's/"vehicle_id"/"id"/' $json
-      sed -i 's/"$/",\n  "vehicle_id": 0/' $json
-      # Call script to fill in the empty vehicle_id field
-      if ! /root/bin/tesla_api.py list_vehicles
-      then
-        log_progress "tesla_api.py config update failed"
-      fi
-    fi
-  elif [[ ( -n "${TESLA_REFRESH_TOKEN:+x}" ) ]]
-  then
-    log_progress "Installing tesla_api.py"
-    copy_script run/tesla_api.py /root/bin
-    install_python3_pip
-    pip3_install teslapy
-    # Perform the initial authentication
-    mount /mutable || log_progress "Failed to mount /mutable"
-    if ! /root/bin/tesla_api.py list_vehicles
-    then
-      log_progress "tesla_api.py setup failed"
-    fi
-  else
-    log_progress "Skipping tesla_api.py install because no Tesla credentials were provided."
-  fi
-}
-
 function check_teslafi_api () {
   if [[ ( -n "${TESLAFI_API_TOKEN:+x}" ) ]]
   then
-    if [[ ( -n "${TESLA_REFRESH_TOKEN:+x}" ) ]]
-    then
-      log_progress "STOP: You're trying to setup Tesla and TeslaFi APIs at the same time."
-      log_progress "Only 1 can be enabled at a time."
-    elif [[ ( -n "${TESLA_WAKE_MODE:+x}" ) ]]    
-    then
-      log_progress "STOP: You've setup for TeslaFi API, yet you've specified a parameter for Tesla API."
-      log_progress "Please comment out TESLA_WAKE_MODE."
-    elif [[ ( -n "${TESSIE_API_TOKEN:+x}" ) ]]    
+    if [[ ( -n "${TESSIE_API_TOKEN:+x}" ) ]]    
     then
       log_progress "STOP: You're trying to setup Tessie and TeslaFi APIs at the same time."
       log_progress "Only 1 can be enabled at a time."
@@ -244,15 +196,7 @@ function check_teslafi_api () {
 function check_tessie_api () {
   if [[ ( -n "${TESSIE_API_TOKEN:+x}" ) ]]
   then
-    if [[ ( -n "${TESLA_REFRESH_TOKEN:+x}" ) ]]
-    then
-      log_progress "STOP: You're trying to setup Tesla and Tessie APIs at the same time."
-      log_progress "Only 1 can be enabled at a time."
-    elif [[ ( -n "${TESLA_WAKE_MODE:+x}" ) ]]    
-    then
-      log_progress "STOP: You've setup for Tessie API, yet you've specified a parameter for Tesla API."
-      log_progress "Please comment out TESLA_WAKE_MODE."
-    elif [[ ( -n "${TESLAFI_API_TOKEN:+x}" ) ]]    
+    if [[ ( -n "${TESLAFI_API_TOKEN:+x}" ) ]]    
     then
       log_progress "STOP: You're trying to setup Tessie and TeslaFi APIs at the same time."
       log_progress "Only 1 can be enabled at a time."
@@ -285,7 +229,6 @@ function install_archive_scripts () {
   copy_script run/remountfs_rw "$install_path"
   copy_script run/awake_start "$install_path"
   copy_script run/awake_stop "$install_path"
-  install_and_configure_tesla_api
   log_progress "Installing archive module scripts"
   copy_script "$archive_module"/verify-and-configure-archive.sh /tmp
   copy_script "$archive_module"/archive-clips.sh "$install_path"
