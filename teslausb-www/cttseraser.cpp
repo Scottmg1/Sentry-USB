@@ -60,8 +60,12 @@ static int do_getattr( const char *path, struct stat *st ) {
   snprintf(pathbuf, sizeof(pathbuf), "%s%s", source, path);
   int ret = stat(pathbuf, st);
   if (ret != 0) {
-    printf("stat(%s) returned %d\n", pathbuf, ret);
-    return -errno;
+    ret = lstat(pathbuf, st);
+    if (ret != 0) {
+      printf("stat(%s) returned %d\n", pathbuf, ret);
+      return -errno;
+    }
+    printf("invalid link: %s\n", pathbuf);
   }
   return ret;
 }
