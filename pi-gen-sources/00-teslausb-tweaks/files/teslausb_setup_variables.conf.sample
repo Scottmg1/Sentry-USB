@@ -343,6 +343,36 @@ export CAM_SIZE=40G
 #export TESSIE_VIN=5YJ3E1EA4JF000001
 ################################################################################
 
+# Temperature Monitor
+#   Understanding your device’s thermal profile is crucial for maintaining
+#   performance and reliability. As a point of reference, Raspberry Pi
+#   Foundation states that its operating temperature range is 0°C to 85°C, and
+#   the system will begin to throttle the processor when it reaches 80°C to
+#   prevent damage. Anecdotally, other sub-components may become unstable at
+#   lower thresholds (e.g., Wi-Fi). As a general best practice, keep the
+#   temperature below 70°C. Start monitoring closely when it regularly reaches
+#   50–60°C. Differences between manufacurer, model, and revisions should also
+#   be considered.
+#
+#   Uncommenting any of the following parameters will activate TeslaUSB's
+#   temperature monitoring, which checks temperature once a minute and retains
+#   the maximum value. Entries are logged and, if possible, sent via push
+#   notifications (except in the fixed-interval case) according to the
+#   following:
+#   
+#   Two (2) temperature threshold points for: WARNING and CAUTION. Set values
+#   must be integers and expressed in milli-°C (e.g., 68.0°C = 68000)
+#export TEMPERATURE_WARNING=50000
+#export TEMPERATURE_CAUTION=68000
+#
+#   Fixed-interval temperature logging (instantaneous and maximum). This may
+#   be useful for understanding the thermal activity throughout the day.
+#   The set value must be an integer and expressed in minutes (minimum = 1).  
+#export TEMPERATURE_INTERVAL=60
+#
+#   At the end of each archiving/music sync process, the device typically runs
+#   hotter, making it an ideal time to capture temperature.
+export TEMPERATURE_POSTARCHIVE=true
 
 # Uncomment if you want to increase the size of the root
 # filesystem so there's extra space for installing additional

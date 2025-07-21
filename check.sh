@@ -17,4 +17,5 @@ shellcheck --exclude=SC1091 \
            ./run/mountoptsforimage \
            ./run/remountfs_rw \
            ./run/send-push-message \
+           ./run/temperature_monitor \
            ./run/waitforidle
