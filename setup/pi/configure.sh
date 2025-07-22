@@ -256,31 +256,6 @@ function check_and_configure_tesla_ble () {
   fi
 }
 
-function check_and_install_temperature_monitor () {
-  local install_path="$1"
-
-  if [[ -n "${TEMPERATURE_WARNING:+x}" && ! "$TEMPERATURE_WARNING" =~ ^[+-]?[0-9]+$ ]]
-  then
-    log_progress "STOP: You're trying to set up a temperature Warning threshold that is not an integer."
-    return 1
-  fi
-  if [[ -n "${TEMPERATURE_CAUTION:+x}" && ! "$TEMPERATURE_CAUTION" =~ ^[+-]?[0-9]+$ ]]
-    then
-    log_progress "STOP: You're trying to set up a temperature Caution threshold that is not an integer."
-    return 1
-  fi
-  if [[ -z "${TEMPERATURE_INTERVAL+x}" || ! "$TEMPERATURE_INTERVAL" =~ ^[0-9]+$ || "$TEMPERATURE_INTERVAL" -lt 1 ]]
-  then
-    log_progress "STOP: You're trying to set up a fixed-interval temperature logging time that is not a positive integer of at least 1 minute."
-    return 1
-  fi
-
-  log_progress 'Installing temperature monitor script'
-  copy_script run/temperature_monitor "$install_path"
-
-  return 0
-}
-
 function install_archive_scripts () {
   local install_path="$1"
   local archive_module="$2"
@@ -709,7 +684,6 @@ then
   check_tessie_api
   check_and_configure_tesla_ble /root/bin
 fi
-check_and_install_temperature_monitor /root/bin
 check_and_configure_pushover
 check_and_configure_gotify
 check_and_configure_ifttt
