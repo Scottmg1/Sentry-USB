@@ -36,7 +36,7 @@ do
   # Log Warning threshold exceeded
   if [[ ! ( -z "${TEMPERATURE_WARNING:+x}" ) ]]
   then
-    if [[ "$raw_temp" -lt $((TEMPERATURE_WARNING - 5)) ]] # Clear Warning flag if below threshold - 5 (hysteresis)
+    if [[ "$raw_temp" -lt $((TEMPERATURE_WARNING - 5000)) ]] # Clear Warning flag if below threshold - 5 degrees (hysteresis)
     then
       set_warning=0
     fi
@@ -51,7 +51,7 @@ do
   # Log Caution threshold exceeded
   if [[ ! ( -z "${TEMPERATURE_CAUTION:+x}" ) ]]
   then
-    if [[ "$raw_temp" -lt $((TEMPERATURE_CAUTION - 5)) ]] # Clear Caution flag if below threshold - 5 (hysteresis)
+    if [[ "$raw_temp" -lt $((TEMPERATURE_CAUTION - 5000)) ]] # Clear Caution flag if below threshold - 5 degrees (hysteresis)
     then
       set_caution=0
     fi
@@ -74,15 +74,14 @@ do
   fi
 
   # Log right after Archive_Clips
-  if [[ ( "${TEMPERATURE_POSTARCHIVE:-false}" = "true" ) && ( -e /tmp/flag_post_archive ) ]]
+  if [[ -e /tmp/flag_post_archive ]]
   then
     rm /tmp/flag_post_archive # Clear flag
-    message="Temperature Monitor: $(readable "$raw_temp") (max=$(readable "$peak_temp") $peak_time)"
-    /root/bin/send-push-message "$NOTIFICATION_TITLE:" "$message" || log "Temperature Monitor: Failed to send push message."
-
-    # Reset peak for new period after archiving
-    peak_temp=$raw_temp
-    peak_time=$timestamp
+    if [[ "${TEMPERATURE_POSTARCHIVE:-false}" = "true" ]]
+    then
+      message="Temperature Monitor: $(readable "$raw_temp") (max=$(readable "$peak_temp") $peak_time)"
+      /root/bin/send-push-message "$NOTIFICATION_TITLE:" "$message" || log "Temperature Monitor: Failed to send push message."
+    fi
   fi
 
   sleep 60

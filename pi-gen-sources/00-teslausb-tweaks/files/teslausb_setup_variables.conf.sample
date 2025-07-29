@@ -409,22 +409,32 @@ export CAM_SIZE=40G
 #   prevent damage. Anecdotally, other sub-components may become unstable at
 #   lower thresholds (e.g., Wi-Fi). As a general best practice, keep the
 #   temperature below 70°C. Start monitoring closely when it regularly reaches
-#   50–60°C. Differences between manufacurer, model, and revisions should also
-#   be considered.
+#   above 60°C. Differences between manufacturer, model, and revisions should
+#   also be considered.
 #
 #   Uncommenting any of the following parameters will activate TeslaUSB's
 #   temperature monitoring, which checks temperature once a minute and retains
-#   the maximum value. Entries are logged and, if possible, sent via push
-#   notifications (except in the fixed-interval case) according to the
-#   following:
-#   
-#   Two (2) temperature threshold points for: WARNING and CAUTION. Set values
-#   must be integers and expressed in milli-°C (e.g., 68.0°C = 68000)
-#export TEMPERATURE_WARNING=50000
-#export TEMPERATURE_CAUTION=68000
+#   the maximum value until the device is reset or powered-off.
 #
-#   Fixed-interval temperature logging (instantaneous and maximum). This may
-#   be useful for understanding the thermal activity throughout the day.
+#   The following parameters determine when log entries and push messages, if
+#   configured, are triggered. The fixed-interval case will only log entries,
+#   but not send push message, to avoid over-saturating 
+#
+#   Triggers:
+#   
+#   Two (2) temperature threshold triggers for: WARNING and CAUTION.
+#   The triggers will only fire once to cut down on spam. Only when the
+#   temperatures settles 5 deg°C below the set thresholds, are they allowed to
+#   re-trigger again. Caution is generally considered less severe than Warning,
+#   but you have the freedom to set or unset them as you please. Set values
+#   must be integers and expressed in milli-°C (e.g., 68.0°C = 68000)
+#export TEMPERATURE_WARNING=68000
+#export TEMPERATURE_CAUTION=55000
+#
+#   Fixed-interval trigger logs (no push messages) the instantaneous and maximum
+#   values. The maximum value is held through the recording period and reset at
+#   the conclusion of the archiving/music sync process. This trigger may be useful
+#   to better understand the thermal activity throughout the day.
 #   The set value must be an integer and expressed in minutes (minimum = 1).  
 #export TEMPERATURE_INTERVAL=60
 #
