@@ -167,27 +167,20 @@ function mount_mountpoint () {
   local mount_point="$1"
   log "Mounting $mount_point..."
 
-  local mounted=true
-  timeout 10 mount "$mount_point" >> "$LOG_FILE" 2>&1 || mounted=false
-  if [ "$mounted" = true ]
+  if timeout 10 mount "$mount_point" >> "$LOG_FILE" 2>&1
   then
     log "Mounted $mount_point."
-    true
-    return
+    return 0
   else
     log "Failed to mount $mount_point."
-    false
-    return
+    return 1
   fi
 }
 
 function ensure_mountpoint_is_mounted () {
   local mount_point="$1"
-  local mount_exists=true
 
-  findmnt --mountpoint "$mount_point" > /dev/null || mount_exists=false
-
-  if [ "$mount_exists" = true ]
+  if findmnt --mountpoint "$mount_point" > /dev/null
   then
     log "$mount_point is already mounted."
   else
@@ -839,7 +832,6 @@ function set_sys_param() {
   fi
 }
 
-export -f mount_mountpoint
 export -f ensure_mountpoint_is_mounted
 export -f retry
 export -f ensure_mountpoint_is_mounted_with_retry
