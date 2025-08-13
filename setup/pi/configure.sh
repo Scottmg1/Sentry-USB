@@ -185,7 +185,7 @@ function check_at_most_one_wake_api () {
   then
     log_progress "STOP: You're trying to set up multiple control providers at the same time."
     log_progress "Only 1 can be enabled at a time."
-    return 1
+    exit 1
   fi
   return 0
 }
@@ -196,7 +196,7 @@ function check_teslafi_api () {
     check_variable "SENTRY_CASE"
     if [[ "$SENTRY_CASE" != 1 && "$SENTRY_CASE" != 2 ]]; then
       log_progress "STOP: invalid SENTRY_CASE for Tesla API."
-      return 1
+      exit 1
     fi
 
     if ! command -v jq &>/dev/null
@@ -216,13 +216,14 @@ function check_tessie_api () {
     check_variable "SENTRY_CASE"
     if [[ "$SENTRY_CASE" != 1 && "$SENTRY_CASE" != 2 && "$SENTRY_CASE" != 3 ]]; then
       log_progress "STOP: invalid SENTRY_CASE for Tessie API."
-      return 1
+      exit 1
     fi
     
     if [[ ( -z "${TESSIE_VIN:+x}" ) ]]
     then
       log_progress "STOP: Tessie API requires the VIN number to be provided."
       log_progress "Please set TESSIE_VIN in the config file."
+      exit 1
     else
       if ! command -v jq &>/dev/null
       then
@@ -244,7 +245,7 @@ function check_and_configure_tesla_ble () {
     check_variable "SENTRY_CASE"
     if [[ "$SENTRY_CASE" != 1 && "$SENTRY_CASE" != 2 && "$SENTRY_CASE" != 3 ]]; then
       log_progress "STOP: invalid SENTRY_CASE for Tesla BLE API."
-      return 1
+      exit 1
     fi
     
     if dpkg-query -W --showformat='${db:Status-Status}\n' "bluez" 2>/dev/null | grep -q '^installed$'
@@ -305,17 +306,17 @@ function check_and_install_temperature_monitor () {
   if [[ -n "${TEMPERATURE_WARNING:+x}" && ! "$TEMPERATURE_WARNING" =~ ^[+-]?[0-9]+$ ]]
   then
     log_progress "STOP: You're trying to set up a temperature Warning threshold that is not an integer."
-    return 1
+    exit 1
   fi
   if [[ -n "${TEMPERATURE_CAUTION:+x}" && ! "$TEMPERATURE_CAUTION" =~ ^[+-]?[0-9]+$ ]]
     then
     log_progress "STOP: You're trying to set up a temperature Caution threshold that is not an integer."
-    return 1
+    exit 1
   fi
   if [[ -n "${TEMPERATURE_INTERVAL:+x}" && ( ! "$TEMPERATURE_INTERVAL" =~ ^[0-9]+$ || "$TEMPERATURE_INTERVAL" -lt 1 ) ]]
   then
     log_progress "STOP: You're trying to set up a fixed-interval temperature logging time that is not a positive integer of at least 1 minute."
-    return 1
+    exit 1
   fi
 
   log_progress 'Installing temperature monitor script'
