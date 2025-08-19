@@ -250,18 +250,23 @@ function check_and_configure_tesla_ble () {
     
     if dpkg-query -W --showformat='${db:Status-Status}\n' "bluez" 2>/dev/null | grep -q '^installed$'
     then
-      echo "Skipping required package for Tesla BLE API: bluez already installed."
+      log_progress "Skipping required package for Tesla BLE API: bluez already installed."
     else
-      echo "Installing required package for Tesla BLE API: bluez"
+      log_progress "Installing required package for Tesla BLE API: bluez"
       DEBIAN_FRONTEND=noninteractive apt-get -y --force-yes install bluez
     fi
 
-    if dpkg-query -W --showformat='${db:Status-Status}\n' "pi-bluetooth" 2>/dev/null | grep -q '^installed$'
+    if apt-cache search pi-bluetooth
     then
-      echo "Skipping required package for Tesla BLE API: pi-bluetooth already installed."
+        if dpkg-query -W --showformat='${db:Status-Status}\n' "pi-bluetooth" 2>/dev/null | grep -q '^installed$'
+        then
+          log_progress "Skipping required package for Tesla BLE API: pi-bluetooth already installed."
+        else
+          log_progress "Installing required package for Tesla BLE API: pi-bluetooth"
+          DEBIAN_FRONTEND=noninteractive apt-get -y --force-yes install pi-bluetooth
+        fi
     else
-      echo "Installing required package for Tesla BLE API: pi-bluetooth"
-      DEBIAN_FRONTEND=noninteractive apt-get -y --force-yes install pi-bluetooth
+        log_progress "Skipping required package for Tesla BLE API: pi-bluetooth does not exist for this device."
     fi
 
     log_progress "Installing required package for Tesla BLE API: Tesla binaries"
