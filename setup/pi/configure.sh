@@ -181,7 +181,10 @@ function pip3_install () {
 function check_at_most_one_wake_api () {
   if [[ ( -n "${TESSIE_API_TOKEN:+x}" && -n "${TESLAFI_API_TOKEN:+x}" ) ||
         ( -n "${TESSIE_API_TOKEN:+x}" && -n "${TESLA_BLE_VIN:+x}" ) ||
-        ( -n "${TESLAFI_API_TOKEN:+x}" && -n "${TESLA_BLE_VIN:+x}" ) ]]
+        ( -n "${TESLAFI_API_TOKEN:+x}" && -n "${TESLA_BLE_VIN:+x}" ) ||
+        ( -n "${KEEP_AWAKE_WEBHOOK_URL:+x}" && -n "${TESLAFI_API_TOKEN:+x}" ) ||
+        ( -n "${KEEP_AWAKE_WEBHOOK_URL:+x}" && -n "${TESLA_BLE_VIN:+x}" ) ||
+        ( -n "${KEEP_AWAKE_WEBHOOK_URL:+x}" && -n "${TESSIE_API_TOKEN:+x}" )]]
   then
     log_progress "STOP: You're trying to set up multiple control providers at the same time."
     log_progress "Only 1 can be enabled at a time."
@@ -302,6 +305,21 @@ function check_and_configure_tesla_ble () {
     log_progress "Tesla BLE API enabled."
   else
     log_progress "Tesla BLE API not enabled because no Tesla BLE VIN was provided."
+  fi
+}
+
+function check_awake_webhook () {
+  if [[ ( -n "${KEEP_AWAKE_WEBHOOK_URL:+x}" ) ]]
+  then
+    check_variable "SENTRY_CASE"
+    if [[ "$SENTRY_CASE" != 1 && "$SENTRY_CASE" != 2 && "$SENTRY_CASE" != 3 ]]; then
+      log_progress "STOP: invalid SENTRY_CASE for Webhook."
+      exit 1
+    fi
+
+    log_progress "Awake Webhook enabled."
+  else
+    log_progress "Awake Webhook not enabled because no webhook URL was provided."
   fi
 }
 
@@ -757,6 +775,7 @@ then
   check_teslafi_api
   check_tessie_api
   check_and_configure_tesla_ble /root/bin
+  check_awake_webhook
 fi
 check_and_install_temperature_monitor /root/bin
 check_and_configure_pushover

@@ -1,6 +1,6 @@
 #!/bin/bash -eu
 
-if [[ ( -z "${TESLAFI_API_TOKEN:+x}" ) && ( -z "${TESSIE_API_TOKEN:+x}" ) && ( -z "${TESLA_BLE_VIN:+x}" ) ]]
+if [[ ( -z "${TESLAFI_API_TOKEN:+x}" ) && ( -z "${TESSIE_API_TOKEN:+x}" ) && ( -z "${TESLA_BLE_VIN:+x}" ) && ( -z "${KEEP_AWAKE_WEBHOOK_URL:+x}" ) ]]
 then
   exit
 fi
@@ -93,6 +93,26 @@ case "${SENTRY_CASE}" in
         log "Tesla BLE: Command sent to disable Sentry Mode."
       else
         log "Tesla BLE: Failed to set Sentry Mode."
+      fi
+
+    elif [[ -n "${KEEP_AWAKE_WEBHOOK_URL:+x}" ]]
+    # Use webhook to send stop message
+    then
+      http_response=$(curl -s -w "%{http_code}" POST \
+        -d "{\"awake_command\":\"stop\"}" \
+        -H "Content-Type: application/json" \
+        "$KEEP_AWAKE_WEBHOOK_URL")
+      
+      log "Awake Webhook: Command sent \"stop\""
+
+      # Extract HTTP status code
+      http_status="${http_response: -3}"
+
+      # Check if HTTP status code is not 200 (OK)
+      if [ "$http_status" -lt 200 ] || [ "$http_status" -ge 300 ]
+      then
+        # Log an error
+        log "Awake Webhook: Failed to send command \"stop\". Check if your KEEP_AWAKE_WEBHOOK_URL is set correctly. If it is, check the service receiving webhooks for logs."
       fi
     fi
   ;;

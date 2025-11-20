@@ -250,7 +250,7 @@ export CAM_SIZE=40G
 # TeslaUSB.
 #
 # In order to keep the car awake, several methods have been implemented:
-# TeslaFi, Tessie, and Bluetooth Low Energy (BLE). Please note that the previous
+# TeslaFi, Tessie, Bluetooth Low Energy (BLE), and Webhooks. Please note that the previous
 # implementation using the (unofficial) Tesla API was removed. Tesla had
 # superseded it with their official Fleet API (a paid service for developers).
 # Consequently, TeslaFi and Tessie now enforce request rate limits. As a result,
@@ -276,6 +276,12 @@ export CAM_SIZE=40G
 #     wifi/interenet connection to keep car alive.
 #   - Some security vulnerability
 #   - Requires paid 3rd-party service from TeslaFi or Tessie
+#
+# Webhook Pros/Cons:
+#   + Does not require teslausb to store credentials that can directly
+#     control your vehicle
+#   - Requires another service like home assistant be setup to receive
+#     webhooks and carry out the required actions to keep the vehicle awake
 #
 # DISCLAIMER:
 #   All 3 methods have some level of security implications. For BLE,
@@ -317,7 +323,7 @@ export CAM_SIZE=40G
 # compatibility notes. If applicable, also make a 1-time change (set and
 # forget) to your in-car menu: Safety -> Sentry Mode.
 #
-#  Case 1: [Compatible with TeslaFi, Tessie, or BLE]
+#  Case 1: [Compatible with TeslaFi, Tessie, BLE, or Webhook]
 #
 #          You want Sentry Mode turned On everywhere, except when parked safely
 #          at home. Upon arriving home, Sentry Mode will already be ON
@@ -329,7 +335,7 @@ export CAM_SIZE=40G
 #     >>>> IMPORTANT: Verify your in-car Sentry Mode is set to ON, and
 #                     'Exclude Home' is UNCHECKED.
 #
-#  Case 2: [Compatible with TeslaFi, Tessie, or BLE]
+#  Case 2: [Compatible with TeslaFi, Tessie, BLE, or Webhook]
 #
 #          You DON'T want Sentry Mode turned on anywhere, unless archiving.
 #          Mode of operation: Upon arriving home, TeslaUSB will send a command
@@ -340,7 +346,7 @@ export CAM_SIZE=40G
 #
 #     >>>> IMPORTANT: Verify your in-car Sentry Mode is set to OFF.
 #
-#  Case 3: [Compatible with Tessie or BLE]
+#  Case 3: [Compatible with Tessie, BLE, or Webhook]
 #
 #          Sentry Mode is not used by TeslaUSB. Instead a periodic command is
 #          sent to the car to keep it awake.
@@ -393,6 +399,16 @@ export CAM_SIZE=40G
 #        Note: This does not prevent the car from locking, nor does it allow
 #        someone to readily unlock or drive the car. An authroized key (card,
 #        phone, fob) is still required.
+# .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .   .
+#
+# For webhook, provide the URL of the webhook that will receive awake messages:
+#export KEEP_AWAKE_WEBHOOK_URL=http://domain/path
+#
+#   A webhook message with a JSON body will be sent. The shape of the JSON will be { "awake_command": "<command>" }
+#   Commands that will be sent to this webook:
+#     1. start: Sent when SENTRY_CASE=2 and the archive process starts
+#     2. stop: Sent when SENTRY_CASE=1 or 2 and the archive process stops
+#     3. nudge: Sent when SENTRY_CASE=3 and the archive process is ongoing
 ################################################################################
 
 # Temperature Monitor
