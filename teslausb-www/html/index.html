@@ -236,6 +236,22 @@ iframe {
     color: #000;
     z-index:11;
   }
+
+  .navbar + div {
+    height: calc(100% - 50px);
+  }
+
+  .videoholder.layout6 {
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-columns: auto auto auto;
+    justify-content: center;
+  }
+
+  .videoholder.layout6 .videogriditem {
+    height: 100%;
+    width: auto;
+    max-width: 100%;
+  }
 }
 
 /*hide music tab by default */
@@ -1105,6 +1121,13 @@ function setLayout(layout) {
   var rightpillarview = document.getElementById("rightpillarview");
   var backview = document.getElementById("backview");
   var videogrid = document.querySelector(".videoholder");
+
+  if (layout == 3 || layout == 5 || layout == 6) {
+    leftrepeaterview.classList.remove("flipped");
+    rightrepeaterview.classList.remove("flipped");
+    backview.classList.remove("flipped");
+  }
+
   if (layout == 1) {
     // mirrorleft-front-mirrorright on top, map-mirrorrear-info on bottom
     leftrepeaterview.classList.add("flipped");
@@ -1125,9 +1148,6 @@ function setLayout(layout) {
     videogrid.classList="videoholder layout4";
   } else if (layout == 5) {
     // front on top, sides in middle, rear on bottom
-    leftrepeaterview.classList.remove("flipped");
-    rightrepeaterview.classList.remove("flipped");
-    backview.classList.remove("flipped");
     videogrid.classList="videoholder layout5";
   } else if (layout == 6) {
     // map-front-info on top, pillars on the side, repeaters and rear on bottom
@@ -1135,9 +1155,6 @@ function setLayout(layout) {
   } else {
     layout = 3;
     // (default) map-front-info on top, right-rear-left on bottom
-    leftrepeaterview.classList.remove("flipped");
-    rightrepeaterview.classList.remove("flipped");
-    backview.classList.remove("flipped");
     videogrid.classList="videoholder layout3";
   }
   currentLayout = layout;
@@ -1151,6 +1168,30 @@ function setLayout(layout) {
     } else {
       item.classList.remove("selected");
     }
+  }
+
+  if (typeof currentsequence !== 'undefined') {
+    setTimeout(function() {
+      for (var i=0; i < 6;i++) {
+        var v = videoelems[i];
+        var c = canvaselems[i];
+        
+        if (v.clientWidth > 0 && v.clientHeight > 0) {
+            c.width = v.clientWidth;
+            c.height = v.clientHeight;
+        }
+
+        if (v.style.visibility == "hidden") {
+           var ctx = c.getContext("2d");
+           if (v.classList.contains("flipped")) {
+             ctx.scale(-1, 1);
+             ctx.drawImage(v, 0, 0, -c.width, c.height);
+           } else {
+             ctx.drawImage(v, 0, 0, c.width, c.height);
+           }
+        }
+      }
+    }, 50);
   }
 }
 
