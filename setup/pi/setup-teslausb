@@ -421,7 +421,7 @@ function update_package_index () {
   # the package index might be in a bad state if setup was previously
   # interrupted, so fix it up first
   dpkg --configure -a || true
-  if [ "$(. /etc/os-release && echo "${VERSION_ID:-}")" = "10" ]
+  if [ "$(. /etc/os-release && echo "${VERSION_ID:-}")" = "10" ] && grep -q 'raspbian\.raspberrypi\.org' /etc/apt/sources.list
   then
     echo "Updating apt sources for legacy Buster (consider using a more recent image)"
     sed -i 's|raspbian.raspberrypi.org|legacy.raspbian.org|g' /etc/apt/sources.list
