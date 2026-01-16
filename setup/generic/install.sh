@@ -188,6 +188,11 @@ then
   apt install -y parted
 fi
 
+if [ ! -x "$(command -v fdisk)" ]
+then
+  apt install -y fdisk
+fi
+
 
 # indicate we're waiting for the user to log in and finish setup
 flash_rapidly
