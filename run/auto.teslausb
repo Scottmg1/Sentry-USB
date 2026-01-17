@@ -4,6 +4,14 @@ diskimage="/backingfiles/snapshots/$1/snap.bin"
 mountpoint="/backingfiles/snapshots/$1/mnt"
 optfile="${diskimage}.opts"
 
+case $1 in
+  snap-*)
+    ;;
+  *)
+    exit 1
+    ;;
+esac
+
 if [ ! -r "$diskimage" ]
 then
   /root/bin/release_snapshot.sh "$1"
