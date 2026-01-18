@@ -580,7 +580,7 @@ function archive_teslacam_clips () {
 
     while read -r line
     do
-      if [[ ! -e "$overlaymerged/$line" ]]
+      if [[ ! -L "$overlaymerged/$line" ]]
       then
         case $line in
           TeslaTrackMode*)
