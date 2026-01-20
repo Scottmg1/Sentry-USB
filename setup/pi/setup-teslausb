@@ -1051,6 +1051,25 @@ then
   DEBIAN_FRONTEND=noninteractive apt-get -y --force-yes install "${EXTRA_PACKAGES[@]}"
 fi
 
+setup_progress "Running post-setup tasks"
+(
+  cd "$SOURCE_DIR"
+  mkdir -p /mutable/once
+  for i in setup/pi/once/*
+  do
+    sum="$(sha256sum < "$i" | awk '{print $1}')"
+    if [ ! -e "/mutable/once/$sum" ]
+    then
+      setup_progress "$i"
+      copy_script "$i" /tmp/
+      "/tmp/$(basename "$i")"
+      touch "/mutable/once/$sum"
+    else
+      setup_progress "skipping $i ($sum)"
+    fi
+  done
+)
+
 headless_setup_mark_setup_success
 
 # Flash for stage 5 headless (Mark success, FS readonly)

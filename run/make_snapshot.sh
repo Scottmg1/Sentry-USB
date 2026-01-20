@@ -170,8 +170,17 @@ function snapshot {
     fsck "$PARTLOOP" -- -p || true
   fi
 
-  # don't need to mount, because autofs will
   losetup -d "$LOOP"
+
+  # if needed, manually mount the image and check/fix timestamps
+  if [ "$(getconf LONG_BIT)" = "32" ] && [ "$(. /etc/os-release && echo "${VERSION_ID:-}")" = "12" ]
+  then
+    local -r tmpmnt=$(mktemp -d)
+    /root/bin/mountimage "$newsnapname" "$tmpmnt" rw
+    find "$tmpmnt" -newerat 20380101 | xargs -r touch
+    umount "$tmpmnt"
+    rmdir "$tmpmnt"
+  fi
 
   while ! systemctl --quiet is-active autofs
   do
