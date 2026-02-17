@@ -148,18 +148,25 @@ for f in "$TMPDIR"/run/*; do
   fi
 done
 
-# Update archive module scripts (cifs, nfs, rsync, rclone, none)
-for subdir in cifs_archive nfs_archive rsync_archive rclone_archive none_archive; do
-  [ -d "$TMPDIR/run/$subdir" ] || continue
-  for f in "$TMPDIR/run/$subdir"/*; do
-    [ -f "$f" ] || continue
-    name=$(basename "$f")
-    if [ -f "/root/bin/$name" ]; then
+# Update archive module scripts from the configured ARCHIVE_SYSTEM only
+ARCHIVE_SYSTEM=""
+for conf in /root/sentryusb.conf /sentryusb/sentryusb.conf; do
+  if [ -f "$conf" ]; then
+    ARCHIVE_SYSTEM=$(grep -m1 'ARCHIVE_SYSTEM=' "$conf" 2>/dev/null | tail -1 | sed "s/.*ARCHIVE_SYSTEM=//;s/['\"]//g;s/#.*//" | tr -d ' ') || true
+    [ -n "$ARCHIVE_SYSTEM" ] && break
+  fi
+done
+if [ -n "$ARCHIVE_SYSTEM" ]; then
+  subdir="${ARCHIVE_SYSTEM}_archive"
+  if [ -d "$TMPDIR/run/$subdir" ]; then
+    for f in "$TMPDIR/run/$subdir"/*; do
+      [ -f "$f" ] || continue
+      name=$(basename "$f")
       cp "$f" "/root/bin/$name"
       chmod +x "/root/bin/$name"
-    fi
-  done
-done
+    done
+  fi
+fi
 
 # Update envsetup.sh from setup/pi/ if installed
 if [ -f "$TMPDIR/setup/pi/envsetup.sh" ] && [ -f "/root/bin/envsetup.sh" ]; then
