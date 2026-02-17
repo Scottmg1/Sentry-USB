@@ -176,10 +176,12 @@ NUM_MUTABLE_INODES=$((BACKINGFILES_NUM_SECTORS / 20000))
 ORIGINAL_DISK_IDENTIFIER=$( fdisk -l "${BOOT_DISK}" | grep -e "^Disk identifier" | sed "s/Disk identifier: 0x//" )
 
 log_progress "Modifying partition table for backing files partition..."
-echo "$FIRST_BACKINGFILES_SECTOR,$BACKINGFILES_NUM_SECTORS" | sfdisk --force "${BOOT_DISK}" -N $((LAST_PART_NUM + 1))
+echo "$FIRST_BACKINGFILES_SECTOR,$BACKINGFILES_NUM_SECTORS" | sfdisk --force --no-reread "${BOOT_DISK}" -N $((LAST_PART_NUM + 1))
 
 log_progress "Modifying partition table for mutable (writable) partition for script usage..."
-echo "$FIRST_MUTABLE_SECTOR," | sfdisk --force "${BOOT_DISK}" -N $((LAST_PART_NUM + 2))
+echo "$FIRST_MUTABLE_SECTOR," | sfdisk --force --no-reread "${BOOT_DISK}" -N $((LAST_PART_NUM + 2))
+
+partprobe "${BOOT_DISK}" 2>/dev/null || true
 
 # manually adding the partitions to the kernel's view of things is sometimes needed
 if [ ! -e "${BACKINGFILES_DEVICE}" ] || [ ! -e "${MUTABLE_DEVICE}" ]

@@ -116,33 +116,32 @@ func (h *handlers) runSetup(w http.ResponseWriter, r *http.Request) {
 
 		setupScript := "/root/bin/setup-teslausb"
 
-		// If the setup script doesn't exist, download it from the repo
+		// If the setup script doesn't exist, download it from the repo.
+		// The script itself handles downloading all other dependencies via copy_script.
 		if _, err := os.Stat(setupScript); os.IsNotExist(err) {
 			log.Println("[setup] setup-teslausb not found locally, downloading from repo...")
 			h.hub.Broadcast("setup_status", map[string]string{"status": "downloading_scripts"})
 
 			_, dlErr := shell.RunWithTimeout(60_000_000_000, "bash", "-c",
-				"mkdir -p /root/bin && curl -fsSL https://raw.githubusercontent.com/Scottmg1/Sentry-USB/main-dev/setup/pi/setup-teslausb -o /root/bin/setup-teslausb && chmod +x /root/bin/setup-teslausb")
+				"mkdir -p /root/bin && "+
+					"curl -fsSL https://raw.githubusercontent.com/Scottmg1/Sentry-USB/main-dev/setup/pi/setup-teslausb -o /root/bin/setup-teslausb && "+
+					"curl -fsSL https://raw.githubusercontent.com/Scottmg1/Sentry-USB/main-dev/setup/pi/envsetup.sh -o /root/bin/envsetup.sh && "+
+					"chmod +x /root/bin/setup-teslausb /root/bin/envsetup.sh")
 			if dlErr != nil {
 				h.hub.Broadcast("setup_status", map[string]string{
 					"status": "error",
-					"error":  "Failed to download setup scripts: " + dlErr.Error(),
+					"error":  "Failed to download setup script: " + dlErr.Error(),
 				})
 				return
 			}
-
-			// Also download configure.sh and other helper scripts
-			shell.RunWithTimeout(60_000_000_000, "bash", "-c",
-				"curl -fsSL https://raw.githubusercontent.com/Scottmg1/Sentry-USB/main-dev/setup/pi/configure.sh -o /root/bin/configure.sh && chmod +x /root/bin/configure.sh")
-			shell.RunWithTimeout(60_000_000_000, "bash", "-c",
-				"curl -fsSL https://raw.githubusercontent.com/Scottmg1/Sentry-USB/main-dev/setup/pi/envsetup.sh -o /root/bin/envsetup.sh && chmod +x /root/bin/envsetup.sh")
-
-			log.Println("[setup] Setup scripts downloaded")
+			log.Println("[setup] Setup script downloaded")
 		}
 
 		h.hub.Broadcast("setup_status", map[string]string{"status": "running"})
 
-		output, err := shell.RunWithTimeout(600_000_000_000, "bash", setupScript)
+		// setup-teslausb can take a long time (package installs, partitioning, etc.)
+		// Run directly (not via "bash") so child scripts see parent comm as "setup-teslausb"
+		output, err := shell.RunWithTimeout(1800_000_000_000, setupScript)
 		if err != nil {
 			log.Printf("[setup] Setup failed: %v", err)
 			h.hub.Broadcast("setup_status", map[string]string{

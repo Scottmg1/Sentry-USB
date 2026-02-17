@@ -106,6 +106,7 @@ function read_setup_variables {
 
   # set defaults for things not set in the config
   REPO=${REPO:-Scottmg1}
+  REPO_NAME=${REPO_NAME:-Sentry-USB}
   SNAPSHOTS_ENABLED=${SNAPSHOTS_ENABLED:-true}
   if [ "$SNAPSHOTS_ENABLED" != "true" ]
   then

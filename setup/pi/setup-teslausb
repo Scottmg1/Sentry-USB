@@ -77,7 +77,7 @@ function copy_script () {
       mount -t tmpfs none "$SOURCE_DIR"
       (
         cd "$SOURCE_DIR"
-        curlwrapper -L "https://github.com/${REPO}/teslausb/archive/${BRANCH}.tar.gz" | tar zxf - --strip-components=1
+        curlwrapper -L "https://github.com/${REPO}/${REPO_NAME}/archive/${BRANCH}.tar.gz" | tar zxf - --strip-components=1
       )
     fi
   fi
@@ -109,7 +109,8 @@ then
   # source the conf file directly to get REPO, BRANCH or download_sources
   # in case they're set
   safesource /root/teslausb_setup_variables.conf
-  REPO=${REPO:-marcone}
+  REPO=${REPO:-Scottmg1}
+  REPO_NAME=${REPO_NAME:-Sentry-USB}
   BRANCH=${BRANCH:-main-dev}
   copy_script setup/pi/envsetup.sh "$THISDIR"
 fi
@@ -152,8 +153,7 @@ then
     ROOTSTART=$(partx --show -g -o START "${ROOT_PARTITION_DEVICE}")
     ROOTSIZE=$(partx --show -g -o SECTORS "${ROOT_PARTITION_DEVICE}")
     ROOTSIZE=$((ROOTSIZE + INCREASE_ROOT_SIZE))
-    echo "$ROOTSTART,$ROOTSIZE" | sfdisk --force --no-reread "${BOOT_DISK}" -N "${ROOT_PART_NUM}"
-    partprobe "${BOOT_DISK}" 2>/dev/null || true
+    echo "$ROOTSTART,$ROOTSIZE" | sfdisk --force "${BOOT_DISK}" -N "${ROOT_PART_NUM}"
     setup_progress "increased root partition size"
     REBOOT=true
   else
@@ -720,7 +720,7 @@ function diagnose {
       echo "WARNING: /mutable is low on inodes: ${inodes}% used"
     fi
 
-    if [[ "$BRANCH" != "main-dev" || "$REPO" != "marcone" ]]
+    if [[ "$BRANCH" != "main-dev" || "$REPO" != "Scottmg1" ]]
     then
       echo "WARNING: using $REPO/$BRANCH"
     fi
