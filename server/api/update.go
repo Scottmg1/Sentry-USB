@@ -126,9 +126,58 @@ func (h *handlers) runUpdate(w http.ResponseWriter, r *http.Request) {
 		os.WriteFile(installDir+"/version", []byte(versionTag+"\n"), 0644)
 		log.Printf("[update] Updated to %s (%s)", versionTag, suffix)
 
+		// 8. Update shell scripts from the repo source
+		broadcast("updating_scripts", "Updating shell scripts...")
+		scriptRef := versionTag
+		if scriptRef == "unknown" || scriptRef == "" {
+			scriptRef = "main-dev"
+		}
+		tarballURL := fmt.Sprintf("https://github.com/%s/archive/%s.tar.gz", updateRepo, scriptRef)
+		scriptUpdateCmd := fmt.Sprintf(`set -e
+TMPDIR=$(mktemp -d)
+trap "rm -rf $TMPDIR" EXIT
+curl -fsSL "%s" | tar xz --strip-components=1 -C "$TMPDIR"
+
+# Update top-level run/ scripts that are already installed in /root/bin/
+for f in "$TMPDIR"/run/*; do
+  [ -f "$f" ] || continue
+  name=$(basename "$f")
+  if [ -f "/root/bin/$name" ]; then
+    cp "$f" "/root/bin/$name"
+    chmod +x "/root/bin/$name"
+  fi
+done
+
+# Update archive module scripts (cifs, nfs, rsync, rclone, none)
+for subdir in cifs_archive nfs_archive rsync_archive rclone_archive none_archive; do
+  [ -d "$TMPDIR/run/$subdir" ] || continue
+  for f in "$TMPDIR/run/$subdir"/*; do
+    [ -f "$f" ] || continue
+    name=$(basename "$f")
+    if [ -f "/root/bin/$name" ]; then
+      cp "$f" "/root/bin/$name"
+      chmod +x "/root/bin/$name"
+    fi
+  done
+done
+
+# Update envsetup.sh from setup/pi/ if installed
+if [ -f "$TMPDIR/setup/pi/envsetup.sh" ] && [ -f "/root/bin/envsetup.sh" ]; then
+  cp "$TMPDIR/setup/pi/envsetup.sh" "/root/bin/envsetup.sh"
+  chmod +x "/root/bin/envsetup.sh"
+fi
+`, tarballURL)
+		scriptOut, scriptErr := shell.RunWithTimeout(120*time.Second, "bash", "-c", scriptUpdateCmd)
+		if scriptErr != nil {
+			log.Printf("[update] Warning: failed to update scripts: %v\n%s", scriptErr, scriptOut)
+			// Non-fatal — binary was already updated, so continue to restart
+		} else {
+			log.Printf("[update] Shell scripts updated from %s", scriptRef)
+		}
+
 		broadcast("restarting", "Restarting SentryUSB service...")
 
-		// 8. Restart the service — this kills us, so it must be last
+		// 9. Restart the service — this kills us, so it must be last
 		time.Sleep(500 * time.Millisecond) // brief pause so the broadcast reaches the client
 		shell.Run("systemctl", "restart", "sentryusb")
 	}()

@@ -95,7 +95,7 @@ function ActionButton({
   )
 }
 
-type UpdateStatus = "idle" | "checking" | "downloading" | "installing" | "restarting" | "done" | "error"
+type UpdateStatus = "idle" | "checking" | "downloading" | "installing" | "updating_scripts" | "restarting" | "done" | "error"
 
 export default function Settings() {
   const [confirmReboot, setConfirmReboot] = useState(false)
@@ -126,6 +126,9 @@ export default function Settings() {
       // Poll for completion (the server will restart, so we watch for disconnect)
       setUpdateStatus("installing")
       setTimeout(() => {
+        setUpdateStatus("updating_scripts")
+      }, 5000)
+      setTimeout(() => {
         setUpdateStatus("restarting")
         // After restart, poll until the server comes back
         const pollInterval = setInterval(async () => {
@@ -142,7 +145,7 @@ export default function Settings() {
         }, 3000)
         // Give up after 2 minutes
         setTimeout(() => clearInterval(pollInterval), 120000)
-      }, 5000)
+      }, 15000)
     } catch (err) {
       setUpdateStatus("error")
       setUpdateError(err instanceof Error ? err.message : "Update failed")
@@ -260,6 +263,7 @@ export default function Settings() {
               {updateStatus === "checking" && "Checking internet connection..."}
               {updateStatus === "downloading" && "Downloading latest release..."}
               {updateStatus === "installing" && "Installing update..."}
+              {updateStatus === "updating_scripts" && "Updating shell scripts..."}
               {updateStatus === "restarting" && "Restarting service..."}
               {updateStatus === "done" && "Update complete!"}
               {updateStatus === "error" && (updateError || "Update failed.")}
@@ -272,7 +276,7 @@ export default function Settings() {
             {updateStatus === "done" && (
               <CheckCircle className="h-5 w-5 text-emerald-400" />
             )}
-            {(updateStatus === "checking" || updateStatus === "downloading" || updateStatus === "installing" || updateStatus === "restarting") && (
+            {(updateStatus === "checking" || updateStatus === "downloading" || updateStatus === "installing" || updateStatus === "updating_scripts" || updateStatus === "restarting") && (
               <Loader2 className="h-5 w-5 animate-spin text-blue-400" />
             )}
             <button
