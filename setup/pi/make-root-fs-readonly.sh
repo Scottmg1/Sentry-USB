@@ -195,8 +195,8 @@ touch -t 197001010000 /etc/fstab
 
 # autofs by default has dependencies on various network services, because
 # one of its purposes is to automount NFS filesystems.
-# TeslaUSB doesn't use NFS though, and removing those dependencies speeds
-# up TeslaUSB startup.
+# SentryUSB doesn't use NFS though, and removing those dependencies speeds
+# up SentryUSB startup.
 if [ ! -e /etc/systemd/system/autofs.service ]
 then
   grep -v '^Wants=\|^After=' /lib/systemd/system/autofs.service  > /etc/systemd/system/autofs.service

@@ -4,7 +4,7 @@ This guide will show you how to install and configure [rclone](https://rclone.or
 
 # Easy rclone setup
 
-The easiest way to to configure teslausb for rclone is:
+The easiest way to to configure SentryUSB for rclone is:
 
 - use the [one-step setup process](OneStepSetup.md) first, but select the `none` archive method instead of `cifs`. Once setup has completed, you will have a Raspberry Pi based USB drive that works with the car, but that doesn't do any archiving. Make sure the Pi is fully functional before proceeding with the next steps.
 - ssh into the Pi, become root and remount the filesystems read-write:
@@ -14,7 +14,7 @@ The easiest way to to configure teslausb for rclone is:
   ```
 - install rclone: `curl https://rclone.org/install.sh | sudo bash`
 - configure rclone for your chosen storage service: `rclone config`, then follow the instructions from [rclone.org](https://rclone.org/)
-- edit "/root/teslausb_setup_variables.conf" and change the archive method to `rclone`
+- edit "/root/sentryusb.conf" and change the archive method to `rclone`
 - add the RCLONE_DRIVE and RCLONE_PATH variables to the config, according to the values you used when you configured the rclone remote.
   RCLONE_DRIVE should be a name shown by `rclone listremotes`, and RCLONE_PATH should be a path that exists on the named remote, i.e. `rclone ls "$RCLONE_DRIVE:$RCLONE_PATH"` should not print an error (but it may print nothing, if the path is newly created and currently empty).
 - optionally populate RCLONE_FLAGS with flags to add to the command, i.e. RCLONE_FLAGS=(--checksum). To specify multiple flags: RCLONE_FLAGS=(--flag1 --flag2)
@@ -23,7 +23,7 @@ The easiest way to to configure teslausb for rclone is:
   export RCLONE_PATH="remotepathname"
   export RCLONE_FLAGS=()
   ```
-- run `/root/bin/setup-teslausb`
+- run `/root/bin/setup-sentryusb`
 
 Below are the old instructions in case you want to do things the hard way.
 

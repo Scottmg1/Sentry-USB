@@ -12,15 +12,15 @@ import (
 type SetupConfig map[string]string
 
 // DefaultConfigPath is the standard location for the setup variables file.
-const DefaultConfigPath = "/root/teslausb_setup_variables.conf"
+const DefaultConfigPath = "/root/sentryusb.conf"
 
 // BootConfigPath is the location on the boot partition.
-const BootConfigPath = "/boot/firmware/teslausb_setup_variables.conf"
+const BootConfigPath = "/boot/firmware/sentryusb.conf"
 
 var exportRegex = regexp.MustCompile(`^\s*export\s+([A-Za-z_][A-Za-z0-9_]*)=(.*)$`)
 var commentedExportRegex = regexp.MustCompile(`^\s*#\s*export\s+([A-Za-z_][A-Za-z0-9_]*)=(.*)$`)
 
-// ParseFile reads a teslausb_setup_variables.conf file and returns both
+// ParseFile reads a sentryusb.conf file and returns both
 // active (exported) and commented-out variables.
 func ParseFile(path string) (active SetupConfig, commented SetupConfig, err error) {
 	f, err := os.Open(path)
@@ -52,7 +52,7 @@ func ParseFile(path string) (active SetupConfig, commented SetupConfig, err erro
 
 // FindConfigPath returns the first existing config file path.
 func FindConfigPath() string {
-	for _, p := range []string{DefaultConfigPath, BootConfigPath, "/boot/teslausb_setup_variables.conf"} {
+	for _, p := range []string{DefaultConfigPath, BootConfigPath, "/boot/sentryusb.conf"} {
 		if _, err := os.Stat(p); err == nil {
 			return p
 		}

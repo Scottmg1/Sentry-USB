@@ -246,8 +246,8 @@ function wait_for_archive_to_be_unreachable () {
 }
 
 function check_if_usb_gadget_is_mounted () {
-  LUNFILE=/sys/kernel/config/usb_gadget/teslausb/configs/c.1/mass_storage.0/lun.0/file
-  if [ -n "$(cat /sys/kernel/config/usb_gadget/teslausb/UDC)" ] &&
+  LUNFILE=/sys/kernel/config/usb_gadget/sentryusb/configs/c.1/mass_storage.0/lun.0/file
+  if [ -n "$(cat /sys/kernel/config/usb_gadget/sentryusb/UDC)" ] &&
      [ -e "$LUNFILE" ] &&
      [ -n "$(cat $LUNFILE)" ]
   then

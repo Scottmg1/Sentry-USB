@@ -10,14 +10,14 @@ then
   exit 1
 fi
 
-if [ ! -L /teslausb ]
+if [ ! -L /sentryusb ]
 then
-  rm -rf /teslausb
+  rm -rf /sentryusb
   if [ -d /boot/firmware ] && findmnt --fstab /boot/firmware &> /dev/null
   then
-    ln -s /boot/firmware /teslausb
+    ln -s /boot/firmware /sentryusb
   else
-    ln -s /boot /teslausb
+    ln -s /boot /sentryusb
   fi
 fi
 
@@ -101,11 +101,11 @@ then
       # This device did not boot using an initramfs. If we're running
       # Raspberry Pi OS, we can switch it over to using initramfs first,
       # then revert back after.
-      if [ -f /etc/os-release ] && grep -q Raspbian /etc/os-release && [ -e /teslausb/config.txt ]
+      if [ -f /etc/os-release ] && grep -q Raspbian /etc/os-release && [ -e /sentryusb/config.txt ]
       then
-        echo "Temporarily switching Rasspberry Pi OS to use initramfs"
+        echo "Temporarily switching Raspberry Pi OS to use initramfs"
         update-initramfs -c -k "$(uname -r)"
-        echo "initramfs initrd.img-$(uname -r) followkernel # TESLAUSB-REMOVE" >> /teslausb/config.txt
+        echo "initramfs initrd.img-$(uname -r) followkernel # SENTRYUSB-REMOVE" >> /sentryusb/config.txt
       else
         error_exit "can't automatically shrink root partition for this OS, please shrink it manually before proceeding"
       fi
@@ -128,10 +128,10 @@ then
 
   echo "${rootpartstartsector},${fsnumsectors}" | sfdisk --force "${rootdev}" -N "${partnum}"
 
-  if [ -e /teslausb/config.txt ] && grep -q TESLAUSB-REMOVE /teslausb/config.txt
+  if [ -e /sentryusb/config.txt ] && grep -q SENTRYUSB-REMOVE /sentryusb/config.txt
   then
     # switch Raspberry Pi OS back to not using initramfs
-    sed -i '/TESLAUSB-REMOVE/d' /teslausb/config.txt
+    sed -i '/SENTRYUSB-REMOVE/d' /sentryusb/config.txt
     rm -rf "/boot/initrd.img-$(uname -r)"
   else
     # restore initramfs without the resize code that debian-resizefs.sh added
@@ -143,31 +143,31 @@ then
 fi
 
 # Copy the sample config file from github
-if [ ! -e /teslausb/teslausb_setup_variables.conf ] && [ ! -e /root/teslausb_setup_variables.conf ]
+if [ ! -e /sentryusb/sentryusb.conf ] && [ ! -e /root/sentryusb.conf ]
 then
-  while ! curl -o /teslausb/teslausb_setup_variables.conf https://raw.githubusercontent.com/Scottmg1/Sentry-USB/main-dev/pi-gen-sources/00-teslausb-tweaks/files/teslausb_setup_variables.conf.sample
+  while ! curl -o /sentryusb/sentryusb.conf https://raw.githubusercontent.com/Scottmg1/Sentry-USB/main-dev/pi-gen-sources/00-sentryusb-tweaks/files/sentryusb.conf.sample
   do
     sleep 1
   done
 fi
 
 # and the wifi config template
-if [ ! -e /teslausb/wpa_supplicant.conf.sample ]
+if [ ! -e /sentryusb/wpa_supplicant.conf.sample ]
 then
-  while ! curl -o /teslausb/wpa_supplicant.conf.sample https://raw.githubusercontent.com/Scottmg1/Sentry-USB/main-dev/pi-gen-sources/00-teslausb-tweaks/files/wpa_supplicant.conf.sample
+  while ! curl -o /sentryusb/wpa_supplicant.conf.sample https://raw.githubusercontent.com/Scottmg1/Sentry-USB/main-dev/pi-gen-sources/00-sentryusb-tweaks/files/wpa_supplicant.conf.sample
   do
     sleep 1
   done
 fi
 
 # The user should have configured networking manually, so disable wifi setup
-touch /teslausb/WIFI_ENABLED
+touch /sentryusb/WIFI_ENABLED
 
 # Copy our rc.local from github, which will allow setup to
 # continue using the regular "one step setup" process used
 # for setting up a Raspberry Pi with the prebuilt image
 rm -f /etc/rc.local
-while ! curl -o /etc/rc.local https://raw.githubusercontent.com/Scottmg1/Sentry-USB/main-dev/pi-gen-sources/00-teslausb-tweaks/files/rc.local
+while ! curl -o /etc/rc.local https://raw.githubusercontent.com/Scottmg1/Sentry-USB/main-dev/pi-gen-sources/00-sentryusb-tweaks/files/rc.local
 do
   sleep 1
 done
@@ -210,10 +210,10 @@ then
   if [ ! -e "/home/$DEFUSER/.bashrc" ] || ! grep -q "SETUP_FINISHED" "/home/$DEFUSER/.bashrc"
   then
     cat <<- EOF >> "/home/$DEFUSER/.bashrc"
-		if [ ! -e /teslausb/TESLAUSB_SETUP_FINISHED ]
+		if [ ! -e /sentryusb/SENTRYUSB_SETUP_FINISHED ]
 		then
-		  echo "+-------------------------------------------+"
-		  echo "| To continue teslausb setup, run 'sudo -i' |"
+		  echo "+--------------------------------------------+"
+		  echo "| To continue SentryUSB setup, run 'sudo -i' |"
 		  echo "+-------------------------------------------+"
 		fi
 	EOF
@@ -224,12 +224,12 @@ fi
 if ! grep -q "SETUP_FINISHED" /root/.bashrc
 then
   cat <<- EOF >> /root/.bashrc
-	if [ ! -e /teslausb/TESLAUSB_SETUP_FINISHED ]
+	if [ ! -e /sentryusb/SENTRYUSB_SETUP_FINISHED ]
 	then
 	  echo "+------------------------------------------------------------------------+"
-	  echo "| To continue teslausb setup, edit the file                              |"
-	  echo "| /teslausb/teslausb_setup_variables.conf with your favorite             |"
-	  echo "| editor, e.g. 'nano /teslausb/teslausb_setup_variables.conf' and fill   |"
+	  echo "| To continue SentryUSB setup, edit the file                             |"
+	  echo "| /root/sentryusb.conf with your favorite editor, e.g.                  |"
+	  echo "| 'nano /root/sentryusb.conf' and fill in the required variables.        |"
 	  echo "| in the required variables. Instructions are in the file, and at        |"
 	  echo "| https://github.com/Scottmg1/Sentry-USB/blob/main-dev/doc/OneStepSetup.md  |"
 	  echo "| (though ignore the Raspberry Pi specific bits about flashing and       |"

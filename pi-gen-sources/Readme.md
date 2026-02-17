@@ -1,11 +1,54 @@
-### Building a teslausb image
+## Building a SentryUSB Image
 
-To build a ready to flash one-step setup image for CIFS, do the following:
+The SentryUSB image is a custom Raspberry Pi OS image with everything pre-installed. Users just flash it, configure WiFi in Pi Imager, boot, and open the web UI — no SSH required.
 
-1. Clone pi-gen from https://github.com/RPi-Distro/pi-gen
-2. Follow the instructions in the pi-gen readme to install the required dependencies
-3. From the RPi-Distro/pi-gen folder, run the `prepare.sh` script from TeslaUSB's pi-gen-sources folder
-4. If needed, adjust ROOT_MARGIN or ROOT_PART_SIZE in pi-gen/export-image/prerun.sh to ensure sufficient free space left on the root partition of the generated image
-5. Run `build.sh` or `build-docker.sh`, depending on how you want to build the image. The Docker build is recommended
-6. Sit back and relax, this could take a while (for reference, on a dual-core 2.6 Ghz Intel Core i3 and 50 Mbps internet connection, it took under an hour)
-   If all went well, the image will be in the `deploy` folder. Use Raspberry Pi Imager or a similar tool to flash it.
+### Quick Method (recommended)
+
+From the repo root, run:
+
+```bash
+./build-image.sh
+```
+
+This will:
+1. Build the SentryUSB binary (or download from releases)
+2. Clone pi-gen and inject the binary
+3. Build the image using Docker
+4. Output a compressed `.img.gz` in `deploy/`
+
+Takes 15–30 minutes. Requires **Docker**.
+
+You can also pass a pre-built binary:
+```bash
+./build-image.sh server/bin/sentryusb-linux-arm64
+```
+
+### Manual Method
+
+1. Clone pi-gen: `git clone https://github.com/RPi-Distro/pi-gen`
+2. From the pi-gen folder, run: `bash /path/to/Sentry-USB/pi-gen-sources/prepare.sh`
+3. Optionally set `SENTRYUSB_BINARY=/path/to/sentryusb-linux-arm64` to inject a local binary
+4. Run `./build-docker.sh` (Docker recommended) or `./build.sh`
+5. Image will be in `deploy/`. Flash with Raspberry Pi Imager.
+
+### GitHub Actions (CI)
+
+Images are automatically built on every GitHub Release. You can also trigger a build manually from the Actions tab → "Build SentryUSB Image" → "Run workflow".
+
+### What's in the image
+
+- Raspberry Pi OS Bookworm Lite (64-bit, arm64)
+- SentryUSB binary pre-installed at `/opt/sentryusb/sentryusb`
+- systemd service enabled (web UI on port 80)
+- rc.local boot-loop for setup (creates partitions, configures archiving)
+- SSH enabled, `dwc2` overlay for USB gadget
+- Prerequisite packages: dos2unix, parted, fdisk, curl
+- Unnecessary packages removed, swap disabled
+
+### User experience after flashing
+
+1. User flashes image with Pi Imager, configures WiFi + password in settings
+2. Boots Pi → WiFi connects → SentryUSB web server starts on port 80
+3. User opens `http://sentryusb.local` → sees the dashboard
+4. Completes Setup Wizard → Pi reboots several times (10–20 min) → done
+5. Plugs into Tesla

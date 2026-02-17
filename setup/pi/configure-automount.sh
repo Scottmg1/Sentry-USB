@@ -37,8 +37,8 @@ if [ ! -d /etc/auto.master.d ]
 then
   mkdir /etc/auto.master.d
 fi
-copy_script run/auto.teslausb /root/bin
-echo "/tmp/snapshots  /root/bin/auto.teslausb" > /etc/auto.master.d/teslausb.autofs
+copy_script run/auto.sentryusb /root/bin
+echo "/tmp/snapshots  /root/bin/auto.sentryusb" > /etc/auto.master.d/sentryusb.autofs
 rm -f /root/bin/mount_image.sh
 log_progress "converting snapshot mountpoints to links"
 for snapdir in /backingfiles/snapshots/snap-*/

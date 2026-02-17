@@ -14,9 +14,9 @@ import (
 
 // Setup finished marker paths (in priority order)
 var setupFinishedPaths = []string{
-	"/teslausb/TESLAUSB_SETUP_FINISHED",
-	"/boot/firmware/TESLAUSB_SETUP_FINISHED",
-	"/boot/TESLAUSB_SETUP_FINISHED",
+	"/sentryusb/SENTRYUSB_SETUP_FINISHED",
+	"/boot/firmware/SENTRYUSB_SETUP_FINISHED",
+	"/boot/SENTRYUSB_SETUP_FINISHED",
 }
 
 var setupRunning struct {
@@ -104,10 +104,10 @@ func (h *handlers) runSetup(w http.ResponseWriter, r *http.Request) {
 	setupRunning.running = true
 	setupRunning.Unlock()
 
-	// Run /etc/rc.local — the TeslaUSB boot-loop mechanism.
-	// rc.local creates TESLAUSB_SETUP_STARTED, downloads setup-teslausb,
+	// Run /etc/rc.local — the SentryUSB boot-loop mechanism.
+	// rc.local creates SENTRYUSB_SETUP_STARTED, downloads setup-sentryusb,
 	// runs it, and reboots when done. On each boot, rc.local re-runs
-	// setup until TESLAUSB_SETUP_FINISHED exists.
+	// setup until SENTRYUSB_SETUP_FINISHED exists.
 	go func() {
 		defer func() {
 			setupRunning.Lock()
@@ -116,7 +116,7 @@ func (h *handlers) runSetup(w http.ResponseWriter, r *http.Request) {
 		}()
 
 		h.hub.Broadcast("setup_status", map[string]string{"status": "running"})
-		log.Println("[setup] Running /etc/rc.local (TeslaUSB setup boot-loop)")
+		log.Println("[setup] Running /etc/rc.local (SentryUSB setup boot-loop)")
 
 		// rc.local may reboot the system, which is expected.
 		// Timeout is long because setup installs packages, partitions, etc.

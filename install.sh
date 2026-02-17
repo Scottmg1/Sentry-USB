@@ -3,15 +3,15 @@
 # SentryUSB Installer
 #
 # This script combines:
-#   1. TeslaUSB pre-setup (symlinks, partition handling, rc.local, prerequisite packages)
+#   1. SentryUSB pre-setup (symlinks, partition handling, rc.local, prerequisite packages)
 #   2. SentryUSB binary + systemd service installation
 #
-# The rc.local boot-loop mechanism (from original TeslaUSB) handles setup across
-# reboots. The SentryUSB web UI provides configuration via a setup wizard.
+# The rc.local boot-loop mechanism handles setup across reboots.
+# The SentryUSB web UI provides configuration via a setup wizard.
 #
 # Usage:
 #   sudo -i
-#   curl -fsSL https://raw.githubusercontent.com/Scottmg1/Sentry-USB/main-dev/install.sh | bash
+#   curl -fsSL https://sentryusb.sentry-six.com | bash
 
 REPO="Scottmg1/Sentry-USB"
 BRANCH="main-dev"
@@ -36,19 +36,18 @@ if [[ $EUID -ne 0 ]]; then
     error_exit "This script must be run as root. Try: sudo -i"
 fi
 
-# ── Step 1: TeslaUSB Pre-Setup ─────────────────────────────────────
-# (Mirrors setup/generic/install.sh from original TeslaUSB)
+# ── Step 1: SentryUSB Pre-Setup ─────────────────────────────────────
 
-info "Setting up /teslausb symlink..."
-if [ ! -L /teslausb ]; then
-    rm -rf /teslausb
+info "Setting up /sentryusb symlink..."
+if [ ! -L /sentryusb ]; then
+    rm -rf /sentryusb
     if [ -d /boot/firmware ] && findmnt --fstab /boot/firmware &> /dev/null; then
-        ln -s /boot/firmware /teslausb
+        ln -s /boot/firmware /sentryusb
     else
-        ln -s /boot /teslausb
+        ln -s /boot /sentryusb
     fi
 fi
-ok "/teslausb -> $(readlink /teslausb)"
+ok "/sentryusb -> $(readlink /sentryusb)"
 
 function flash_rapidly {
     for led in /sys/class/leds/*; do
@@ -65,7 +64,7 @@ function flash_rapidly {
     done
 }
 
-# Handle root partition shrinking (same as TeslaUSB)
+# Handle root partition shrinking
 rootpart=$(findmnt -n -o SOURCE /)
 rootname=$(lsblk -no pkname "${rootpart}")
 rootdev="/dev/${rootname}"
@@ -105,10 +104,10 @@ if [ "${1:-}" != "norootshrink" ] && [ "$unpart" -lt $(( (1<<30) * 32)) ]; then
         chmod a+x /etc/rc.local
 
         if [ ! -e "/boot/initrd.img-$(uname -r)" ]; then
-            if [ -f /etc/os-release ] && grep -q Raspbian /etc/os-release && [ -e /teslausb/config.txt ]; then
+            if [ -f /etc/os-release ] && grep -q Raspbian /etc/os-release && [ -e /sentryusb/config.txt ]; then
                 info "Temporarily switching Raspberry Pi OS to use initramfs"
                 update-initramfs -c -k "$(uname -r)"
-                echo "initramfs initrd.img-$(uname -r) followkernel # TESLAUSB-REMOVE" >> /teslausb/config.txt
+                echo "initramfs initrd.img-$(uname -r) followkernel # SENTRYUSB-REMOVE" >> /sentryusb/config.txt
             else
                 error_exit "Can't automatically shrink root partition for this OS, please shrink it manually before proceeding"
             fi
@@ -129,8 +128,8 @@ if [ "${1:-}" != "norootshrink" ] && [ "$unpart" -lt $(( (1<<30) * 32)) ]; then
     partnum=${rootpart:0-1}
     echo "${rootpartstartsector},${fsnumsectors}" | sfdisk --force "${rootdev}" -N "${partnum}"
 
-    if [ -e /teslausb/config.txt ] && grep -q TESLAUSB-REMOVE /teslausb/config.txt; then
-        sed -i '/TESLAUSB-REMOVE/d' /teslausb/config.txt
+    if [ -e /sentryusb/config.txt ] && grep -q SENTRYUSB-REMOVE /sentryusb/config.txt; then
+        sed -i '/SENTRYUSB-REMOVE/d' /sentryusb/config.txt
         rm -rf "/boot/initrd.img-$(uname -r)"
     else
         update-initramfs -u
@@ -141,32 +140,32 @@ if [ "${1:-}" != "norootshrink" ] && [ "$unpart" -lt $(( (1<<30) * 32)) ]; then
 fi
 
 # Copy config template if no config exists
-if [ ! -e /teslausb/teslausb_setup_variables.conf ] && [ ! -e /root/teslausb_setup_variables.conf ]; then
+if [ ! -e /sentryusb/sentryusb.conf ] && [ ! -e /root/sentryusb.conf ]; then
     info "Downloading config template..."
-    while ! curl -fsSL -o /root/teslausb_setup_variables.conf \
-        "https://raw.githubusercontent.com/$REPO/$BRANCH/pi-gen-sources/00-teslausb-tweaks/files/teslausb_setup_variables.conf.sample"; do
+    while ! curl -fsSL -o /root/sentryusb.conf \
+        "https://raw.githubusercontent.com/$REPO/$BRANCH/pi-gen-sources/00-sentryusb-tweaks/files/sentryusb.conf.sample"; do
         sleep 1
     done
-    ok "Config template saved to /root/teslausb_setup_variables.conf"
+    ok "Config template saved to /root/sentryusb.conf"
 fi
 
 # Download wifi config template
-if [ ! -e /teslausb/wpa_supplicant.conf.sample ]; then
-    while ! curl -fsSL -o /teslausb/wpa_supplicant.conf.sample \
-        "https://raw.githubusercontent.com/$REPO/$BRANCH/pi-gen-sources/00-teslausb-tweaks/files/wpa_supplicant.conf.sample"; do
+if [ ! -e /sentryusb/wpa_supplicant.conf.sample ]; then
+    while ! curl -fsSL -o /sentryusb/wpa_supplicant.conf.sample \
+        "https://raw.githubusercontent.com/$REPO/$BRANCH/pi-gen-sources/00-sentryusb-tweaks/files/wpa_supplicant.conf.sample"; do
         sleep 1
     done
 fi
 
 # User configured networking manually, skip wifi setup in rc.local
-touch /teslausb/WIFI_ENABLED
+touch /sentryusb/WIFI_ENABLED
 
-# Install rc.local — this is the boot-loop mechanism that runs setup-teslausb
-# on every boot until TESLAUSB_SETUP_FINISHED exists (same as original TeslaUSB)
+# Install rc.local — this is the boot-loop mechanism that runs setup-sentryusb
+# on every boot until SENTRYUSB_SETUP_FINISHED exists
 info "Installing rc.local (setup boot-loop)..."
 rm -f /etc/rc.local
 while ! curl -fsSL -o /etc/rc.local \
-    "https://raw.githubusercontent.com/$REPO/$BRANCH/pi-gen-sources/00-teslausb-tweaks/files/rc.local"; do
+    "https://raw.githubusercontent.com/$REPO/$BRANCH/pi-gen-sources/00-sentryusb-tweaks/files/rc.local"; do
     sleep 1
 done
 chmod a+x /etc/rc.local
@@ -327,7 +326,7 @@ ok "Service installed and started"
 
 # ── Step 4: Remove stale cached setup scripts ──────────────────────
 # Force fresh download on next setup run so latest fixes are used
-rm -f /root/bin/setup-teslausb /root/bin/envsetup.sh
+rm -f /root/bin/setup-sentryusb /root/bin/setup-teslausb /root/bin/envsetup.sh
 
 # ── Done ───────────────────────────────────────────────────────────
 
@@ -344,7 +343,9 @@ if systemctl is-active --quiet "$SERVICE_NAME"; then
     echo -e "    http://${HOSTNAME}.local"
     echo ""
     echo -e "  Configure via the ${BLUE}Setup Wizard${NC} in the web UI."
-    echo -e "  Or edit /root/teslausb_setup_variables.conf and run /etc/rc.local"
+    echo -e "  The device will reboot several times during setup — this is normal."
+    echo -e "  The full process takes 10-20 minutes. Do NOT power off the device."
+    echo -e "  Or edit /root/sentryusb.conf and run /etc/rc.local"
     echo ""
 else
     error_exit "Service failed to start. Check: journalctl -u $SERVICE_NAME -f"

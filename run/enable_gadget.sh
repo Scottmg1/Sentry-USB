@@ -7,7 +7,7 @@ then
   echo "error: configfs not found"
   exit 1
 fi
-readonly gadget_root="$configfs_root/usb_gadget/teslausb"
+readonly gadget_root="$configfs_root/usb_gadget/sentryusb"
 
 # USB supports many languages. 0x409 is US English
 readonly lang=0x409
@@ -33,10 +33,10 @@ echo 0x0100 > "$gadget_root/bcdDevice" # v1.0.0
 echo 0x0200 > "$gadget_root/bcdUSB"    # USB 2.0
 mkdir -p "$gadget_root/strings/$lang"
 mkdir -p "$gadget_root/configs/$cfg.1/strings/$lang"
-echo "TeslaUSB-$(sha256sum < /etc/machine-id | awk '{print $1}')" > "$gadget_root/strings/$lang/serialnumber"
-echo TeslaUSB > "$gadget_root/strings/$lang/manufacturer"
-echo "TeslaUSB Composite Gadget" > "$gadget_root/strings/$lang/product"
-echo "TeslaUSB Config" > "$gadget_root/configs/$cfg.1/strings/$lang/configuration"
+echo "SentryUSB-$(sha256sum < /etc/machine-id | awk '{print $1}')" > "$gadget_root/strings/$lang/serialnumber"
+echo SentryUSB > "$gadget_root/strings/$lang/manufacturer"
+echo "SentryUSB Composite Gadget" > "$gadget_root/strings/$lang/product"
+echo "SentryUSB Config" > "$gadget_root/configs/$cfg.1/strings/$lang/configuration"
 
 # A bare Raspberry Pi 4 or 5 can peak at at over 1 A during boot, but idles around 500 mA.
 # A Raspberry Pi Zero 2 W can peak at over 300 mA during boot, but idles around 100 mA.
@@ -62,7 +62,7 @@ lun=0
 if [ -e "/backingfiles/cam_disk.bin" ]
 then
   echo "/backingfiles/cam_disk.bin" > "$gadget_root/functions/mass_storage.0/lun.${lun}/file"
-  echo "TeslaUSB CAM $(du -h /backingfiles/cam_disk.bin | awk '{print $1}')" > "$gadget_root/functions/mass_storage.0/lun.${lun}/inquiry_string"
+  echo "SentryUSB CAM $(du -h /backingfiles/cam_disk.bin | awk '{print $1}')" > "$gadget_root/functions/mass_storage.0/lun.${lun}/inquiry_string"
   ((++lun))
 fi
 
@@ -70,7 +70,7 @@ if [ -e "/backingfiles/music_disk.bin" ]
 then
   mkdir -p "$gadget_root/functions/mass_storage.0/lun.${lun}"
   echo "/backingfiles/music_disk.bin" > "$gadget_root/functions/mass_storage.0/lun.${lun}/file"
-  echo "TeslaUSB MUSIC $(du -h /backingfiles/music_disk.bin | awk '{print $1}')" > "$gadget_root/functions/mass_storage.0/lun.${lun}/inquiry_string"
+  echo "SentryUSB MUSIC $(du -h /backingfiles/music_disk.bin | awk '{print $1}')" > "$gadget_root/functions/mass_storage.0/lun.${lun}/inquiry_string"
   ((++lun))
 fi
 
@@ -78,7 +78,7 @@ if [ -e "/backingfiles/lightshow_disk.bin" ]
 then
   mkdir -p "$gadget_root/functions/mass_storage.0/lun.${lun}"
   echo "/backingfiles/lightshow_disk.bin" > "$gadget_root/functions/mass_storage.0/lun.${lun}/file"
-  echo "TeslaUSB LIGHTSHOW $(du -h /backingfiles/lightshow_disk.bin | awk '{print $1}')" > "$gadget_root/functions/mass_storage.0/lun.${lun}/inquiry_string"
+  echo "SentryUSB LIGHTSHOW $(du -h /backingfiles/lightshow_disk.bin | awk '{print $1}')" > "$gadget_root/functions/mass_storage.0/lun.${lun}/inquiry_string"
   ((++lun))
 fi
 
@@ -86,7 +86,7 @@ if [ -e "/backingfiles/boombox_disk.bin" ]
 then
   mkdir -p "$gadget_root/functions/mass_storage.0/lun.${lun}"
   echo "/backingfiles/boombox_disk.bin" > "$gadget_root/functions/mass_storage.0/lun.${lun}/file"
-  echo "TeslaUSB BOOMBOX $(du -h /backingfiles/boombox_disk.bin | awk '{print $1}')" > "$gadget_root/functions/mass_storage.0/lun.${lun}/inquiry_string"
+  echo "SentryUSB BOOMBOX $(du -h /backingfiles/boombox_disk.bin | awk '{print $1}')" > "$gadget_root/functions/mass_storage.0/lun.${lun}/inquiry_string"
   ((++lun))
 fi
 

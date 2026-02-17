@@ -18,9 +18,9 @@ function log_progress () {
 if [ "${FLOCKED:-}" != "$0" ]
 then
   PARENT="$(ps -o comm= $PPID)"
-  if [ "$PARENT" != "setup-teslausb" ]
+  if [ "$PARENT" != "setup-sentryusb" ]
   then
-    log_progress "STOP: $0 must be called from setup-teslausb: $PARENT"
+    log_progress "STOP: $0 must be called from setup-sentryusb: $PARENT"
     exit 1
   fi
 
@@ -304,13 +304,13 @@ function check_and_configure_tesla_ble () {
     else
       log_progress "WARNING: Tesla BLE keys exist, but the car is not reachable."
       log_progress "If you are performing setup away from your car, this is expected. Otherwise, please check the VIN and try again."
-      log_progress "If you have not already, please visit the web UI after TeslaUSB is in the car to pair the key."
+      log_progress "If you have not already, please visit the web UI after SentryUSB is in the car to pair the key."
       pairing_needed=false
     fi
 
     if $pairing_needed
     then
-      log_progress "Please visit the web UI after TeslaUSB is in the car to pair the key."
+      log_progress "Please visit the web UI after SentryUSB is in the car to pair the key."
     fi
 
     log_progress "Tesla BLE API enabled."
@@ -812,10 +812,11 @@ install_archive_scripts /root/bin "$archive_module"
 /tmp/verify-and-configure-archive.sh
 
 systemctl disable teslausb.service || true
+systemctl disable sentryusb-archive.service || true
 
-cat << EOF > /lib/systemd/system/teslausb.service
+cat << EOF > /lib/systemd/system/sentryusb-archive.service
 [Unit]
-Description=TeslaUSB archiveloop service
+Description=SentryUSB archiveloop service
 DefaultDependencies=no
 After=mutable.mount backingfiles.mount
 
@@ -828,4 +829,4 @@ Restart=always
 WantedBy=backingfiles.mount
 EOF
 
-systemctl enable teslausb.service
+systemctl enable sentryusb-archive.service

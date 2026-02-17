@@ -18,10 +18,10 @@ This guide will walk you through how to use Pi4 and a separate USB drive to to h
 4. Optional, but highly recommended - Heatsink case as Pi4 can get very hot.
 5. Optional - X855 mSata board for a more compact setup.
 
-## teslausb_setup_variables.conf configuration
+## sentryusb.conf configuration
 
 To use an external USB drive, you will need to add
-`export USB_DRIVE=/dev/sdX` to teslausb_setup_variables.conf file.
+`export USB_DRIVE=/dev/sdX` to sentryusb.conf file.
 Ensure that you are providing the disk location and not a partition.
 
 The rest of the setup is the same as the installation steps found in the main page. Both /backingfiles and /mutable will be on the external drive and the SD card will be read-only.

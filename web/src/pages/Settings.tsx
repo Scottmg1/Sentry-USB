@@ -278,7 +278,7 @@ export default function Settings() {
               rel="noopener noreferrer"
               className="text-blue-400 hover:text-blue-300"
             >
-              TeslaUSB
+              TeslaUSB (original)
             </a>{" "}
             (MIT License)
           </p>

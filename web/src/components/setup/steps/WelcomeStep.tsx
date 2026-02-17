@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils"
 const CONFIG_GROUPS: Record<string, { label: string; keys: string[] }> = {
   network: {
     label: "Network",
-    keys: ["SSID", "WIFIPASS", "TESLAUSB_HOSTNAME", "AP_SSID", "AP_PASS", "AP_IP"],
+    keys: ["SSID", "WIFIPASS", "SENTRYUSB_HOSTNAME", "WPA_COUNTRY", "AP_SSID", "AP_PASS", "AP_IP"],
   },
   storage: {
     label: "Storage",
@@ -56,7 +56,7 @@ const CONFIG_GROUPS: Record<string, { label: string; keys: string[] }> = {
   },
 }
 
-/** Parse a teslausb_setup_variables.conf file (export KEY=VALUE lines) */
+/** Parse a sentryusb.conf file (export KEY=VALUE lines) */
 function parseConfFile(text: string): Record<string, string> {
   const result: Record<string, string> = {}
   const exportRegex = /^\s*export\s+([A-Za-z_][A-Za-z0-9_]*)=(.*)$/
@@ -100,7 +100,7 @@ function friendlyLabel(key: string): string {
   const labels: Record<string, string> = {
     SSID: "WiFi SSID",
     WIFIPASS: "WiFi Password",
-    TESLAUSB_HOSTNAME: "Hostname",
+    SENTRYUSB_HOSTNAME: "Hostname",
     AP_SSID: "AP SSID",
     AP_PASS: "AP Password",
     AP_IP: "AP IP Address",

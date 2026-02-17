@@ -58,18 +58,19 @@ function nm_add_ap () {
   iw ap0 set power_save off || return 1
 
   # set up access point on the virtual interface using networkmanager
+  nmcli con delete SENTRYUSB_AP &> /dev/null || true
   nmcli con delete TESLAUSB_AP &> /dev/null || true
-  nmcli con add type wifi ifname ap0 mode ap con-name TESLAUSB_AP ssid "$AP_SSID" || return 1
+  nmcli con add type wifi ifname ap0 mode ap con-name SENTRYUSB_AP ssid "$AP_SSID" || return 1
   # don't set band and channel, because that is controlled by the $WLAN interface
-  #nmcli con modify TESLAUSB_AP 802-11-wireless.band bg
-  #nmcli con modify TESLAUSB_AP 802-11-wireless.channel 6
-  nmcli con modify TESLAUSB_AP 802-11-wireless-security.key-mgmt wpa-psk || return 1
-  nmcli con modify TESLAUSB_AP 802-11-wireless-security.psk "$AP_PASS" || return 1
+  #nmcli con modify SENTRYUSB_AP 802-11-wireless.band bg
+  #nmcli con modify SENTRYUSB_AP 802-11-wireless.channel 6
+  nmcli con modify SENTRYUSB_AP 802-11-wireless-security.key-mgmt wpa-psk || return 1
+  nmcli con modify SENTRYUSB_AP 802-11-wireless-security.psk "$AP_PASS" || return 1
   IP=${AP_IP:-"192.168.66.1"}
-  nmcli con modify TESLAUSB_AP ipv4.addr "$IP/24" || return 1
-  nmcli con modify TESLAUSB_AP ipv4.method shared || return 1
-  nmcli con modify TESLAUSB_AP ipv6.method disabled || return 1
-  cat > /etc/network/if-up.d/teslausb-ap << EOF
+  nmcli con modify SENTRYUSB_AP ipv4.addr "$IP/24" || return 1
+  nmcli con modify SENTRYUSB_AP ipv4.method shared || return 1
+  nmcli con modify SENTRYUSB_AP ipv6.method disabled || return 1
+  cat > /etc/network/if-up.d/sentryusb-ap << EOF
 #!/bin/bash
 
 if [ "\$IFACE" = "$WLAN" ]
@@ -77,11 +78,11 @@ then
   iw dev $WLAN interface add ap0 type __ap
   iw "$WLAN" set power_save off
   iw ap0 set power_save off
-  nmcli con up TESLAUSB_AP
+  nmcli con up SENTRYUSB_AP
 fi
 
 EOF
-  chmod a+x /etc/network/if-up.d/teslausb-ap || return 1
+  chmod a+x /etc/network/if-up.d/sentryusb-ap || return 1
 }
 
 
@@ -206,7 +207,7 @@ then
 
   # update the host name to have the AP IP address, otherwise
   # clients connected to the IP will get 127.0.0.1 when looking
-  # up the teslausb host name
+  # up the sentryusb host name
   sed -i -e "/^127.0.0.1\s*localhost/b; s/^127.0.0.1\(\s*.*\)/$IP\1/" /etc/hosts
 
   # add ID string to wpa_supplicant

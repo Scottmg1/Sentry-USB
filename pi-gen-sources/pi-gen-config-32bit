@@ -1,5 +1,5 @@
-IMG_NAME=sentryusb
-PI_GEN_RELEASE=sentryusb-prebuilt
+IMG_NAME=sentryusb-armhf
+PI_GEN_RELEASE=sentryusb-prebuilt-32bit
 LOCALE_DEFAULT=en_US.UTF-8
 TARGET_HOSTNAME=sentryusb
 KEYBOARD_KEYMAP=us

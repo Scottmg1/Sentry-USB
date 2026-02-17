@@ -46,7 +46,7 @@ It requires an account and the IFTTT app to be installed but is available for bo
       ```
       {{Value1}} {{Value2}} {{Value3}} ({{OccurredAt}})
       ```
-      - `Value3` will not be used by `teslausb`
+      - `Value3` will not be used by `sentryusb`
       - Feel free to modify this later to your liking.
    7. Name and save the applet. You can modify the name, event name, and message by clicking on the Gear icon.
 3. Test the applet out by going back to the [Webhooks service](https://ifttt.com/maker_webhooks) page and clicking on "Documentation".
@@ -98,7 +98,7 @@ You can choose to send notifications via [Telegram](https://telegram.org/). This
 3. Send any message (e.g. "Hi") to the bot and it will respond with your id. This identifies the recipient and is the value you will use for TELEGRAM_CHAT_ID
 4. You will need to create a new bot that acts as a sender. Follow the instructions [here](https://www.siteguarding.com/en/how-to-get-telegram-bot-api-token) to get your bot token.
 5. If the API key does not have the "bot" prefix. Make sure you include it when entering TELEGRAM_BOT_TOKEN.
-6. Remove the comments and update the following values in the `teslausb_setup_variables.conf` file.
+6. Remove the comments and update the following values in the `sentryusb.conf` file.
    ```
    export TELEGRAM_ENABLED=true
    export TELEGRAM_CHAT_ID=123456789
@@ -113,7 +113,7 @@ Matrix is a federated messaging protocol that can be used via [Matrix.org](https
 1. Create an account for your bot either on [matrix.org](https://matrix.org) or your own homeserver
 2. Create a room where you want to send the notifications to, either as the bot user or invite and join the bot user to the room
 3. Navigate to the room settings to discover the "Internal room ID"
-4. Remove the comments and update the following values in the `teslausb_setup_variables.conf` file with the gathered information. Use of `'` is required for MATRIX_PASSWORD and MATRIX_ROOM:
+4. Remove the comments and update the following values in the `sentryusb.conf` file with the gathered information. Use of `'` is required for MATRIX_PASSWORD and MATRIX_ROOM:
 
    ```
    export MATRIX_ENABLED=true
@@ -131,7 +131,7 @@ Notifications can be sent via webhook to channels or DM in Slack.
 2. Enter an Application name and select a workspace that you want this application added to
 3. Under "Add features and functionality" select "Incoming Webhooks"
 4. Toggle Webhooks on and select "Add Webhook to Workspace". Copy this URL for the webhook url in step 5
-5. Remove the comments and update the following values in the `teslausb_setup_variables.conf` file with the gathered information.
+5. Remove the comments and update the following values in the `sentryusb.conf` file with the gathered information.
 
    ```
    export SLACK_ENABLED=true
@@ -146,7 +146,7 @@ Discord is a voice, video, and text communication service that can be configured
 2. Click Integrations > Webhooks > New Webhook
 3. Give your webhook a name and choose the channel you'd like the notifications to appear in
 4. Click Copy Webhook URL
-5. Remove the comments and update the following values in the `teslausb_setup_variables.conf` file with the gathered information.
+5. Remove the comments and update the following values in the `sentryusb.conf` file with the gathered information.
 
    ```
    export DISCORD_ENABLED=true

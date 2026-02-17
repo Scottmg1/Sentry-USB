@@ -28,7 +28,7 @@ then
 fi
 
 function setup_progress () {
-  local setup_logfile=/teslausb/teslausb-headless-setup.log
+  local setup_logfile=/sentryusb/sentryusb-setup.log
   if [ -w $setup_logfile ]
   then
     echo "$( date ) : $*" >> "$setup_logfile"
@@ -108,7 +108,7 @@ if [ ! -e "$THISDIR/envsetup.sh" ]
 then
   # source the conf file directly to get REPO, BRANCH or download_sources
   # in case they're set
-  safesource /root/teslausb_setup_variables.conf
+  safesource /root/sentryusb.conf
   REPO=${REPO:-Scottmg1}
   REPO_NAME=${REPO_NAME:-Sentry-USB}
   BRANCH=${BRANCH:-main-dev}
@@ -134,9 +134,9 @@ then
   REBOOT=true
 fi
 
-BOOT_DISK=$(lsblk -dpno pkname "$(findmnt -D -no SOURCE --target /teslausb)")
+BOOT_DISK=$(lsblk -dpno pkname "$(findmnt -D -no SOURCE --target /sentryusb)")
 declare -rx BOOT_DISK
-BOOT_PARTITION_DEVICE=$(lsblk -dpno name "$(findmnt -D -no SOURCE --target /teslausb)")
+BOOT_PARTITION_DEVICE=$(lsblk -dpno name "$(findmnt -D -no SOURCE --target /sentryusb)")
 readonly BOOT_PARTITION_DEVICE
 readonly BOOT_DEVICE_PARTITION_PREFIX=${BOOT_PARTITION_DEVICE%?}
 export BOOT_DEVICE_PARTITION_PREFIX
@@ -147,9 +147,9 @@ INCREASE_ROOT_SIZE=$(($(dehumanize "$INCREASE_ROOT_SIZE") / 512))
 
 if [ "$INCREASE_ROOT_SIZE" != "0" ] && [ ! -e "${BOOT_DEVICE_PARTITION_PREFIX}$((ROOT_PART_NUM+1))" ]
 then
-  if [ ! -e /root/TESLAUSB_ROOT_PARTITION_INCREASED ]
+  if [ ! -e /root/SENTRYUSB_ROOT_PARTITION_INCREASED ]
   then
-    touch /root/TESLAUSB_ROOT_PARTITION_INCREASED
+    touch /root/SENTRYUSB_ROOT_PARTITION_INCREASED
     ROOTSTART=$(partx --show -g -o START "${ROOT_PARTITION_DEVICE}")
     ROOTSIZE=$(partx --show -g -o SECTORS "${ROOT_PARTITION_DEVICE}")
     ROOTSIZE=$((ROOTSIZE + INCREASE_ROOT_SIZE))
@@ -181,9 +181,9 @@ then
 fi
 
 function headless_setup_mark_setup_success () {
-  rm -f /teslausb/TESLAUSB_SETUP_FAILED
-  rm -f /teslausb/TESLAUSB_SETUP_STARTED
-  touch /teslausb/TESLAUSB_SETUP_FINISHED
+  rm -f /sentryusb/SENTRYUSB_SETUP_FAILED
+  rm -f /sentryusb/SENTRYUSB_SETUP_STARTED
+  touch /sentryusb/SENTRYUSB_SETUP_FINISHED
 }
 
 function flash () {
@@ -230,7 +230,7 @@ function get_common_scripts () {
   copy_script run/mountimage /root/bin
   copy_script run/enable_gadget.sh /root/bin
   copy_script run/disable_gadget.sh /root/bin
-  ln -sf /root/bin/mountimage /sbin/mount.teslausb
+  ln -sf /root/bin/mountimage /sbin/mount.sentryusb
 }
 
 # If only the dwc2 module is loaded at boot then the Pi will present
@@ -282,7 +282,7 @@ function update_backingfiles_fstab_entry () {
   if [ -e "$filename" ]
   then
     mkdir -p "$mountpoint"
-    echo "$filename $mountpoint teslausb noauto 0 0" >> /etc/fstab
+    echo "$filename $mountpoint sentryusb noauto 0 0" >> /etc/fstab
     setup_progress "updated /etc/fstab for $mountpoint"
   fi
 }
@@ -393,7 +393,7 @@ function create_usb_drive_backing_files () {
 }
 
 function configure_hostname () {
-  local new_host_name="$TESLAUSB_HOSTNAME"
+  local new_host_name="$SENTRYUSB_HOSTNAME"
   local old_host_name
   old_host_name=$(hostname)
 
@@ -534,20 +534,20 @@ function cmd_selfupdate {
 }
 
 function cmd_upgrade {
-  if [ ! -e /teslausb/TESLAUSB_SETUP_FINISHED ]
+  if [ ! -e /sentryusb/SENTRYUSB_SETUP_FINISHED ]
   then
     echo "STOP: previous setup didn't finish, can't upgrade unfinished install"
     exit 1
   fi
-  copy_script setup/pi/setup-teslausb /tmp &> /dev/null
+  copy_script setup/pi/setup-sentryusb /tmp &> /dev/null
   copy_script setup/pi/envsetup.sh /tmp &> /dev/null
-  exec bash -c "/tmp/setup-teslausb upgrade_prepare && NO_REBOOT_PROMPT=1 /tmp/setup-teslausb && /tmp/setup-teslausb upgrade_finish"
+  exec bash -c "/tmp/setup-sentryusb upgrade_prepare && NO_REBOOT_PROMPT=1 /tmp/setup-sentryusb && /tmp/setup-sentryusb upgrade_finish"
 }
 
 function cmd_upgrade_prepare {
   setup_progress "preparing for full upgrade"
   (
-    systemctl stop teslausb || true
+    systemctl stop sentryusb-archive || true
     killall archiveloop || true
     service smbd stop || true
     service autofs stop || true
@@ -559,14 +559,14 @@ function cmd_upgrade_prepare {
     /root/bin/disable_gadget.sh || true
     /root/bin/remountfs_rw
     # a previous bookworm install may have the makers in /boot, so move
-    # them to /teslausb (/boot/firmware)
-    if [ ! /boot -ef /teslausb ]
+    # them to /sentryusb (/boot/firmware)
+    if [ ! /boot -ef /sentryusb ]
     then
-      for i in WIFI_ENABLED TESLAUSB_SETUP_STARTED TESLAUSB_SETUP_FINISHED
+      for i in WIFI_ENABLED SENTRYUSB_SETUP_STARTED SENTRYUSB_SETUP_FINISHED
       do
         if [ -e "/boot/$i" ]
         then
-          mv "/boot/$i" /teslausb
+          mv "/boot/$i" /sentryusb
         fi
       done
     fi
@@ -574,7 +574,7 @@ function cmd_upgrade_prepare {
 }
 
 function cmd_upgrade_finish {
-  mv /tmp/setup-teslausb /root/bin/setup-teslausb
+  mv /tmp/setup-sentryusb /root/bin/setup-sentryusb
   mv /tmp/envsetup.sh /root/bin/envsetup.sh
   setup_progress "upgrade finished"
   for i in {5..1}
@@ -603,7 +603,7 @@ function checkfsrw() {
 }
 
 function boot_is_not_on_root {
-  [ "$(stat -c "%d" /)" -ne "$(stat -L -c "%d" /teslausb)" ]
+  [ "$(stat -c "%d" /)" -ne "$(stat -L -c "%d" /sentryusb)" ]
 }
 
 function diagnose {
@@ -678,7 +678,7 @@ function diagnose {
     fi
     for i in 0 1 2 3 4 5 6
     do
-      LUN="/sys/kernel/config/usb_gadget/teslausb/functions/mass_storage.0/lun.${i}/file"
+      LUN="/sys/kernel/config/usb_gadget/sentryusb/functions/mass_storage.0/lun.${i}/file"
       if [ -e "$LUN" ]
       then
         echo "lun${i} connected, from file $(cat "$LUN")"
@@ -705,7 +705,7 @@ function diagnose {
     numsnapshots=$( mount | grep -c snapshot )
     echo "$numsnapshots snapshots mounted"
 
-    if [ ! -e /teslausb/TESLAUSB_SETUP_FINISHED ]
+    if [ ! -e /sentryusb/SENTRYUSB_SETUP_FINISHED ]
     then
       echo 'ERROR: setup did not finish'
     fi
@@ -716,7 +716,7 @@ function diagnose {
     if ((archiveloopcount <= 2))
     then
       echo "archiveloop is not running"
-      journalctl -u teslausb | tail -30
+      journalctl -u sentryusb-archive | tail -30
     fi
 
     local -r inodes=$(df --output=ipcent /mutable/ | sed 1d | sed 's/[^0-9]//g')
@@ -744,7 +744,7 @@ function diagnose {
     checkfsrw / ro
     if boot_is_not_on_root
     then
-      checkfsrw /teslausb ro
+      checkfsrw /sentryusb ro
     fi
     checkfsrw /backingfiles rw
     checkfsrw /mutable rw
@@ -785,7 +785,7 @@ function diagnose {
     else
       echo "no boombox disk image found"
     fi
-    df -h /teslausb/ / /backingfiles/ /mutable/
+    df -h /sentryusb/ / /backingfiles/ /mutable/
     echo -e "====== network ======"
     ifconfig
     iwconfig wlan0 | grep Link
@@ -817,9 +817,9 @@ function diagnose {
     journalctl -u rc-local
 
     echo -e "====== setup log ======"
-    if [ -e /teslausb/teslausb-headless-setup.log ]
+    if [ -e /sentryusb/sentryusb-setup.log ]
     then
-      cat /teslausb/teslausb-headless-setup.log
+      cat /sentryusb/sentryusb-setup.log
     else
       echo "no setup log found"
     fi
@@ -913,15 +913,15 @@ configure_hostname
 
 tmpdir=/tmp/$$
 mkdir -p "$tmpdir"
-copy_script setup/pi/setup-teslausb "$tmpdir"  &> /dev/null
-if cmp -s "$tmpdir/setup-teslausb" "$0"
+copy_script setup/pi/setup-sentryusb "$tmpdir"  &> /dev/null
+if cmp -s "$tmpdir/setup-sentryusb" "$0"
 then
   setup_progress "$0 is up to date"
 else
   setup_progress "WARNING: $BRANCHNAME contains a different version of $0. It is recommended to run '$0 upgrade' to get the latest version."
 fi
 
-copy_script pi-gen-sources/00-teslausb-tweaks/files/rc.local "$tmpdir" &> /dev/null
+copy_script pi-gen-sources/00-sentryusb-tweaks/files/rc.local "$tmpdir" &> /dev/null
 if cmp -s "$tmpdir/rc.local" /etc/rc.local
 then
   setup_progress "rc.local is up to date"
@@ -999,7 +999,7 @@ copy_script setup/pi/configure-web.sh /tmp
 copy_script setup/pi/configure-ssh.sh /tmp
 /tmp/configure-ssh.sh
 
-# source setup-teslausb from .bashrc to set up completion
+# source setup-sentryusb from .bashrc to set up completion
 if ! grep -q envsetup.sh /root/.bashrc
 then
   echo "source /root/bin/envsetup.sh" >> /root/.bashrc
@@ -1007,15 +1007,15 @@ fi
 sed -i '/source \/root\/bin\/setup-teslausb/d' /root/.bashrc
 
 # UX courtesy reminders
-if ! grep -q TESLAUSB_TIP1 /root/.bashrc
+if ! grep -q SENTRYUSB_TIP1 /root/.bashrc
 then
   cat >> /root/.bashrc <<- EOC
 	if [ -n "\$PS1" ]; then
-		cat << TESLAUSB_TIP1
-		Run 'bin/setup-teslausb upgrade' to update to the latest version of teslausb,
+		cat << SENTRYUSB_TIP1
+		Run 'bin/setup-sentryusb upgrade' to update to the latest version of SentryUSB,
 		or run 'bin/remountfs_rw' to allow writing to the root partition.
 
-		TESLAUSB_TIP1
+		SENTRYUSB_TIP1
 	fi
 	EOC
 fi
@@ -1023,26 +1023,26 @@ fi
 DEFUSER=$(grep ":1000:1000:" /etc/passwd | awk -F : '{print $1}')
 if [ -n "$DEFUSER" ]
 then
-  if ! grep -q TESLAUSB_TIP1 "/home/$DEFUSER/.bashrc"
+  if ! grep -q SENTRYUSB_TIP1 "/home/$DEFUSER/.bashrc"
   then
     cat >> "/home/$DEFUSER/.bashrc" <<- EOC
 	if [ -n "\$PS1" ]; then
-		cat << TESLAUSB_TIP1
+		cat << SENTRYUSB_TIP1
 		Run 'sudo -i' if you need to make changes.
 
-		The TeslaUSB web interface is at http://$(hostname -s) or http://$(hostname -I | awk '{print $1}')
+		The SentryUSB web interface is at http://$(hostname -s) or http://$(hostname -I | awk '{print $1}')
 
-		TESLAUSB_TIP1
+		SENTRYUSB_TIP1
 	fi
 	EOC
   fi
-  if grep -q "/boot/TESLAUSB_SETUP_FINISHED" "/home/$DEFUSER/.bashrc"
+  if grep -q "/boot/SENTRYUSB_SETUP_FINISHED" "/home/$DEFUSER/.bashrc"
   then
-    sed -i "s@/boot/TESLAUSB_SETUP_FINISHED@/teslausb/TESLAUSB_SETUP_FINISHED@" "/home/$DEFUSER/.bashrc"
+    sed -i "s@/boot/SENTRYUSB_SETUP_FINISHED@/sentryusb/SENTRYUSB_SETUP_FINISHED@" "/home/$DEFUSER/.bashrc"
   fi
-  if grep -q "/boot/TESLAUSB_SETUP_FINISHED" "/root/.bashrc"
+  if grep -q "/boot/SENTRYUSB_SETUP_FINISHED" "/root/.bashrc"
   then
-    sed -i "s@/boot/TESLAUSB_SETUP_FINISHED@/teslausb/TESLAUSB_SETUP_FINISHED@" "/root/.bashrc"
+    sed -i "s@/boot/SENTRYUSB_SETUP_FINISHED@/sentryusb/SENTRYUSB_SETUP_FINISHED@" "/root/.bashrc"
   fi
 fi
 

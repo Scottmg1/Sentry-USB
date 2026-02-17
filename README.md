@@ -1,6 +1,6 @@
 # SentryUSB
 
-A modern, feature-rich USB drive manager for Tesla vehicles — built on the foundation of [TeslaUSB](https://github.com/marcone/teslausb), now revamped at [Scottmg1/Sentry-USB](https://github.com/Scottmg1/Sentry-USB).
+A modern, feature-rich USB drive manager for Tesla vehicles — built on the foundation of [TeslaUSB](https://github.com/marcone/teslausb), fully rebranded and revamped at [Scottmg1/Sentry-USB](https://github.com/Scottmg1/Sentry-USB).
 
 ## What is SentryUSB?
 
@@ -33,11 +33,20 @@ Browser (React SPA)  ←→  Go API Server (single ARM binary)  ←→  Shell Sc
 
 ## Quick Start
 
-1. Flash the SentryUSB image to your SD card
-2. Boot the Pi and connect to its WiFi AP (or plug into your network)
-3. Open `http://sentryusb.local` in your browser
-4. Complete the Setup Wizard to configure everything
-5. Plug into your Tesla
+**Option A** — Flash the SentryUSB image (recommended):
+1. Flash the image to your SD card, boot, open `http://sentryusb.local`
+2. Complete the Setup Wizard, wait for reboots (10–20 min), plug into your Tesla
+
+**Option B** — Install on existing Raspberry Pi OS:
+```bash
+sudo -i
+curl -fsSL https://sentryusb.sentry-six.com | bash
+```
+Then open `http://sentryusb.local` and complete the Setup Wizard.
+
+> **Note:** The Pi will reboot several times during setup — this is normal. Do not power off.
+
+See [Raspberry Pi Setup Guide](doc/RaspberryPiSetup.md) for detailed instructions.
 
 ## Development
 
@@ -83,13 +92,16 @@ Sentry-USB/
 │   └── ws/           # WebSocket hub
 ├── run/              # Runtime scripts (archiveloop, gadget, sync, etc.)
 ├── setup/            # Pi setup & configuration scripts
-├── teslausb-www/     # Legacy web UI (preserved for reference)
 └── doc/              # Documentation
 ```
 
 ## Based On
 
-SentryUSB is a modernized fork of [TeslaUSB](https://github.com/marcone/teslausb) by marcone and contributors, revamped by [Scottmg1](https://github.com/Scottmg1/Sentry-USB).
+SentryUSB is a modernized fork of [TeslaUSB](https://github.com/marcone/teslausb) by marcone and contributors, fully rebranded and revamped by [Scottmg1](https://github.com/Scottmg1/Sentry-USB).
+
+## Coming from TeslaUSB?
+
+SentryUSB is a full rewrite with a new Go backend and React frontend. **A fresh install is required** — there is no in-place upgrade path from TeslaUSB. Your archive server credentials and notification settings will need to be reconfigured via the web UI Setup Wizard.
 
 ## License
 

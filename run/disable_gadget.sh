@@ -9,7 +9,7 @@ then
   echo "error: configfs not found"
   exit 1
 fi
-readonly gadget_root="$configfs_root/usb_gadget/teslausb"
+readonly gadget_root="$configfs_root/usb_gadget/sentryusb"
 
 if [ ! -d "$gadget_root" ]
 then

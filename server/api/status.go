@@ -45,7 +45,7 @@ func (h *handlers) getStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// USB gadget status
-	if _, err := os.Stat("/sys/kernel/config/usb_gadget/teslausb"); err == nil {
+	if _, err := os.Stat("/sys/kernel/config/usb_gadget/sentryusb"); err == nil {
 		status.DrivesActive = "yes"
 	} else {
 		status.DrivesActive = "no"
@@ -296,9 +296,9 @@ func (h *handlers) getWifiConfig(w http.ResponseWriter, r *http.Request) {
 
 func findConfigFilePath() string {
 	paths := []string{
-		"/root/teslausb_setup_variables.conf",
-		"/boot/firmware/teslausb_setup_variables.conf",
-		"/boot/teslausb_setup_variables.conf",
+		"/root/sentryusb.conf",
+		"/boot/firmware/sentryusb.conf",
+		"/boot/sentryusb.conf",
 	}
 	for _, p := range paths {
 		if _, err := os.Stat(p); err == nil {

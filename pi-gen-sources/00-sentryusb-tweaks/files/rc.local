@@ -18,26 +18,26 @@ then
   printf "My IP address is %s\n" "$_IP"
 fi
 
-if [ ! -L /teslausb ]
+if [ ! -L /sentryusb ]
 then
-  rm -rf /teslausb
+  rm -rf /sentryusb
   if [ -d /boot/firmware ] && findmnt --fstab /boot/firmware &> /dev/null
   then
-    ln -s /boot/firmware /teslausb
+    ln -s /boot/firmware /sentryusb
   else
-    ln -s /boot /teslausb
+    ln -s /boot /sentryusb
   fi
 fi
 
-if [ -f /teslausb/run_once ]
+if [ -f /sentryusb/run_once ]
 then
-  cp /teslausb/run_once /tmp/
+  cp /sentryusb/run_once /tmp/
   chmod +x /tmp/run_once
   /tmp/run_once || echo "run_once failed"
-  mv /teslausb/run_once /teslausb/ran_once || true
+  mv /sentryusb/run_once /sentryusb/ran_once || true
 fi
 
-SETUP_LOGFILE=/teslausb/teslausb-headless-setup.log
+SETUP_LOGFILE=/sentryusb/sentryusb-setup.log
 
 function write_all_leds {
   for led in /sys/class/leds/*
@@ -106,7 +106,7 @@ function enable_wifi () {
   setup_progress "Detecting whether to configure wifi"
   if [[ -n "$SSID" ]] && [[ -n "$WIFIPASS" ]]
   then
-    if [ ! -e /teslausb/WIFI_ENABLED ]
+    if [ ! -e /sentryusb/WIFI_ENABLED ]
     then
       if [ -x /root/bin/remountfs_rw ]
       then
@@ -123,18 +123,18 @@ function enable_wifi () {
         fi
       else
         setup_progress "Configuring wpa_supplicant"
-        cp /teslausb/wpa_supplicant.conf.sample /teslausb/wpa_supplicant.conf
-        sed -i -e "sTEMPSSID${SSID}g" /teslausb/wpa_supplicant.conf
-        sed -i -e "sTEMPPASS${WIFIPASS}g" /teslausb/wpa_supplicant.conf
-        cp /teslausb/wpa_supplicant.conf /etc/wpa_supplicant/wpa_supplicant.conf
+        cp /sentryusb/wpa_supplicant.conf.sample /sentryusb/wpa_supplicant.conf
+        sed -i -e "s/TEMPSSID/${SSID}/g" /sentryusb/wpa_supplicant.conf
+        sed -i -e "s/TEMPPASS/${WIFIPASS}/g" /sentryusb/wpa_supplicant.conf
+        cp /sentryusb/wpa_supplicant.conf /etc/wpa_supplicant/wpa_supplicant.conf
       fi
 
       # set the host name now if possible, so it's effective immediately after the reboot
       local old_host_name
       old_host_name=$(cat /etc/hostname)
-      if [[ -n "$TESLAUSB_HOSTNAME" ]] && [[ "$TESLAUSB_HOSTNAME" != "$old_host_name" ]]
+      if [[ -n "$SENTRYUSB_HOSTNAME" ]] && [[ "$SENTRYUSB_HOSTNAME" != "$old_host_name" ]]
       then
-        local new_host_name="$TESLAUSB_HOSTNAME"
+        local new_host_name="$SENTRYUSB_HOSTNAME"
         sed -i -e "s/$old_host_name/$new_host_name/g" /etc/hosts
         sed -i -e "s/$old_host_name/$new_host_name/g" /etc/hostname
       fi
@@ -146,7 +146,7 @@ function enable_wifi () {
       done
       systemctl enable ssh
 
-      touch /teslausb/WIFI_ENABLED
+      touch /sentryusb/WIFI_ENABLED
       setup_progress "Rebooting..."
       exec reboot
     fi
@@ -172,19 +172,19 @@ EOF
   source "$1"
 }
 
-if [ -e "/teslausb/teslausb_setup_variables.conf" ]
+if [ -e "/sentryusb/sentryusb.conf" ]
 then
   if [ -e /root/bin/remountfs_rw ]
   then
     /root/bin/remountfs_rw
   fi
-  mv /teslausb/teslausb_setup_variables.conf /root/
-  dos2unix /root/teslausb_setup_variables.conf
+  mv /sentryusb/sentryusb.conf /root/
+  dos2unix /root/sentryusb.conf
 fi
-if [ -e "/root/teslausb_setup_variables.conf" ]
+if [ -e "/root/sentryusb.conf" ]
 then
-  safesource /root/teslausb_setup_variables.conf
-elif [ -e "/teslausb/teslausb_setup_variables.conf.sample" ]
+  safesource /root/sentryusb.conf
+elif [ -e "/sentryusb/sentryusb.conf.sample" ]
 then
   setup_progress "no config file found, but sample file is present."
 else
@@ -197,20 +197,20 @@ enable_wifi
 
 # This begins the Headless Setup loop
 # If the FINISHED file does not exist then we start setup. Otherwise passes on to normal loop
-if [ ! -e "/teslausb/TESLAUSB_SETUP_FINISHED" ]
+if [ ! -e "/sentryusb/SENTRYUSB_SETUP_FINISHED" ]
 then
   if [ -e /root/bin/remountfs_rw ]
   then
     /root/bin/remountfs_rw
   fi
-  touch "/teslausb/TESLAUSB_SETUP_STARTED"
+  touch "/sentryusb/SENTRYUSB_SETUP_STARTED"
 
-  if [ -e "/root/teslausb_setup_variables.conf" ]
+  if [ -e "/root/sentryusb.conf" ]
   then
-    source "/root/teslausb_setup_variables.conf"
+    source "/root/sentryusb.conf"
   else
     # No conf file found, can't complete setup
-    setup_progress "Setup appears not to have completed, but you didn't provide a teslausb_setup_variables.conf."
+    setup_progress "Setup appears not to have completed, but you didn't provide a sentryusb.conf."
   fi
 
   # Make the bin dir if needed to grab the setup script into it and persist
@@ -219,14 +219,14 @@ then
     mkdir "/root/bin"
   fi
 
-  if [ ! -e "/root/bin/setup-teslausb" ]
+  if [ ! -e "/root/bin/setup-sentryusb" ]
   then
     REPO=${REPO:-Scottmg1}
     REPO_NAME=${REPO_NAME:-Sentry-USB}
     BRANCH=${BRANCH:-main-dev}
     # Script doesn't exist, grab it.
     setup_progress "Grabbing main setup file."
-    if ! get_script /root/bin setup-teslausb setup/pi
+    if ! get_script /root/bin setup-sentryusb setup/pi
     then
       setup_progress "Failed to retrieve setup script. Check network settings."
       error_strobe &
@@ -237,7 +237,7 @@ then
   setup_progress "Starting setup."
 
   # Start setup. This should take us all the way through to reboot
-  if ! /root/bin/setup-teslausb
+  if ! /root/bin/setup-sentryusb
   then
     error_strobe &
     exit 0
@@ -247,7 +247,7 @@ then
   exec reboot
 fi
 
-# we're done. If setup completed successfully, teslausb will have been
+# we're done. If setup completed successfully, sentryusb will have been
 # started as a systemd service at this point
 
 exit 0

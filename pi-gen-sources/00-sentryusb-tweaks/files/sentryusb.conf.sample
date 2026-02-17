@@ -1,11 +1,10 @@
 #####################################################################
-# SAMPLE CONFIGURATION FILE FOR TESLAUSB Pi Setup
+# SAMPLE CONFIGURATION FILE FOR SENTRYUSB Pi Setup
 #
-# Example config file for teslausb_setup. Lines with "#" are comments/ignored.
+# Example config file for SentryUSB setup. Lines with "#" are comments/ignored.
 # Remove the "#" before "export" to activate a line. Be sure to rename this file
-# to "teslausb_setup_variables.conf" and place it in the "boot" folder of your
-# SD card.
-# The latest version of this file is at: https://bit.ly/teslausbconfig
+# to "sentryusb.conf" and place it in the "boot" folder of your SD card.
+# More info: https://github.com/Scottmg1/Sentry-USB
 #
 ######################################################################
 
@@ -31,7 +30,7 @@ export SHARE_PASSWORD='password'
 
 # Variables for rsync archiving
 # For instructions setting up SSH Public Key authentication, view:
-# https://github.com/marcone/teslausb/blob/main-dev/doc/SetupRSync.md#step-1-authentication
+# https://github.com/Scottmg1/Sentry-USB/blob/main-dev/doc/SetupRSync.md#step-1-authentication
 #export ARCHIVE_SYSTEM=rsync
 #export RSYNC_USER=username
 #export RSYNC_SERVER=hostname_or_ip
@@ -110,22 +109,22 @@ export CAM_SIZE=40G
 
 # Uncomment to use ExFAT filesystem instead of FAT32.
 # ExFAT is the filesystem used by Tesla when the drive is formatted in the car.
-# Using ExFAT is not recommended for the TeslaUSB prebuilt image, as it is
+# Using ExFAT is not recommended for the SentryUSB prebuilt image, as it is
 # based on an older kernel that has no TRIM support for ExFAT.
 # export USE_EXFAT=true
 
 # Uncomment to enable a Samba/CIFS server that makes the recordings available
 # as a network share.
-# This is obsolete/deprecated, as you can now access recordings via TeslaUSB's
+# This is obsolete/deprecated, as you can now access recordings via SentryUSB's
 # web interface.
 #export SAMBA_ENABLED=true
 # uncomment to enable guest access to the Samba server
 #export SAMBA_GUEST=true
 
-# Uncomment to enable teslausb to act as a wifi access point with the given
+# Uncomment to enable SentryUSB to act as a wifi access point with the given
 # SSID, so you can access it while on the road. This should work on Raspberry Pi
 # but may not work on other devices.
-#export AP_SSID='TESLAUSB WIFI'
+#export AP_SSID='SentryUSB'
 # Change this! The setup script will not accept the default 'password'
 # Also note that the wifi password must be at least 8 characters.
 #export AP_PASS='password'
@@ -134,9 +133,9 @@ export CAM_SIZE=40G
 # that range.
 #export AP_IP='192.168.66.1'
 
-# Uncomment if you'd like to password protect the teslausb web interface
+# Uncomment if you'd like to password protect the SentryUSB web interface
 # WARNING: Anyone on the $SSID (and $AP_SSID if configured) wifi network can
-# freely interact with the teslausb web interface if it isn't secured!
+# freely interact with the SentryUSB web interface if it isn't secured!
 # export WEB_USERNAME='pi'
 # export WEB_PASSWORD='raspberry'
 
@@ -152,20 +151,20 @@ export CAM_SIZE=40G
 # the duration of that delay
 # export ARCHIVE_DELAY=20
 
-# Uncomment if you want to override the default hostname of "teslausb"
-# export TESLAUSB_HOSTNAME=teslausb-Model3
+# Uncomment if you want to override the default hostname of "sentryusb"
+# export SENTRYUSB_HOSTNAME=sentryusb-Model3
 
 # uncomment to define an SSH public key that can be utilized to SSH into
-# teslausb as root
+# SentryUSB as root
 # export SSH_ROOT_PUBLIC_KEY='ssh-rsa AAAAB3NzaC1yc2EAAAADA... user@host.domain'
 
 # uncoment to disable password SSH authentication for all users
 # export SSH_DISABLE_PASSWORD_AUTHENTICATION=true
 
 # Push notifications consist of a title and a message.
-# By default TESLAUSB_HOSTNAME is used as the title, but you can
+# By default SENTRYUSB_HOSTNAME is used as the title, but you can
 # set a custom title by setting the following variable.
-# export NOTIFICATION_TITLE="TeslaUSB Notification"
+# export NOTIFICATION_TITLE="SentryUSB Notification"
 
 # Uncomment if setting up Signal_cli notifications
 # export SIGNAL_ENABLED=true
@@ -251,9 +250,25 @@ export CAM_SIZE=40G
 #
 # Recent car firmware has deactivated the power ports when the vehicle enters a
 # sleep state. This restriction can hinder the completion of the archiving
-# process by TeslaUSB. Tesla subsequently introduced the “Keep Accessory Power
+# process by Sentry-USB. Tesla subsequently introduced the "Keep Accessory Power
+# On" feature, but is not applicable to the data port utilized by Dashcam and
+# Sentry-USB.
+#
+# In order to keep the car awake, several methods have been implemented:
+# TeslaFi, Tessie, Bluetooth Low Energy (BLE), and Webhooks. Please note that the previous
+# implementation using the (unofficial) Tesla API was removed. Tesla had
+# superseded it with their official Fleet API (a paid service for developers).
+#
+# Recent car firmware has deactivated the power ports when the vehicle enters a
+# sleep state. This restriction can hinder the completion of the archiving
+# process by Sentry-USB. Tesla subsequently introduced the “Keep Accessory Power
 # On” feature, but is not applicable to the data port utilized by Dashcam and
-# TeslaUSB.
+# Sentry-USB.
+#
+# In order to keep the car awake, several methods have been implemented:
+# TeslaFi, Tessie, Bluetooth Low Energy (BLE), and Webhooks. Please note that the previous
+# implementation using the (unofficial) Tesla API was removed. Tesla had
+# superseded it with their official Fleet API (a paid service for developers).
 #
 # In order to keep the car awake, several methods have been implemented:
 # TeslaFi, Tessie, Bluetooth Low Energy (BLE), and Webhooks. Please note that the previous
@@ -273,7 +288,7 @@ export CAM_SIZE=40G
 #   - Added complexity to configure initially
 #   - Some security vulnerability
 #   * See Hardware wiki for more BLE hardware & software support notes:
-#     https://github.com/marcone/teslausb/wiki/Hardware
+#     https://github.com/Scottmg1/Sentry-USB/wiki/Hardware
 #
 # TeslaFi/Tessie Pros/Cons:
 #   + Straightforward to configure initially
@@ -284,7 +299,7 @@ export CAM_SIZE=40G
 #   - Requires paid 3rd-party service from TeslaFi or Tessie
 #
 # Webhook Pros/Cons:
-#   + Does not require teslausb to store credentials that can directly
+#   + Does not require SentryUSB to store credentials that can directly
 #     control your vehicle
 #   - Requires another service like home assistant be setup to receive
 #     webhooks and carry out the required actions to keep the vehicle awake
@@ -297,10 +312,10 @@ export CAM_SIZE=40G
 #   compromise your vehicle. User discretion advised.
 #
 #   Good Security Practices:
-#     * Change your TeslaUSB user passwords (pi and root)
-#     * Set user/password for the TeslaUSB AP (if enabled)
+#     * Change your SentryUSB user passwords (pi and root)
+#     * Set user/password for the SentryUSB AP (if enabled)
 #     * Enable Tesla's pin-to-drive
-#     * If your TeslaUSB has been compromised, immediately change your
+#     * If your SentryUSB has been compromised, immediately change your
 #       Tesla.com password, which will invalidate all 3rd-party app access.
 #       Followed by ...
 #         Tesla BLE: Login to your Tesla account and remove the BLE key pair.
@@ -315,8 +330,8 @@ export CAM_SIZE=40G
 # to set up notification mechanisms (see preceding sections) so you know when to
 # manually turn Off Sentry/Camp Mode from the Tesla App.
 #
-# Another alternative is using a power bank or UPS hat to keep TeslaUSB powered
-# independent of the power state of the car's USB ports. See the TeslaUSB wiki
+# Another alternative is using a power bank or UPS hat to keep SentryUSB powered
+# independent of the power state of the car's USB ports. See the SentryUSB wiki
 # for more info.
 #
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -333,7 +348,7 @@ export CAM_SIZE=40G
 #
 #          You want Sentry Mode turned On everywhere, except when parked safely
 #          at home. Upon arriving home, Sentry Mode will already be ON
-#          to power TeslaUSB through archiving. Once archiving completes, a
+#          to power SentryUSB through archiving. Once archiving completes, a
 #          command will be sent to turn OFF Sentry Mode, thus allowing the car
 #          to go back to sleep. Whenever you start a new drive, car will default
 #          Sentry Mode to ON by default, per your in-car setting.
@@ -344,7 +359,7 @@ export CAM_SIZE=40G
 #  Case 2: [Compatible with TeslaFi, Tessie, BLE, or Webhook]
 #
 #          You DON'T want Sentry Mode turned on anywhere, unless archiving.
-#          Mode of operation: Upon arriving home, TeslaUSB will send a command
+#          Mode of operation: Upon arriving home, SentryUSB will send a command
 #          to turn ON Sentry Mode. Once archiving completes, a command will be
 #          sent to turn OFF Sentry Mode, thus allow the car to go back to sleep.
 #          Sentry Mode will remain OFF from this point forward until the next
@@ -354,7 +369,7 @@ export CAM_SIZE=40G
 #
 #  Case 3: [Compatible with Tessie, BLE, or Webhook]
 #
-#          Sentry Mode is not used by TeslaUSB. Instead a periodic command is
+#          Sentry Mode is not used by SentryUSB. Instead a periodic command is
 #          sent to the car to keep it awake.
 #
 # Provide your use case here:
@@ -387,11 +402,11 @@ export CAM_SIZE=40G
 # For BLE, provide your vehicle VIN here:
 #export TESLA_BLE_VIN=5YJ3E1EA4JF000001
 #
-#   Pairing TeslaUSB as a BLE device:
+#   Pairing SentryUSB as a BLE device:
 #   
-#    1.  Ensure the TeslaUSB device is inside the vehicle and powered.
+#    1.  Ensure the SentryUSB device is inside the vehicle and powered.
 #
-#    2a. From the TeslaUSB Web UI: Menu > Tools > Pair BLE with Car
+#    2a. From the SentryUSB Web UI: Settings > Pair BLE with Car
 #    2b. Alternatively, if Web UI was not enabled, from the SSH command line:
 #        sudo /root/bin/tesla-control -ble -vin <your VIN> add-key-request /root/.ble/key_public.pem owner cloud_key
 #
@@ -428,7 +443,7 @@ export CAM_SIZE=40G
 #   above 60°C. Differences between manufacturer, model, and revisions should
 #   also be considered.
 #
-#   Uncommenting any of the following parameters will activate TeslaUSB's
+#   Uncommenting any of the following parameters will activate SentryUSB's
 #   temperature monitoring, which checks temperature once a minute and retains
 #   the maximum value until the device is reset or powered-off.
 #
@@ -465,14 +480,14 @@ export TEMPERATURE_POSTARCHIVE=true
 # reboot. Sizes can be specified as for example "500M" or "2G"
 # export INCREASE_ROOT_SIZE=500M
 
-# Uncomment if you want to have teslausb automatically install some
+# Uncomment if you want to have SentryUSB automatically install some
 # additional packages during setup. This only works if there is enough
 # free space available on the root partition to install the requested packages.
 # Requested packages should be space delineated
 # export INSTALL_USER_REQUESTED_PACKAGES="iftop mosh sysstat"
 
 # Uncomment if you want to use different vm/cpu parameters.
-# Leave commented to use teslausb's defaults, or set to 'default'
+# Leave commented to use SentryUSB's defaults, or set to 'default'
 # to use the system defaults.
 # See https://www.kernel.org/doc/Documentation/sysctl/vm.txt
 # and https://www.kernel.org/doc/Documentation/cpu-freq/governors.txt
@@ -482,8 +497,8 @@ export TEMPERATURE_POSTARCHIVE=true
 #export CPU_GOVERNOR=conservative
 
 # Uncomment and change if you want setup scripts to be pulled
-# from a different repo than github.com/marcone/teslausb
-# export REPO=marcone
+# from a different repo than github.com/Scottmg1/Sentry-USB
+# export REPO=Scottmg1
 
 # Uncomment and change if you want a different branch than main-dev
 # export BRANCH=main-dev

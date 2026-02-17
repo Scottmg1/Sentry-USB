@@ -104,7 +104,7 @@ def _rest_request(url, method=None, data=None):
         data = {}
     headers = {
       'Authorization': 'Bearer {}'.format(_get_api_token()),
-      'User-Agent': 'github.com/marcone/teslausb',
+      'User-Agent': 'github.com/Scottmg1/Sentry-USB',
     }
 
     _log("Sending {} Request: {}; Data: {}".format(method, url, data))
@@ -258,7 +258,7 @@ def _write_tesla_api_json():
 def _get_log_timestamp():
     # I can't figure out how to get a timezone aware version of now() in
     # Python 2.7 without pytz, so I kludged this together. It outputs the
-    # same timestamp format as the other logging done by TeslaUSB's code.
+    # same timestamp format as the other logging done by SentryUSB's code.
     zone = time.tzname[time.daylight]
     return datetime.now().strftime('%a %d %b %H:%M:%S {} %Y'.format(zone))
 
@@ -382,7 +382,7 @@ def streaming_ping():
     wake_up_vehicle()
 
     headers = {
-      'User-Agent': 'github.com/marcone/teslausb',
+      'User-Agent': 'github.com/Scottmg1/Sentry-USB',
       'Authorization': 'Bearer {}'.format(_get_api_token()),
       'Connection': 'Upgrade',
       'Upgrade': 'websocket',

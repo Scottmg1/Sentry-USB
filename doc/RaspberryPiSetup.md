@@ -70,7 +70,8 @@ There are two ways to install SentryUSB:
 2. Click **Settings** → **Open Wizard**
 3. Walk through all 9 steps (see [Setup Wizard Steps](#setup-wizard-steps) below)
 4. Click **Apply & Run Setup** on the final step
-5. The Pi configures itself and reboots (5–10 minutes)
+5. **The Pi will reboot several times** (3–5 reboots is normal). Each reboot takes 1–2 minutes. The full process takes **10–20 minutes**. Do not power off — just wait.
+6. When setup is complete, the web UI will come back online automatically.
 
 Then skip ahead to [Plug Into Your Tesla](#plug-into-your-tesla).
 
@@ -102,10 +103,7 @@ Use this if you want to start from a clean **Raspberry Pi OS Bookworm (64-bit Li
 2. Power it on with a USB power supply (do NOT plug into the Tesla yet)
 3. Wait 2–3 minutes for it to boot and connect to your network
 4. SSH in:
-   ```bash
-   ssh pi@sentryusb.local
-   ```
-   If `.local` doesn't resolve, check your router for the Pi's IP and use `ssh pi@<ip-address>`.
+   Check your router for the Pi's IP and use `ssh pi@<ip-address>`.
 
 ## B3. Install SentryUSB
 
@@ -113,17 +111,17 @@ Run the one-line installer as root:
 
 ```bash
 sudo -i
-curl -fsSL https://raw.githubusercontent.com/Scottmg1/Sentry-USB/main-dev/install.sh | bash
+curl -fsSL https://sentryusb.sentry-six.com | bash
 ```
 
-The installer will:
+That's it — **just run the command and wait**. The installer will:
 - Detect your Pi's architecture (ARM64 for Pi 4/5/Zero 2, ARMv7 for Pi Zero W)
-- Download the correct `sentryusb` binary from [Scottmg1/Sentry-USB](https://github.com/Scottmg1/Sentry-USB/releases)
+- Download the correct `sentryusb` binary
 - Install it as a systemd service on port 80
 - Create an initial config file if one doesn't exist
-- Set up the USB gadget and partition scripts
+- Set up the boot-loop mechanism for setup
 
-Takes about 2–5 minutes depending on your internet speed.
+The install takes about 2–5 minutes. When it finishes, **open the web UI to continue configuration**.
 
 ## B4. Open the Web UI & Configure
 
@@ -133,7 +131,7 @@ Takes about 2–5 minutes depending on your internet speed.
 4. The wizard will detect your existing WiFi configuration and pre-fill it — you can keep it or change it
 5. Walk through all 9 steps (see [Setup Wizard Steps](#setup-wizard-steps) below)
 6. Click **Apply & Run Setup** on the final step
-7. The Pi configures itself (creating USB drive partitions, setting up archiving, etc.) and reboots. This takes 5–10 minutes. LED flash stages:
+7. **The Pi will reboot multiple times** — this is completely normal. Setup continues automatically after each reboot. The full process takes **10–20 minutes**. Do not power off the device. LED flash stages:
    - **2 flashes** → Verifying config
    - **3 flashes** → Downloading scripts
    - **4 flashes** → Creating drive partitions
@@ -188,7 +186,7 @@ Takes about 2–5 minutes depending on your internet speed.
 ```bash
 ssh pi@sentryusb.local
 sudo -i
-curl -fsSL https://raw.githubusercontent.com/Scottmg1/Sentry-USB/main-dev/install.sh | bash
+curl -fsSL https://sentryusb.sentry-six.com | bash
 ```
 
 # Troubleshooting
@@ -215,3 +213,4 @@ sudo journalctl -u sentryusb -f
 - Check **Logs** → "Setup Log" in the web UI
 - Common causes: wrong WiFi password, archive server unreachable, SD card too small
 - You can re-run the wizard anytime — it's safe to re-apply
+- The Pi rebooting multiple times during setup is normal (3–5 reboots)

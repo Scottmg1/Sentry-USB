@@ -14,7 +14,7 @@ fi
 
 echo "Want $num_wanted_mutable_inodes, have $num_mutable_inodes: reformatting."
 
-systemctl stop teslausb || true
+systemctl stop sentryusb-archive || true
 systemctl stop dnsmasq  || true
 systemctl stop smbd || true
 systemctl stop nmbd || true

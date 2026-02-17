@@ -130,7 +130,7 @@ func (dh *DriveHandlers) processFiles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if body.ClipsDir == "" {
-		// Default clip directories on a teslausb Pi
+		// Default clip directories on a SentryUSB Pi
 		candidates := []string{
 			"/mnt/cam/TeslaCam/RecentClips",
 			"/mnt/cam/TeslaCam/SavedClips",

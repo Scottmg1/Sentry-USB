@@ -6,15 +6,15 @@ then
   exit 1
 fi
 
-if [ ! -L /teslausb ]
+if [ ! -L /sentryusb ]
 then
   mount / -o remount,rw
-  rm -rf /teslausb
+  rm -rf /sentryusb
   if [ -d /boot/firmware ] && findmnt --fstab /boot/firmware &> /dev/null
   then
-    ln -s /boot/firmware /teslausb
+    ln -s /boot/firmware /sentryusb
   else
-    ln -s /boot /teslausb
+    ln -s /boot /sentryusb
   fi
 fi
 
@@ -43,7 +43,7 @@ EOF
 function read_setup_variables {
   if [ -z "${setup_file+x}" ]
   then
-    local -r setup_file=/root/teslausb_setup_variables.conf
+    local -r setup_file=/root/sentryusb.conf
   fi
   if [ -e $setup_file ]
   then
@@ -122,8 +122,8 @@ function read_setup_variables {
   fi
   CONFIGURE_ARCHIVING=${CONFIGURE_ARCHIVING:-true}
   UPGRADE_PACKAGES=${UPGRADE_PACKAGES:-false}
-  export TESLAUSB_HOSTNAME=${TESLAUSB_HOSTNAME:-teslausb}
-  export NOTIFICATION_TITLE=${NOTIFICATION_TITLE:-${TESLAUSB_HOSTNAME}}
+  export SENTRYUSB_HOSTNAME=${SENTRYUSB_HOSTNAME:-sentryusb}
+  export NOTIFICATION_TITLE=${NOTIFICATION_TITLE:-${SENTRYUSB_HOSTNAME}}
   SAMBA_ENABLED=${SAMBA_ENABLED:-false}
   SAMBA_GUEST=${SAMBA_GUEST:-false}
   INCREASE_ROOT_SIZE=${INCREASE_ROOT_SIZE:-0}
@@ -144,7 +144,7 @@ then
     function log { echo "$@"; }
     export -f log
   fi
-  complete -W "diagnose upgrade install" setup-teslausb
+  complete -W "diagnose upgrade install" setup-sentryusb
 fi
 
 function isRaspberryPi {
@@ -195,16 +195,16 @@ then
   mkdir -p "$STATUSLED"
 fi
 
-if [ -f /teslausb/cmdline.txt ]
+if [ -f /sentryusb/cmdline.txt ]
 then
-  export CMDLINE_PATH=/teslausb/cmdline.txt
+  export CMDLINE_PATH=/sentryusb/cmdline.txt
 else
   export CMDLINE_PATH=/dev/null
 fi
 
-if [ -f /teslausb/config.txt ]
+if [ -f /sentryusb/config.txt ]
 then
-  export PICONFIG_PATH=/teslausb/config.txt
+  export PICONFIG_PATH=/sentryusb/config.txt
 else
   export PICONFIG_PATH=/dev/null
 fi

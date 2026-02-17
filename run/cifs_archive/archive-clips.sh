@@ -30,7 +30,7 @@ connectionmonitor $$ &
 # rsync's temp files may be left behind if the connection is lost,
 # but rsync doesn't clean these up on subsequent runs. Putting
 # them in a temp dir allows them to be easily cleaned up.
-rsynctmp=".teslausbtmp"
+rsynctmp=".sentryusbtmp"
 rm -rf "$ARCHIVE_MOUNT/${rsynctmp:?}" || true
 mkdir -p "$ARCHIVE_MOUNT/$rsynctmp"
 

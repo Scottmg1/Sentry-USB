@@ -6,7 +6,7 @@ This is a streamlined process for setting up the Pi. You'll flash a preconfigure
 
 - Assumes your Pi has access to Wifi, with internet access (during setup). (But all setup methods do currently.) USB networking is still enabled for troubleshooting or manual setup
 - This image will work for either _headless_ (tested) or _manual_ (tested less) setup.
-- Currently not tested with the rclone method when using headless setup, however you can specify 'none' as the archive method in the config file, which will configure the pi as a wifi-accessible USB drive, so you can then [configure rclone](./SetupRClone.md) or [configure rsync](./SetupRSync.md) and rerun the setup-teslausb script.
+- Currently not tested with the rclone method when using headless setup, however you can specify 'none' as the archive method in the config file, which will configure the pi as a wifi-accessible USB drive, so you can then [configure rclone](./SetupRClone.md) or [configure rsync](./SetupRSync.md) and rerun the setup-sentryusb script.
 
 ## Configure the SD card before first boot of the Pi
 
@@ -14,8 +14,8 @@ This is a streamlined process for setting up the Pi. You'll flash a preconfigure
 
     In Raspberry Pi Imager, you need to click 'Operating System' and then scroll _all the way down_ and select the 'Use custom' option.
 
-1.  Mount the card again, and in the `boot` directory create a `teslausb_setup_variables.conf` file to export the same environment variables normally needed for manual setup (including archive info, Wifi, and push notifications (if desired).
-    A sample conf file is located in the `boot` folder on the SD card. The latest sample is also available [from GitHub](https://github.com/Scottmg1/Sentry-USB/blob/main-dev/pi-gen-sources/00-teslausb-tweaks/files/teslausb_setup_variables.conf.sample).
+1.  Mount the card again, and in the `boot` directory create a `sentryusb.conf` file to export the same environment variables normally needed for manual setup (including archive info, Wifi, and push notifications (if desired).
+    A sample conf file is located in the `boot` folder on the SD card. The latest sample is also available [from GitHub](https://github.com/Scottmg1/Sentry-USB/blob/main-dev/pi-gen-sources/00-sentryusb-tweaks/files/sentryusb.conf.sample).
     The sample file contains documentation and suggestions for values.
 
     > **Note** When creating/editing the configuration file on Windows, ensure that it is saved with the correct extension. It is recommended to disable the "hide extensions for known file types" option in Windows so you can see the full file name.
@@ -70,11 +70,11 @@ This is a streamlined process for setting up the Pi. You'll flash a preconfigure
     | 4                         | Create partition and files to store camera clips/music)            |
     | 5                         | Setup completed; remounting filesystems as read-only and rebooting |
 
-The Pi should be available for `ssh` at `pi@teslausb.local`, over Wifi (if automatic setup works) or USB networking (if it doesn't). It takes about 5 minutes, or more depending on network speed, etc. The default password for user `pi@teslausb.local` is `raspberry`.
+The Pi should be available for `ssh` at `pi@sentryusb.local`, over Wifi (if automatic setup works) or USB networking (if it doesn't). It takes about 5 minutes, or more depending on network speed, etc. The default password for user `pi@sentryusb.local` is `raspberry`.
 
 If plugged into just a power source, or your car, give it a few minutes until the LED starts pulsing steadily which means the archive loop is running and you're good to go.
 
-You should see in `/teslausb` the `TESLAUSB_SETUP_FINISHED` and `WIFI_ENABLED` files as markers of headless setup success as well.
+You should see in `/sentryusb` the `SENTRYUSB_SETUP_FINISHED` and `WIFI_ENABLED` files as markers of headless setup success as well.
 
 ## Security
 
@@ -96,16 +96,16 @@ Given that the Pi contains sensitive information like your home wifi password an
 ### Troubleshooting
 
 - If everything seems to be working, but you still don't see the USB drive(s) either on your local machine, or in the car, check that you are indeed using a USB data cable, and not a charge-only cable. Also ensure you are plugged into the USB port on the Raspberry PI, and not the power port.
-- `ssh` to `pi@teslausb.local` (assuming Wifi came up, or your Pi is connected to your computer via USB) and look at the `/teslausb/teslausb-headless-setup.log`.
+- `ssh` to `pi@sentryusb.local` (assuming Wifi came up, or your Pi is connected to your computer via USB) and look at the `/sentryusb/sentryusb-setup.log`.
 - Try `sudo -i` and then run `/etc/rc.local`. The scripts are fairly resilient to restarting and not re-running previous steps, and will tell you about progress/failure.
 - If Wifi didn't come up:
-  - Double-check the SSID and WIFIPASS variables in `teslausb_setup_variables.conf`, and remove `WIFI_ENABLED`, then boot the SD in your Pi to retry automatic Wifi setup.
+  - Double-check the SSID and WIFIPASS variables in `sentryusb.conf`, and remove `WIFI_ENABLED`, then boot the SD in your Pi to retry automatic Wifi setup.
   - If you are using a WiFi network with a _hidden SSID_, edit `/boot/wpa_supplicant.conf.sample` and uncomment the line `scan_ssid=1` in the `network={...}` block.
   - If still no go, re-run `/etc/rc.local`
   - If all else fails, copy `/boot/wpa_supplicant.conf.sample` to `/boot/wpa_supplicant.conf` and edit out the `TEMP` variables to your desired settings.
 - Note: if you get an error about `read-only filesystem`, you may have to `sudo -i` and run `/root/bin/remountfs_rw`.
 - Try `date` to ensure the system clock is set correctly. If it is too far off, SSL/TLS Authentication will fail, preventing the installation from completing. You can set the date like `date -s "2 JAN 2022 15:04:05"`
-- Try `tail -f /teslausb/teslausb-headless-setup.log` to watch the logs during installation, which may shed some light on any errors occurring. Press `Ctrl-C` to stop watching logs.
+- Try `tail -f /sentryusb/sentryusb-setup.log` to watch the logs during installation, which may shed some light on any errors occurring. Press `Ctrl-C` to stop watching logs.
 
 More troubleshooting information in the [wiki](https://github.com/Scottmg1/Sentry-USB/wiki/Troubleshooting)
 
@@ -115,15 +115,15 @@ More troubleshooting information in the [wiki](https://github.com/Scottmg1/Sentr
 
 When the Pi boots the first time:
 
-- A `/teslausb/teslausb-headless-setup.log` file will be created and stages logged.
-- Marker files will be created in `teslausb` like `TESLA_USB_SETUP_STARTED` and `TESLA_USB_SETUP_FINISHED` to track progress.
-- Wifi is detected by looking for `/teslausb/WIFI_ENABLED` and if not, creates the `wpa_supplicant.conf` file in place, using `SSID` and `WIFIPASS` from `teslausb_setup_variables.conf` and reboots.
-- The Pi LED will flash patterns (2, 3, 4, 5) as it gets to each stage (labeled in the setup-teslausb script).
+- A `/sentryusb/sentryusb-setup.log` file will be created and stages logged.
+- Marker files will be created in `/sentryusb` like `SENTRYUSB_SETUP_STARTED` and `SENTRYUSB_SETUP_FINISHED` to track progress.
+- Wifi is detected by looking for `/sentryusb/WIFI_ENABLED` and if not, creates the `wpa_supplicant.conf` file in place, using `SSID` and `WIFIPASS` from `sentryusb.conf` and reboots.
+- The Pi LED will flash patterns (2, 3, 4, 5) as it gets to each stage (labeled in the setup-sentryusb script).
 - After the final stage and reboot the LED will go back to normal. Remember, the step to remount the filesystem takes a few minutes.
 
 At this point the next boot should start the Dashcam/music drives like normal. If you're watching the LED it will start flashing every 1 second, which is the archive loop running.
 
-> **Note** Don't delete the `TESLAUSB_SETUP_FINISHED` or `WIFI_ENABLED` files. This is how the system knows setup is complete.
+> **Note** Don't delete the `SENTRYUSB_SETUP_FINISHED` or `WIFI_ENABLED` files. This is how the system knows setup is complete.
 
 # Image modification sources
 

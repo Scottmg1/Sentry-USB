@@ -15,7 +15,8 @@ fi
 
 # install the fuse layer needed to work around an incompatibility
 # between Chrome and Tesla's recordings
-g++ -o /root/cttseraser -D_FILE_OFFSET_BITS=64 "$SOURCE_DIR/teslausb-www/cttseraser.cpp" -lstdc++ -lfuse
+g++ -o /root/cttseraser -D_FILE_OFFSET_BITS=64 "$SOURCE_DIR/teslausb-www/cttseraser.cpp" -lstdc++ -lfuse 2>/dev/null || \
+g++ -o /root/cttseraser -D_FILE_OFFSET_BITS=64 "$SOURCE_DIR/sentryusb-www/cttseraser.cpp" -lstdc++ -lfuse
 
 cat > /sbin/mount.ctts << EOF
 #!/bin/bash -eu

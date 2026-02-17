@@ -161,7 +161,7 @@ FIRST_MUTABLE_SECTOR=$((LAST_DISK_SECTOR-614400+1))
 # backingfiles partition sits between the last and mutable partition, calculate its start sector and size
 LAST_PART_SECTOR=$(sfdisk -o End -q -l "${BOOT_DISK}" | tail +2 | sort -n | tail -1)
 FIRST_BACKINGFILES_SECTOR=$((LAST_PART_SECTOR + 1))
-# round up to 1MB boundary because the TeslaUSB Buster prebuilt as well as older Armbian
+# round up to 1MB boundary because the SentryUSB Buster prebuilt as well as older Armbian
 # images might have an odd root partition size
 FIRST_BACKINGFILES_SECTOR=$(((FIRST_BACKINGFILES_SECTOR + 2047) / 2048 * 2048))
 BACKINGFILES_NUM_SECTORS=$((FIRST_MUTABLE_SECTOR - FIRST_BACKINGFILES_SECTOR))

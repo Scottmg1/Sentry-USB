@@ -20,7 +20,7 @@ func (h *handlers) reboot(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) toggleDrives(w http.ResponseWriter, r *http.Request) {
-	if _, err := os.Stat("/sys/kernel/config/usb_gadget/teslausb"); err == nil {
+	if _, err := os.Stat("/sys/kernel/config/usb_gadget/sentryusb"); err == nil {
 		shell.Run("bash", "/root/bin/disable_gadget.sh")
 	} else {
 		shell.Run("bash", "/root/bin/enable_gadget.sh")

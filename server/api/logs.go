@@ -8,7 +8,7 @@ import (
 
 var allowedLogs = map[string]string{
 	"archiveloop":  "/mutable/archiveloop.log",
-	"setup":        "/teslausb/teslausb-headless-setup.log",
+	"setup":        "/sentryusb/sentryusb-setup.log",
 	"diagnostics":  "/tmp/diagnostics.txt",
 }
 

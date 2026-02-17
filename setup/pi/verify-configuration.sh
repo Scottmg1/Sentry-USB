@@ -31,7 +31,7 @@ function check_supported_hardware () {
     return
   fi
   setup_progress "STOP: unsupported hardware: '$(cat /sys/firmware/devicetree/base/model)'"
-  setup_progress "(only Pi Zero W, Pi 4, and Pi 5 have the necessary hardware to run teslausb)"
+  setup_progress "(only Pi Zero W, Pi 4, and Pi 5 have the necessary hardware to run SentryUSB)"
   exit 1
 }
 
@@ -147,18 +147,18 @@ function check_available_space_usb () {
   setup_progress "There is sufficient space available."
 }
 
-function check_setup_teslausb () {
-  if [ ! -e /root/bin/setup-teslausb ]
+function check_setup_sentryusb () {
+  if [ ! -e /root/bin/setup-sentryusb ]
   then
-    setup_progress "STOP: setup-teslausb is not in /root/bin"
+    setup_progress "STOP: setup-sentryusb is not in /root/bin"
     exit 1
   fi
 
   local parent
   parent="$(ps -o comm= $PPID)"
-  if [ "$parent" != "setup-teslausb" ]
+  if [ "$parent" != "setup-sentryusb" ]
   then
-    setup_progress "STOP: $0 must be called from setup-teslausb: $parent"
+    setup_progress "STOP: $0 must be called from setup-sentryusb: $parent"
     exit 1
   fi
 }
@@ -169,7 +169,7 @@ check_udc
 
 check_xfs
 
-check_setup_teslausb
+check_setup_sentryusb
 
 check_variable "CAM_SIZE"
 
