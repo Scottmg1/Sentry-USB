@@ -22,7 +22,8 @@ copy-static:
 		cp -r ../web/dist/* static/; \
 		echo "Copied frontend build to static/"; \
 	else \
-		echo "Warning: ../web/dist not found. Run 'npm run build' in web/ first."; \
+		echo "Error: ../web/dist not found. Run 'npm run build' in web/ first." >&2; \
+		exit 1; \
 	fi
 
 # Run in development mode (no static embedding, proxy to Vite)
