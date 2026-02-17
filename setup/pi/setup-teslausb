@@ -153,7 +153,7 @@ then
     ROOTSTART=$(partx --show -g -o START "${ROOT_PARTITION_DEVICE}")
     ROOTSIZE=$(partx --show -g -o SECTORS "${ROOT_PARTITION_DEVICE}")
     ROOTSIZE=$((ROOTSIZE + INCREASE_ROOT_SIZE))
-    echo "$ROOTSTART,$ROOTSIZE" | sfdisk --force "${BOOT_DISK}" -N "${ROOT_PART_NUM}"
+    echo "$ROOTSTART,$ROOTSIZE" | sfdisk --force --no-reread "${BOOT_DISK}" -N "${ROOT_PART_NUM}"
     setup_progress "increased root partition size"
     REBOOT=true
   else
