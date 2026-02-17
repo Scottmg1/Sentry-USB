@@ -689,6 +689,7 @@ function archive_clips () {
   fi
 
   touch /tmp/flag_post_archive  #Set post-archive flag for optional temperature logging
+  /root/bin/post-archive-process.sh || log "post-archive processing failed"
   /root/bin/disconnect-archive.sh
 }
 
@@ -871,8 +872,6 @@ then
 
   archive_clips
 
-  /root/bin/post-archive-process.sh || log "post-archive processing failed"
-
   /root/bin/awake_stop || true
 
   doubleblink
@@ -903,8 +902,6 @@ do
   fi
 
   archive_clips
-
-  /root/bin/post-archive-process.sh || log "post-archive processing failed"
 
   /root/bin/awake_stop || true
 

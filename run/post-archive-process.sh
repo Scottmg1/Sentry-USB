@@ -25,9 +25,10 @@ if ! curl -sf "${API_URL}/api/drives/status" > /dev/null 2>&1; then
   exit 0
 fi
 
-# Determine clips directory — process from the local cam drive before files are deleted
+# Determine clips directory — check archive mount first (files are moved there during archiving)
 CLIPS_DIR=""
-for dir in /mnt/cam/TeslaCam/RecentClips /mnt/cam/TeslaCam/SavedClips /mnt/cam/TeslaCam/SentryClips; do
+for dir in /mnt/archive/TeslaCam/SavedClips /mnt/archive/TeslaCam/SentryClips /mnt/archive/TeslaCam/RecentClips \
+           /mnt/cam/TeslaCam/SavedClips /mnt/cam/TeslaCam/SentryClips /mnt/cam/TeslaCam/RecentClips; do
   if [ -d "$dir" ]; then
     CLIPS_DIR="$dir"
     break

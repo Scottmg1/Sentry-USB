@@ -131,11 +131,14 @@ func (dh *DriveHandlers) processFiles(w http.ResponseWriter, r *http.Request) {
 
 	if body.ClipsDir == "" {
 		// Default clip directories on a SentryUSB Pi
+		// Check archive mount first (files are moved there during archiving)
 		candidates := []string{
-			"/mnt/cam/TeslaCam/RecentClips",
+			"/mnt/archive/TeslaCam/SavedClips",
+			"/mnt/archive/TeslaCam/SentryClips",
+			"/mnt/archive/TeslaCam/RecentClips",
 			"/mnt/cam/TeslaCam/SavedClips",
 			"/mnt/cam/TeslaCam/SentryClips",
-			"/mnt/archive/TeslaCam/RecentClips",
+			"/mnt/cam/TeslaCam/RecentClips",
 		}
 		for _, dir := range candidates {
 			if info, err := os.Stat(dir); err == nil && info.IsDir() {
