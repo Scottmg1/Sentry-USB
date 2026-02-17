@@ -25,13 +25,17 @@ jobs:
           npm ci --no-audit --no-fund
           npm run build
 
-      - name: Copy static files into server
-        working-directory: server
-        run: make copy-static
+      - name: Copy frontend into server/static
+        run: |
+          rm -rf server/static/*
+          cp -r web/dist/* server/static/
+          echo "Static files:"
+          ls -la server/static/
 
       - name: Build binaries
         working-directory: server
         run: |
+          ls -la static/
           GOOS=linux GOARCH=arm64 go build -ldflags "-s -w" -o bin/sentryusb-linux-arm64 .
           GOOS=linux GOARCH=arm GOARM=7 go build -ldflags "-s -w" -o bin/sentryusb-linux-armv7 .
 
