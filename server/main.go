@@ -57,9 +57,6 @@ func main() {
 		mux.Handle("/", spaHandler(staticFS))
 	}
 
-	// Auto-resume setup if it was interrupted by a reboot (e.g. partition resize)
-	api.AutoResumeSetup(hub)
-
 	addr := fmt.Sprintf(":%d", *port)
 	log.Printf("SentryUSB server starting on %s", addr)
 	if *dev {

@@ -71,7 +71,7 @@ function get_script () {
 
   IFS=". " read -r start_time _ < /proc/uptime
 
-  while ! curl -o "$local_path/$name" https://raw.githubusercontent.com/"$REPO"/teslausb/"$BRANCH"/"$remote_path"/"$name"
+  while ! curl -o "$local_path/$name" https://raw.githubusercontent.com/"$REPO"/"$REPO_NAME"/"$BRANCH"/"$remote_path"/"$name"
   do
     setup_progress "get_script failed, retrying"
     sntp -S time.google.com || true
@@ -221,7 +221,8 @@ then
 
   if [ ! -e "/root/bin/setup-teslausb" ]
   then
-    REPO=${REPO:-marcone}
+    REPO=${REPO:-Scottmg1}
+    REPO_NAME=${REPO_NAME:-Sentry-USB}
     BRANCH=${BRANCH:-main-dev}
     # Script doesn't exist, grab it.
     setup_progress "Grabbing main setup file."

@@ -1,13 +1,17 @@
-#!/bin/bash
-set -euo pipefail
-
+#!/bin/bash -eu
+#
 # SentryUSB Installer
-# Downloads or builds and installs the SentryUSB server binary on a Raspberry Pi
+#
+# This script combines:
+#   1. TeslaUSB pre-setup (symlinks, partition handling, rc.local, prerequisite packages)
+#   2. SentryUSB binary + systemd service installation
+#
+# The rc.local boot-loop mechanism (from original TeslaUSB) handles setup across
+# reboots. The SentryUSB web UI provides configuration via a setup wizard.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/.../install.sh | bash
-#   bash install.sh                      # download release or build from source
-#   bash install.sh /path/to/binary      # install a pre-built binary directly
+#   sudo -i
+#   curl -fsSL https://raw.githubusercontent.com/Scottmg1/Sentry-USB/main-dev/install.sh | bash
 
 REPO="Scottmg1/Sentry-USB"
 BRANCH="main-dev"
@@ -26,12 +30,162 @@ NC='\033[0m'
 info()  { echo -e "${BLUE}[INFO]${NC} $1"; }
 ok()    { echo -e "${GREEN}[OK]${NC} $1"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
-err()   { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
+error_exit() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 
-# Must be root
-if [ "$(id -u)" -ne 0 ]; then
-    err "This script must be run as root. Try: sudo bash install.sh"
+if [[ $EUID -ne 0 ]]; then
+    error_exit "This script must be run as root. Try: sudo -i"
 fi
+
+# ── Step 1: TeslaUSB Pre-Setup ─────────────────────────────────────
+# (Mirrors setup/generic/install.sh from original TeslaUSB)
+
+info "Setting up /teslausb symlink..."
+if [ ! -L /teslausb ]; then
+    rm -rf /teslausb
+    if [ -d /boot/firmware ] && findmnt --fstab /boot/firmware &> /dev/null; then
+        ln -s /boot/firmware /teslausb
+    else
+        ln -s /boot /teslausb
+    fi
+fi
+ok "/teslausb -> $(readlink /teslausb)"
+
+function flash_rapidly {
+    for led in /sys/class/leds/*; do
+        if [ -e "$led/trigger" ]; then
+            if ! grep -q timer "$led/trigger"; then
+                modprobe ledtrig-timer || true
+            fi
+            echo timer > "$led/trigger" || true
+            if [ -e "$led/delay_off" ]; then
+                echo 150 > "$led/delay_off" || true
+                echo 50 > "$led/delay_on" || true
+            fi
+        fi
+    done
+}
+
+# Handle root partition shrinking (same as TeslaUSB)
+rootpart=$(findmnt -n -o SOURCE /)
+rootname=$(lsblk -no pkname "${rootpart}")
+rootdev="/dev/${rootname}"
+marker="/root/RESIZE_ATTEMPTED"
+
+lastpart=$(sfdisk -q -l "$rootdev" | tail +2 | sort -n -k 2 | tail -1 | awk '{print $1}')
+unpart=$(sfdisk -F "$rootdev" | grep -o '[0-9]* bytes' | head -1 | awk '{print $1}')
+
+if [ "${1:-}" != "norootshrink" ] && [ "$unpart" -lt $(( (1<<30) * 32)) ]; then
+    if [ "$rootpart" != "$lastpart" ]; then
+        error_exit "Insufficient unpartitioned space, and root partition is not the last partition."
+    fi
+
+    devsectorsize=$(cat "/sys/block/${rootname}/queue/hw_sector_size")
+    read -r fsblockcount fsblocksize < <(tune2fs -l "${rootpart}" | grep "Block count:\|Block size:" | awk ' {print $2}' FS=: | tr -d ' ' | tr '\n' ' ' | (cat; echo))
+    fsnumsectors=$((fsblockcount * fsblocksize / devsectorsize))
+    partnumsectors=$(sfdisk -q -l -o Sectors "${rootdev}" | tail +2 | sort -n | tail -1)
+    partnumsectors=$((partnumsectors - 1))
+
+    if [ "$partnumsectors" -le "$fsnumsectors" ]; then
+        if [ -f "$marker" ]; then
+            error_exit "Previous resize attempt failed. Delete $marker before retrying."
+        fi
+        touch "$marker"
+
+        info "Insufficient unpartitioned space, attempting to shrink root file system"
+
+        cat <<- EOF > /etc/rc.local
+		#!/bin/bash
+		{
+		  while ! curl -s https://raw.githubusercontent.com/$REPO/$BRANCH/install.sh
+		  do
+		    sleep 1
+		  done
+		} | bash
+		EOF
+        chmod a+x /etc/rc.local
+
+        if [ ! -e "/boot/initrd.img-$(uname -r)" ]; then
+            if [ -f /etc/os-release ] && grep -q Raspbian /etc/os-release && [ -e /teslausb/config.txt ]; then
+                info "Temporarily switching Raspberry Pi OS to use initramfs"
+                update-initramfs -c -k "$(uname -r)"
+                echo "initramfs initrd.img-$(uname -r) followkernel # TESLAUSB-REMOVE" >> /teslausb/config.txt
+            else
+                error_exit "Can't automatically shrink root partition for this OS, please shrink it manually before proceeding"
+            fi
+        fi
+
+        {
+            while ! curl -s "https://raw.githubusercontent.com/$REPO/$BRANCH/tools/debian-resizefs.sh"; do
+                sleep 1
+            done
+        } | bash -s 3G
+        exit 0
+    fi
+
+    rm -f "$marker"
+    info "Shrinking root partition to match root fs, $fsnumsectors sectors"
+    sleep 3
+    rootpartstartsector=$(sfdisk -q -l -o Start "${rootdev}" | tail +2 | sort -n | tail -1)
+    partnum=${rootpart:0-1}
+    echo "${rootpartstartsector},${fsnumsectors}" | sfdisk --force "${rootdev}" -N "${partnum}"
+
+    if [ -e /teslausb/config.txt ] && grep -q TESLAUSB-REMOVE /teslausb/config.txt; then
+        sed -i '/TESLAUSB-REMOVE/d' /teslausb/config.txt
+        rm -rf "/boot/initrd.img-$(uname -r)"
+    else
+        update-initramfs -u
+    fi
+
+    reboot
+    exit 0
+fi
+
+# Copy config template if no config exists
+if [ ! -e /teslausb/teslausb_setup_variables.conf ] && [ ! -e /root/teslausb_setup_variables.conf ]; then
+    info "Downloading config template..."
+    while ! curl -fsSL -o /root/teslausb_setup_variables.conf \
+        "https://raw.githubusercontent.com/$REPO/$BRANCH/pi-gen-sources/00-teslausb-tweaks/files/teslausb_setup_variables.conf.sample"; do
+        sleep 1
+    done
+    ok "Config template saved to /root/teslausb_setup_variables.conf"
+fi
+
+# Download wifi config template
+if [ ! -e /teslausb/wpa_supplicant.conf.sample ]; then
+    while ! curl -fsSL -o /teslausb/wpa_supplicant.conf.sample \
+        "https://raw.githubusercontent.com/$REPO/$BRANCH/pi-gen-sources/00-teslausb-tweaks/files/wpa_supplicant.conf.sample"; do
+        sleep 1
+    done
+fi
+
+# User configured networking manually, skip wifi setup in rc.local
+touch /teslausb/WIFI_ENABLED
+
+# Install rc.local — this is the boot-loop mechanism that runs setup-teslausb
+# on every boot until TESLAUSB_SETUP_FINISHED exists (same as original TeslaUSB)
+info "Installing rc.local (setup boot-loop)..."
+rm -f /etc/rc.local
+while ! curl -fsSL -o /etc/rc.local \
+    "https://raw.githubusercontent.com/$REPO/$BRANCH/pi-gen-sources/00-teslausb-tweaks/files/rc.local"; do
+    sleep 1
+done
+chmod a+x /etc/rc.local
+ok "rc.local installed"
+
+# Install prerequisite packages
+info "Installing prerequisite packages..."
+apt-get update -qq
+for pkg in dos2unix parted fdisk sudo curl; do
+    if ! command -v "$pkg" &> /dev/null; then
+        apt-get install -y "$pkg" 2>/dev/null || true
+    fi
+done
+if ! command -v sntp &> /dev/null && ! command -v ntpdig &> /dev/null; then
+    apt-get install -y sntp 2>/dev/null || apt-get install -y ntpsec-ntpdig 2>/dev/null || true
+fi
+ok "Prerequisites installed"
+
+# ── Step 2: Install SentryUSB Binary ───────────────────────────────
 
 # Detect architecture
 ARCH=$(uname -m)
@@ -40,15 +194,11 @@ case "$ARCH" in
     armv7l)   BINARY_SUFFIX="linux-armv7"; GO_ARCH="armv6l" ;;
     armv6l)   BINARY_SUFFIX="linux-armv7"; GO_ARCH="armv6l" ;;
     x86_64)   BINARY_SUFFIX="linux-amd64"; GO_ARCH="amd64" ;;
-    *)        err "Unsupported architecture: $ARCH" ;;
+    *)        error_exit "Unsupported architecture: $ARCH" ;;
 esac
 
 info "Detected architecture: $ARCH → $BINARY_SUFFIX"
-
-# Create install directory
 mkdir -p "$INSTALL_DIR"
-
-# ── Step 1: Get the binary ──────────────────────────────────────────
 
 BINARY_INSTALLED=false
 
@@ -65,14 +215,12 @@ fi
 if [ "$BINARY_INSTALLED" = false ]; then
     info "Downloading SentryUSB binary from GitHub Releases..."
 
-    # Try stable release first
     DOWNLOAD_URL="https://github.com/$REPO/releases/latest/download/$BINARY_NAME-$BINARY_SUFFIX"
     if curl -fsSL "$DOWNLOAD_URL" -o "$INSTALL_DIR/$BINARY_NAME" 2>/dev/null; then
         chmod +x "$INSTALL_DIR/$BINARY_NAME"
         BINARY_INSTALLED=true
         ok "Binary downloaded from latest release"
     else
-        # Try finding the newest release (including pre-releases) via API
         info "No stable release found, checking pre-releases..."
         ASSET_URL=$(curl -fsSL "https://api.github.com/repos/$REPO/releases" 2>/dev/null \
             | grep -o "\"browser_download_url\": *\"[^\"]*$BINARY_NAME-$BINARY_SUFFIX\"" \
@@ -95,56 +243,43 @@ fi
 if [ "$BINARY_INSTALLED" = false ]; then
     info "Building from source..."
 
-    # Install Go if not present
     if ! command -v go &> /dev/null; then
         info "Installing Go ${GO_VERSION}..."
         GO_TAR="go${GO_VERSION}.linux-${GO_ARCH}.tar.gz"
-        curl -fsSL "https://go.dev/dl/${GO_TAR}" -o "/tmp/${GO_TAR}" || err "Failed to download Go"
+        curl -fsSL "https://go.dev/dl/${GO_TAR}" -o "/tmp/${GO_TAR}" || error_exit "Failed to download Go"
         rm -rf /usr/local/go
         tar -C /usr/local -xzf "/tmp/${GO_TAR}"
         rm "/tmp/${GO_TAR}"
         export PATH="/usr/local/go/bin:$PATH"
         ok "Go ${GO_VERSION} installed"
-    else
-        info "Go already installed: $(go version)"
     fi
 
-    # Install Node.js/npm if not present (for frontend build)
     if ! command -v node &> /dev/null; then
         info "Installing Node.js..."
-        if command -v apt-get &> /dev/null; then
-            curl -fsSL https://deb.nodesource.com/setup_20.x | bash - 2>/dev/null
-            apt-get install -y nodejs 2>/dev/null || {
-                # Fallback: install from NodeSource manually
-                warn "NodeSource setup failed, trying apt default..."
-                apt-get install -y nodejs npm 2>/dev/null || err "Failed to install Node.js"
-            }
-        else
-            err "Cannot install Node.js automatically. Please install it first."
-        fi
+        curl -fsSL https://deb.nodesource.com/setup_20.x | bash - 2>/dev/null
+        apt-get install -y nodejs 2>/dev/null || {
+            warn "NodeSource setup failed, trying apt default..."
+            apt-get install -y nodejs npm 2>/dev/null || error_exit "Failed to install Node.js"
+        }
         ok "Node.js installed: $(node --version)"
     fi
 
-    # Clone repo
     BUILD_DIR="/tmp/sentryusb-build"
     rm -rf "$BUILD_DIR"
     info "Cloning repository..."
     if command -v git &> /dev/null; then
         git clone --depth 1 -b "$BRANCH" "https://github.com/$REPO.git" "$BUILD_DIR"
     else
-        info "git not found, downloading tarball..."
         mkdir -p "$BUILD_DIR"
         curl -fsSL "https://github.com/$REPO/archive/$BRANCH.tar.gz" | tar xz --strip-components=1 -C "$BUILD_DIR"
     fi
 
-    # Build frontend
-    info "Building frontend (this may take a few minutes on Pi)..."
+    info "Building frontend..."
     cd "$BUILD_DIR/web"
     npm ci --no-audit --no-fund 2>&1 | tail -3
     npm run build 2>&1 | tail -5
     ok "Frontend built"
 
-    # Build backend with embedded frontend
     info "Building server binary..."
     cd "$BUILD_DIR/server"
     make build 2>&1 | tail -3
@@ -152,53 +287,17 @@ if [ "$BINARY_INSTALLED" = false ]; then
     chmod +x "$INSTALL_DIR/$BINARY_NAME"
     BINARY_INSTALLED=true
     ok "Binary built and installed"
-
-    # Cleanup
     rm -rf "$BUILD_DIR"
 fi
 
 if [ "$BINARY_INSTALLED" = false ]; then
-    err "Failed to obtain SentryUSB binary. Try building on another machine:\n  cd server && make build-arm64\n  scp bin/sentryusb-linux-arm64 pi@<pi-ip>:/tmp/sentryusb\n  Then run: bash install.sh /tmp/sentryusb"
+    error_exit "Failed to obtain SentryUSB binary. Try building on another machine:\n  cd server && make build-arm64\n  scp bin/sentryusb-linux-arm64 pi@<pi-ip>:/tmp/sentryusb\n  Then run: bash install.sh /tmp/sentryusb"
 fi
 
 ok "Binary installed to $INSTALL_DIR/$BINARY_NAME"
 
-# Create config file if it doesn't exist
-CONFIG_PATH="/root/teslausb_setup_variables.conf"
-if [ ! -f "$CONFIG_PATH" ]; then
-    BOOT_CONFIG="/boot/firmware/teslausb_setup_variables.conf"
-    BOOT_CONFIG_ALT="/boot/teslausb_setup_variables.conf"
-    if [ -f "$BOOT_CONFIG" ]; then
-        info "Found config at $BOOT_CONFIG"
-    elif [ -f "$BOOT_CONFIG_ALT" ]; then
-        info "Found config at $BOOT_CONFIG_ALT"
-    else
-        info "Creating initial config file at $CONFIG_PATH"
-        cat > "$CONFIG_PATH" << 'CONF'
-# SentryUSB Configuration
-# Configure these values via the web UI Setup Wizard at http://sentryusb.local
-# Or edit this file directly and re-run setup.
+# ── Step 3: Install systemd service ────────────────────────────────
 
-#export SSID='YourWiFiSSID'
-#export WIFIPASS='YourWiFiPassword'
-#export TESLAUSB_HOSTNAME=sentryusb
-
-#export ARCHIVE_SYSTEM=cifs
-#export ARCHIVE_SERVER=your-server
-#export SHARE_NAME=your-share
-#export SHARE_USER=your-user
-#export SHARE_PASSWORD='your-password'
-
-#export CAM_SIZE=40G
-#export MUSIC_SIZE=
-#export LIGHTSHOW_SIZE=
-#export BOOMBOX_SIZE=
-CONF
-        ok "Created $CONFIG_PATH"
-    fi
-fi
-
-# Create systemd service
 info "Installing systemd service..."
 cat > "/etc/systemd/system/$SERVICE_NAME.service" << EOF
 [Unit]
@@ -226,13 +325,17 @@ systemctl enable "$SERVICE_NAME"
 systemctl restart "$SERVICE_NAME"
 ok "Service installed and started"
 
-# Check if it's running
+# ── Step 4: Remove stale cached setup scripts ──────────────────────
+# Force fresh download on next setup run so latest fixes are used
+rm -f /root/bin/setup-teslausb /root/bin/envsetup.sh
+
+# ── Done ───────────────────────────────────────────────────────────
+
 sleep 2
 if systemctl is-active --quiet "$SERVICE_NAME"; then
     ok "SentryUSB is running!"
     echo ""
     echo -e "  ${GREEN}Open your browser to:${NC}"
-    # Try to get the IP
     IP=$(hostname -I 2>/dev/null | awk '{print $1}')
     if [ -n "$IP" ]; then
         echo -e "    http://$IP"
@@ -240,8 +343,9 @@ if systemctl is-active --quiet "$SERVICE_NAME"; then
     HOSTNAME=$(hostname 2>/dev/null)
     echo -e "    http://${HOSTNAME}.local"
     echo ""
-    echo -e "  Then click ${BLUE}Settings → Open Wizard${NC} to configure."
+    echo -e "  Configure via the ${BLUE}Setup Wizard${NC} in the web UI."
+    echo -e "  Or edit /root/teslausb_setup_variables.conf and run /etc/rc.local"
     echo ""
 else
-    err "Service failed to start. Check: journalctl -u $SERVICE_NAME -f"
+    error_exit "Service failed to start. Check: journalctl -u $SERVICE_NAME -f"
 fi
