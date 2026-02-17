@@ -44,6 +44,7 @@ function process_clips_dir() {
   local timeout=1800
   local elapsed=0
   local poll_interval=10
+  local last_progress_log=0
 
   while [ $elapsed -lt $timeout ]; do
     sleep $poll_interval
@@ -58,8 +59,17 @@ function process_clips_dir() {
     RUNNING=$(echo "$STATUS" | grep -o '"running":true' || true)
     if [ -z "$RUNNING" ]; then
       ROUTES=$(echo "$STATUS" | grep -o '"routes_count":[0-9]*' | cut -d: -f2)
-      log "Processing complete for $clips_dir. Total routes: ${ROUTES:-unknown}"
+      PROCESSED=$(echo "$STATUS" | grep -o '"processed_count":[0-9]*' | cut -d: -f2)
+      log "Processing complete for $clips_dir. Routes: ${ROUTES:-0}, Files processed: ${PROCESSED:-0}"
       return 0
+    fi
+
+    # Log progress every 60 seconds
+    if [ $((elapsed - last_progress_log)) -ge 60 ]; then
+      PROCESSED=$(echo "$STATUS" | grep -o '"processed_count":[0-9]*' | cut -d: -f2)
+      ROUTES=$(echo "$STATUS" | grep -o '"routes_count":[0-9]*' | cut -d: -f2)
+      log "Still processing $clips_dir... (${elapsed}s elapsed, ${PROCESSED:-?} files processed, ${ROUTES:-?} routes)"
+      last_progress_log=$elapsed
     fi
   done
 
