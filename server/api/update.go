@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"runtime"
@@ -14,7 +15,6 @@ import (
 const updateRepo = "Scottmg1/Sentry-USB"
 
 func (h *handlers) checkInternet(w http.ResponseWriter, r *http.Request) {
-	// Try to reach GitHub
 	_, err := shell.RunWithTimeout(10*time.Second, "curl", "-sf", "--max-time", "8",
 		"-o", "/dev/null", "https://github.com")
 	if err != nil {
@@ -31,85 +31,105 @@ func (h *handlers) checkInternet(w http.ResponseWriter, r *http.Request) {
 
 func (h *handlers) runUpdate(w http.ResponseWriter, r *http.Request) {
 	go func() {
-		h.hub.Broadcast("update_status", map[string]string{"status": "checking_internet"})
+		broadcast := func(status, msg string) {
+			h.hub.Broadcast("update_status", map[string]string{"status": status, "message": msg})
+		}
+		broadcastErr := func(msg string) {
+			log.Printf("[update] ERROR: %s", msg)
+			h.hub.Broadcast("update_status", map[string]string{"status": "error", "error": msg})
+		}
 
-		// 1. Check internet connectivity
+		broadcast("checking_internet", "Checking internet connection...")
+
+		// 1. Check internet
 		_, err := shell.RunWithTimeout(10*time.Second, "curl", "-sf", "--max-time", "8",
 			"-o", "/dev/null", "https://github.com")
 		if err != nil {
-			h.hub.Broadcast("update_status", map[string]string{
-				"status": "error",
-				"error":  "No internet connection. Connect to WiFi first.",
-			})
+			broadcastErr("No internet connection. Connect to WiFi first.")
 			return
 		}
 
-		h.hub.Broadcast("update_status", map[string]string{"status": "remounting_rw"})
-
-		// 2. Remount filesystem as read-write
-		shell.Run("bash", "-c", "/root/bin/remountfs_rw")
-
-		h.hub.Broadcast("update_status", map[string]string{"status": "downloading"})
-
-		// 3. Determine architecture and download URL
+		// 2. Check if a release actually exists
+		broadcast("checking", "Checking for latest release...")
 		arch := runtime.GOARCH
 		suffix := "linux-arm64"
 		if arch == "arm" {
 			suffix = "linux-armv7"
 		}
-
 		downloadURL := fmt.Sprintf(
 			"https://github.com/%s/releases/latest/download/sentryusb-%s",
 			updateRepo, suffix,
 		)
 
-		// Download to temp location
+		// HEAD request to check the binary exists before downloading
+		_, err = shell.RunWithTimeout(15*time.Second, "curl", "-sfI", "--max-time", "10",
+			downloadURL)
+		if err != nil {
+			broadcastErr(fmt.Sprintf("No release binary found at GitHub. Publish a release with the binary first.\nURL: %s", downloadURL))
+			return
+		}
+
+		// 3. Remount filesystem as read-write
+		broadcast("remounting", "Remounting filesystem...")
+		shell.Run("bash", "-c", "/root/bin/remountfs_rw")
+
+		// 4. Download the binary
+		broadcast("downloading", "Downloading latest release...")
 		tmpPath := "/tmp/sentryusb-update"
 		_, err = shell.RunWithTimeout(120*time.Second, "curl", "-fsSL",
 			"-o", tmpPath, downloadURL)
 		if err != nil {
-			h.hub.Broadcast("update_status", map[string]string{
-				"status": "error",
-				"error":  "Failed to download update: " + err.Error(),
-			})
+			broadcastErr("Failed to download update: " + shell.CleanStderr(err.Error()))
 			return
 		}
-
-		// Make executable
 		os.Chmod(tmpPath, 0755)
 
-		h.hub.Broadcast("update_status", map[string]string{"status": "installing"})
+		broadcast("installing", "Installing update...")
 
-		// 4. Also update setup scripts from the repo
-		_, _ = shell.RunWithTimeout(60*time.Second, "bash", "-c",
-			fmt.Sprintf("curl -fsSL https://raw.githubusercontent.com/%s/main-dev/install.sh | bash", updateRepo))
+		// 5. Also fetch the latest version tag
+		versionTag := "unknown"
+		tagOutput, tagErr := shell.RunWithTimeout(10*time.Second, "curl", "-sfL", "--max-time", "8",
+			fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", updateRepo))
+		if tagErr == nil {
+			// Parse the tag_name from JSON (simple extraction)
+			if idx := strings.Index(tagOutput, `"tag_name"`); idx >= 0 {
+				rest := tagOutput[idx:]
+				if start := strings.Index(rest, `":"`); start >= 0 {
+					rest = rest[start+3:]
+					if end := strings.Index(rest, `"`); end >= 0 {
+						versionTag = rest[:end]
+					}
+				}
+			}
+		}
 
-		// 5. Replace the running binary
+		// 6. Replace the running binary
 		installDir := "/opt/sentryusb"
 		os.MkdirAll(installDir, 0755)
-
 		binaryPath := installDir + "/sentryusb"
+
 		// Backup current binary
-		if _, err := os.Stat(binaryPath); err == nil {
+		if _, statErr := os.Stat(binaryPath); statErr == nil {
 			os.Rename(binaryPath, binaryPath+".bak")
 		}
 
 		// Move new binary into place
 		_, err = shell.Run("mv", tmpPath, binaryPath)
 		if err != nil {
-			// Restore backup
 			os.Rename(binaryPath+".bak", binaryPath)
-			h.hub.Broadcast("update_status", map[string]string{
-				"status": "error",
-				"error":  "Failed to install update: " + err.Error(),
-			})
+			broadcastErr("Failed to install update: " + err.Error())
 			return
 		}
 		os.Chmod(binaryPath, 0755)
 
-		h.hub.Broadcast("update_status", map[string]string{"status": "restarting"})
+		// 7. Write version file
+		os.WriteFile(installDir+"/version", []byte(versionTag+"\n"), 0644)
+		log.Printf("[update] Updated to %s (%s)", versionTag, suffix)
 
-		// 6. Restart the service
+		broadcast("restarting", "Restarting SentryUSB service...")
+
+		// 8. Restart the service — this kills us, so it must be last
+		time.Sleep(500 * time.Millisecond) // brief pause so the broadcast reaches the client
 		shell.Run("systemctl", "restart", "sentryusb")
 	}()
 
@@ -118,7 +138,6 @@ func (h *handlers) runUpdate(w http.ResponseWriter, r *http.Request) {
 
 func (h *handlers) getVersion(w http.ResponseWriter, r *http.Request) {
 	version := "dev"
-	// Try to read version from file
 	if data, err := os.ReadFile("/opt/sentryusb/version"); err == nil {
 		version = strings.TrimSpace(string(data))
 	}
