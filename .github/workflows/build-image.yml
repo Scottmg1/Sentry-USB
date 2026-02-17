@@ -77,6 +77,9 @@ jobs:
           name: sentryusb-binaries
           path: /tmp/bin/
 
+      - name: Debug - list downloaded files
+        run: find /tmp/bin -type f
+
       - name: Clone pi-gen (arm64 branch)
         run: git clone --depth 1 --branch arm64 https://github.com/RPi-Distro/pi-gen.git /tmp/pi-gen
 
@@ -85,7 +88,7 @@ jobs:
         run: |
           bash "$GITHUB_WORKSPACE/pi-gen-sources/prepare.sh"
           cp "$GITHUB_WORKSPACE/pi-gen-sources/pi-gen-config" config
-          cp /tmp/bin/server/bin/sentryusb-linux-arm64 stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-binary
+          cp /tmp/bin/sentryusb-linux-arm64 stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-binary
           chmod +x stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-binary
           ./build-docker.sh
 
@@ -136,6 +139,9 @@ jobs:
           name: sentryusb-binaries
           path: /tmp/bin/
 
+      - name: Debug - list downloaded files
+        run: find /tmp/bin -type f
+
       - name: Clone pi-gen (master branch for 32-bit)
         run: git clone --depth 1 https://github.com/RPi-Distro/pi-gen.git /tmp/pi-gen
 
@@ -144,7 +150,7 @@ jobs:
         run: |
           bash "$GITHUB_WORKSPACE/pi-gen-sources/prepare.sh"
           cp "$GITHUB_WORKSPACE/pi-gen-sources/pi-gen-config-32bit" config
-          cp /tmp/bin/server/bin/sentryusb-linux-armv7 stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-binary
+          cp /tmp/bin/sentryusb-linux-armv7 stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-binary
           chmod +x stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-binary
           ./build-docker.sh
 
