@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { Wifi, Radio, CheckCircle, AlertCircle, RefreshCw, Pencil } from "lucide-react"
 import type { StepProps } from "../SetupWizard"
+import { SecretInput } from "../SecretInput"
 import { cn } from "@/lib/utils"
 
 function Field({
@@ -20,18 +21,28 @@ function Field({
   onChange: StepProps["onChange"]
   hint?: string
 }) {
+  const inputCls = "w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none transition focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/25"
   return (
     <div>
       <label className="mb-1 block text-sm font-medium text-slate-300">
         {label}
       </label>
-      <input
-        type={type}
-        value={data[field] ?? ""}
-        onChange={(e) => onChange(field, e.target.value)}
-        placeholder={placeholder}
-        className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none transition focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/25"
-      />
+      {type === "password" ? (
+        <SecretInput
+          value={data[field] ?? ""}
+          onChange={(v) => onChange(field, v)}
+          placeholder={placeholder}
+          className={cn(inputCls, "pr-8")}
+        />
+      ) : (
+        <input
+          type={type}
+          value={data[field] ?? ""}
+          onChange={(e) => onChange(field, e.target.value)}
+          placeholder={placeholder}
+          className={inputCls}
+        />
+      )}
       {hint && <p className="mt-1 text-xs text-slate-600">{hint}</p>}
     </div>
   )

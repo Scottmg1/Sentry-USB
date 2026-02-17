@@ -1,5 +1,6 @@
 import { Bluetooth, Webhook, Zap } from "lucide-react"
 import type { StepProps } from "../SetupWizard"
+import { SecretInput } from "../SecretInput"
 import { cn } from "@/lib/utils"
 
 const methods = [
@@ -20,12 +21,17 @@ function Field({ label, field, type = "text", placeholder, data, onChange, hint 
   label: string; field: string; type?: string; placeholder?: string
   data: StepProps["data"]; onChange: StepProps["onChange"]; hint?: string
 }) {
+  const inputCls = "w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none transition focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/25"
   return (
     <div>
       <label className="mb-1 block text-sm font-medium text-slate-300">{label}</label>
-      <input type={type} value={data[field] ?? ""} onChange={(e) => onChange(field, e.target.value)}
-        placeholder={placeholder}
-        className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none transition focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/25" />
+      {type === "password" ? (
+        <SecretInput value={data[field] ?? ""} onChange={(v) => onChange(field, v)}
+          placeholder={placeholder} className={cn(inputCls, "pr-8")} />
+      ) : (
+        <input type={type} value={data[field] ?? ""} onChange={(e) => onChange(field, e.target.value)}
+          placeholder={placeholder} className={inputCls} />
+      )}
       {hint && <p className="mt-1 text-xs text-slate-600">{hint}</p>}
     </div>
   )
@@ -114,7 +120,7 @@ export function KeepAwakeStep({ data, onChange, onBatchChange }: StepProps) {
         </div>
       )}
       {method === "webhook" && (
-        <Field label="Webhook URL" field="KEEP_AWAKE_WEBHOOK_URL" placeholder="http://homeassistant.local/api/webhook/..." data={data} onChange={onChange} />
+        <Field label="Webhook URL" field="KEEP_AWAKE_WEBHOOK_URL" type="password" placeholder="http://homeassistant.local/api/webhook/..." data={data} onChange={onChange} />
       )}
     </div>
   )

@@ -1,55 +1,56 @@
 import { Bell, ChevronDown, ChevronUp } from "lucide-react"
 import { useState } from "react"
 import type { StepProps } from "../SetupWizard"
+import { SecretInput } from "../SecretInput"
 import { cn } from "@/lib/utils"
 
 interface NotificationProvider {
   id: string
   label: string
   enableField: string
-  fields: { key: string; label: string; type?: string; placeholder?: string; hint?: string }[]
+  fields: { key: string; label: string; type?: string; placeholder?: string; hint?: string; secret?: boolean }[]
 }
 
 const providers: NotificationProvider[] = [
   {
     id: "pushover", label: "Pushover", enableField: "PUSHOVER_ENABLED",
     fields: [
-      { key: "PUSHOVER_USER_KEY", label: "User Key", placeholder: "user_key" },
-      { key: "PUSHOVER_APP_KEY", label: "App Key", placeholder: "app_key" },
+      { key: "PUSHOVER_USER_KEY", label: "User Key", placeholder: "user_key", secret: true },
+      { key: "PUSHOVER_APP_KEY", label: "App Key", placeholder: "app_key", secret: true },
     ],
   },
   {
     id: "gotify", label: "Gotify", enableField: "GOTIFY_ENABLED",
     fields: [
       { key: "GOTIFY_DOMAIN", label: "Domain", placeholder: "https://gotify.example.com" },
-      { key: "GOTIFY_APP_TOKEN", label: "App Token", placeholder: "token" },
+      { key: "GOTIFY_APP_TOKEN", label: "App Token", placeholder: "token", secret: true },
       { key: "GOTIFY_PRIORITY", label: "Priority", placeholder: "5" },
     ],
   },
   {
     id: "discord", label: "Discord", enableField: "DISCORD_ENABLED",
     fields: [
-      { key: "DISCORD_WEBHOOK_URL", label: "Webhook URL", placeholder: "https://discord.com/api/webhooks/..." },
+      { key: "DISCORD_WEBHOOK_URL", label: "Webhook URL", placeholder: "https://discord.com/api/webhooks/...", secret: true },
     ],
   },
   {
     id: "telegram", label: "Telegram", enableField: "TELEGRAM_ENABLED",
     fields: [
       { key: "TELEGRAM_CHAT_ID", label: "Chat ID", placeholder: "123456789" },
-      { key: "TELEGRAM_BOT_TOKEN", label: "Bot Token", placeholder: "bot123:abc..." },
+      { key: "TELEGRAM_BOT_TOKEN", label: "Bot Token", placeholder: "bot123:abc...", secret: true },
     ],
   },
   {
     id: "ifttt", label: "IFTTT", enableField: "IFTTT_ENABLED",
     fields: [
       { key: "IFTTT_EVENT_NAME", label: "Event Name", placeholder: "event_name" },
-      { key: "IFTTT_KEY", label: "Key", placeholder: "key" },
+      { key: "IFTTT_KEY", label: "Key", placeholder: "key", secret: true },
     ],
   },
   {
     id: "slack", label: "Slack", enableField: "SLACK_ENABLED",
     fields: [
-      { key: "SLACK_WEBHOOK_URL", label: "Webhook URL", placeholder: "https://hooks.slack.com/..." },
+      { key: "SLACK_WEBHOOK_URL", label: "Webhook URL", placeholder: "https://hooks.slack.com/...", secret: true },
     ],
   },
   {
@@ -73,7 +74,7 @@ const providers: NotificationProvider[] = [
     id: "sns", label: "AWS SNS", enableField: "SNS_ENABLED",
     fields: [
       { key: "AWS_REGION", label: "Region", placeholder: "us-east-1" },
-      { key: "AWS_ACCESS_KEY_ID", label: "Access Key ID", placeholder: "AKIA..." },
+      { key: "AWS_ACCESS_KEY_ID", label: "Access Key ID", placeholder: "AKIA...", secret: true },
       { key: "AWS_SECRET_ACCESS_KEY", label: "Secret Key", type: "password", placeholder: "secret" },
       { key: "AWS_SNS_TOPIC_ARN", label: "Topic ARN", placeholder: "arn:aws:sns:..." },
     ],
@@ -81,7 +82,7 @@ const providers: NotificationProvider[] = [
   {
     id: "webhook", label: "Webhook", enableField: "WEBHOOK_ENABLED",
     fields: [
-      { key: "WEBHOOK_URL", label: "Webhook URL", placeholder: "http://example.com/webhook" },
+      { key: "WEBHOOK_URL", label: "Webhook URL", placeholder: "http://example.com/webhook", secret: true },
     ],
   },
 ]
@@ -117,19 +118,31 @@ function ProviderCard({ provider, data, onChange }: { provider: NotificationProv
 
       {expanded && (
         <div className="grid gap-3 border-t border-white/5 px-4 py-3 sm:grid-cols-2">
-          {provider.fields.map((f) => (
-            <div key={f.key}>
-              <label className="mb-1 block text-xs font-medium text-slate-400">{f.label}</label>
-              <input
-                type={f.type ?? "text"}
-                value={data[f.key] ?? ""}
-                onChange={(e) => onChange(f.key, e.target.value)}
-                placeholder={f.placeholder}
-                className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-slate-100 placeholder-slate-600 outline-none transition focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/25"
-              />
-              {f.hint && <p className="mt-0.5 text-xs text-slate-700">{f.hint}</p>}
-            </div>
-          ))}
+          {provider.fields.map((f) => {
+            const inputCls = "w-full rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-slate-100 placeholder-slate-600 outline-none transition focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/25"
+            return (
+              <div key={f.key}>
+                <label className="mb-1 block text-xs font-medium text-slate-400">{f.label}</label>
+                {f.secret || f.type === "password" ? (
+                  <SecretInput
+                    value={data[f.key] ?? ""}
+                    onChange={(v) => onChange(f.key, v)}
+                    placeholder={f.placeholder}
+                    className={cn(inputCls, "pr-8")}
+                  />
+                ) : (
+                  <input
+                    type={f.type ?? "text"}
+                    value={data[f.key] ?? ""}
+                    onChange={(e) => onChange(f.key, e.target.value)}
+                    placeholder={f.placeholder}
+                    className={inputCls}
+                  />
+                )}
+                {f.hint && <p className="mt-0.5 text-xs text-slate-700">{f.hint}</p>}
+              </div>
+            )
+          })}
         </div>
       )}
     </div>
