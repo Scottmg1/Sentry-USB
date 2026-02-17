@@ -190,9 +190,28 @@ fi
 }
 
 func (h *handlers) getVersion(w http.ResponseWriter, r *http.Request) {
-	version := "dev"
+	version := ""
 	if data, err := os.ReadFile("/opt/sentryusb/version"); err == nil {
 		version = strings.TrimSpace(string(data))
+	}
+
+	// If version file is missing, empty, or "unknown", try to resolve from GitHub
+	if version == "" || version == "unknown" || version == "dev" {
+		tagOutput, tagErr := shell.RunWithTimeout(5*time.Second, "curl", "-sfL", "--max-time", "4",
+			fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", updateRepo))
+		if tagErr == nil {
+			var release struct {
+				TagName string `json:"tag_name"`
+			}
+			if json.Unmarshal([]byte(tagOutput), &release) == nil && release.TagName != "" {
+				version = release.TagName
+				// Persist so we don't hit the API every time
+				os.WriteFile("/opt/sentryusb/version", []byte(version+"\n"), 0644)
+			}
+		}
+		if version == "" || version == "unknown" {
+			version = "dev"
+		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
