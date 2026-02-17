@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import {
   Settings as SettingsIcon,
   RotateCcw,
@@ -102,6 +102,14 @@ export default function Settings() {
   const [wizardOpen, setWizardOpen] = useState(false)
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>("idle")
   const [updateError, setUpdateError] = useState<string | null>(null)
+  const [version, setVersion] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch("/api/system/version")
+      .then(r => r.json())
+      .then(data => setVersion(data.version || "unknown"))
+      .catch(() => setVersion("unknown"))
+  }, [updateStatus])
 
   async function handleUpdate() {
     setUpdateStatus("checking")
@@ -329,6 +337,10 @@ export default function Settings() {
           About
         </h2>
         <div className="space-y-1 text-sm">
+          <p className="text-slate-300">
+            <span className="text-slate-500">Version:</span>{" "}
+            {version || "loading..."}
+          </p>
           <p className="text-slate-300">
             <span className="text-slate-500">Project:</span> SentryUSB
           </p>
