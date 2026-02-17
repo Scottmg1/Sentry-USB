@@ -19,6 +19,12 @@ var setupFinishedPaths = []string{
 	"/boot/TESLAUSB_SETUP_FINISHED",
 }
 
+var setupStartedPaths = []string{
+	"/teslausb/TESLAUSB_SETUP_STARTED",
+	"/boot/firmware/TESLAUSB_SETUP_STARTED",
+	"/boot/TESLAUSB_SETUP_STARTED",
+}
+
 var setupRunning struct {
 	sync.Mutex
 	running bool
@@ -31,6 +37,20 @@ func isSetupFinished() bool {
 		}
 	}
 	return false
+}
+
+func isSetupStarted() bool {
+	for _, p := range setupStartedPaths {
+		if _, err := os.Stat(p); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// IsSetupIncomplete returns true if setup was started but never finished (e.g. reboot mid-setup).
+func IsSetupIncomplete() bool {
+	return isSetupStarted() && !isSetupFinished()
 }
 
 func (h *handlers) getSetupStatus(w http.ResponseWriter, r *http.Request) {
@@ -94,6 +114,70 @@ func (h *handlers) saveSetupConfig(w http.ResponseWriter, r *http.Request) {
 	writeOK(w)
 }
 
+// executeSetup runs setup-teslausb, downloading scripts if needed.
+// It broadcasts progress via WebSocket and is safe to call from goroutines.
+func executeSetup(hub broadcaster) {
+	setupRunning.Lock()
+	if setupRunning.running {
+		setupRunning.Unlock()
+		return
+	}
+	setupRunning.running = true
+	setupRunning.Unlock()
+
+	defer func() {
+		setupRunning.Lock()
+		setupRunning.running = false
+		setupRunning.Unlock()
+	}()
+
+	hub.Broadcast("setup_status", map[string]string{"status": "starting"})
+
+	setupScript := "/root/bin/setup-teslausb"
+
+	// If the setup script doesn't exist, download it from the repo.
+	// The script itself handles downloading all other dependencies via copy_script.
+	if _, err := os.Stat(setupScript); os.IsNotExist(err) {
+		log.Println("[setup] setup-teslausb not found locally, downloading from repo...")
+		hub.Broadcast("setup_status", map[string]string{"status": "downloading_scripts"})
+
+		_, dlErr := shell.RunWithTimeout(60_000_000_000, "bash", "-c",
+			"mkdir -p /root/bin && "+
+				"curl -fsSL https://raw.githubusercontent.com/Scottmg1/Sentry-USB/main-dev/setup/pi/setup-teslausb -o /root/bin/setup-teslausb && "+
+				"curl -fsSL https://raw.githubusercontent.com/Scottmg1/Sentry-USB/main-dev/setup/pi/envsetup.sh -o /root/bin/envsetup.sh && "+
+				"chmod +x /root/bin/setup-teslausb /root/bin/envsetup.sh")
+		if dlErr != nil {
+			hub.Broadcast("setup_status", map[string]string{
+				"status": "error",
+				"error":  "Failed to download setup script: " + dlErr.Error(),
+			})
+			return
+		}
+		log.Println("[setup] Setup script downloaded")
+	}
+
+	hub.Broadcast("setup_status", map[string]string{"status": "running"})
+
+	// setup-teslausb can take a long time (package installs, partitioning, etc.)
+	// Run directly (not via "bash") so child scripts see parent comm as "setup-teslausb"
+	output, err := shell.RunWithTimeout(1800_000_000_000, setupScript)
+	if err != nil {
+		log.Printf("[setup] Setup failed: %v", err)
+		hub.Broadcast("setup_status", map[string]string{
+			"status": "error",
+			"error":  err.Error(),
+			"output": output,
+		})
+		return
+	}
+
+	log.Println("[setup] Setup completed successfully")
+	hub.Broadcast("setup_status", map[string]string{
+		"status": "complete",
+		"output": output,
+	})
+}
+
 func (h *handlers) runSetup(w http.ResponseWriter, r *http.Request) {
 	setupRunning.Lock()
 	if setupRunning.running {
@@ -101,63 +185,19 @@ func (h *handlers) runSetup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "Setup is already running")
 		return
 	}
-	setupRunning.running = true
 	setupRunning.Unlock()
 
-	// Run setup in background and stream progress via WebSocket
-	go func() {
-		defer func() {
-			setupRunning.Lock()
-			setupRunning.running = false
-			setupRunning.Unlock()
-		}()
-
-		h.hub.Broadcast("setup_status", map[string]string{"status": "starting"})
-
-		setupScript := "/root/bin/setup-teslausb"
-
-		// If the setup script doesn't exist, download it from the repo.
-		// The script itself handles downloading all other dependencies via copy_script.
-		if _, err := os.Stat(setupScript); os.IsNotExist(err) {
-			log.Println("[setup] setup-teslausb not found locally, downloading from repo...")
-			h.hub.Broadcast("setup_status", map[string]string{"status": "downloading_scripts"})
-
-			_, dlErr := shell.RunWithTimeout(60_000_000_000, "bash", "-c",
-				"mkdir -p /root/bin && "+
-					"curl -fsSL https://raw.githubusercontent.com/Scottmg1/Sentry-USB/main-dev/setup/pi/setup-teslausb -o /root/bin/setup-teslausb && "+
-					"curl -fsSL https://raw.githubusercontent.com/Scottmg1/Sentry-USB/main-dev/setup/pi/envsetup.sh -o /root/bin/envsetup.sh && "+
-					"chmod +x /root/bin/setup-teslausb /root/bin/envsetup.sh")
-			if dlErr != nil {
-				h.hub.Broadcast("setup_status", map[string]string{
-					"status": "error",
-					"error":  "Failed to download setup script: " + dlErr.Error(),
-				})
-				return
-			}
-			log.Println("[setup] Setup script downloaded")
-		}
-
-		h.hub.Broadcast("setup_status", map[string]string{"status": "running"})
-
-		// setup-teslausb can take a long time (package installs, partitioning, etc.)
-		// Run directly (not via "bash") so child scripts see parent comm as "setup-teslausb"
-		output, err := shell.RunWithTimeout(1800_000_000_000, setupScript)
-		if err != nil {
-			log.Printf("[setup] Setup failed: %v", err)
-			h.hub.Broadcast("setup_status", map[string]string{
-				"status": "error",
-				"error":  err.Error(),
-				"output": output,
-			})
-			return
-		}
-
-		log.Println("[setup] Setup completed successfully")
-		h.hub.Broadcast("setup_status", map[string]string{
-			"status": "complete",
-			"output": output,
-		})
-	}()
+	go executeSetup(h.hub)
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "started"})
+}
+
+// AutoResumeSetup checks if a previous setup was interrupted (e.g. by a reboot)
+// and automatically continues it. Called once at server startup.
+func AutoResumeSetup(hub broadcaster) {
+	if !IsSetupIncomplete() {
+		return
+	}
+	log.Println("[setup] Detected incomplete setup (STARTED exists, FINISHED missing). Auto-resuming...")
+	go executeSetup(hub)
 }
