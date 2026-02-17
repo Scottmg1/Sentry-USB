@@ -19,6 +19,7 @@ func RegisterRoutes(mux *http.ServeMux, hub *ws.Hub) {
 	mux.HandleFunc("GET /api/wifi", h.getWifiConfig)
 
 	// Setup configuration
+	mux.HandleFunc("GET /api/setup/status", h.getSetupStatus)
 	mux.HandleFunc("GET /api/setup/config", h.getSetupConfig)
 	mux.HandleFunc("PUT /api/setup/config", h.saveSetupConfig)
 	mux.HandleFunc("POST /api/setup/run", h.runSetup)

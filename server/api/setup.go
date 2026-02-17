@@ -3,11 +3,46 @@ package api
 import (
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
+	"os"
+	"sync"
 
 	"github.com/Scottmg1/Sentry-USB/server/config"
 	"github.com/Scottmg1/Sentry-USB/server/shell"
 )
+
+// Setup finished marker paths (in priority order)
+var setupFinishedPaths = []string{
+	"/teslausb/TESLAUSB_SETUP_FINISHED",
+	"/boot/firmware/TESLAUSB_SETUP_FINISHED",
+	"/boot/TESLAUSB_SETUP_FINISHED",
+}
+
+var setupRunning struct {
+	sync.Mutex
+	running bool
+}
+
+func isSetupFinished() bool {
+	for _, p := range setupFinishedPaths {
+		if _, err := os.Stat(p); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+func (h *handlers) getSetupStatus(w http.ResponseWriter, r *http.Request) {
+	setupRunning.Lock()
+	running := setupRunning.running
+	setupRunning.Unlock()
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"setup_finished": isSetupFinished(),
+		"setup_running":  running,
+	})
+}
 
 func (h *handlers) getSetupConfig(w http.ResponseWriter, r *http.Request) {
 	configPath := config.FindConfigPath()
@@ -60,19 +95,65 @@ func (h *handlers) saveSetupConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) runSetup(w http.ResponseWriter, r *http.Request) {
+	setupRunning.Lock()
+	if setupRunning.running {
+		setupRunning.Unlock()
+		writeError(w, http.StatusConflict, "Setup is already running")
+		return
+	}
+	setupRunning.running = true
+	setupRunning.Unlock()
+
 	// Run setup in background and stream progress via WebSocket
 	go func() {
+		defer func() {
+			setupRunning.Lock()
+			setupRunning.running = false
+			setupRunning.Unlock()
+		}()
+
 		h.hub.Broadcast("setup_status", map[string]string{"status": "starting"})
 
-		output, err := shell.RunWithTimeout(600_000_000_000, "bash", "/root/bin/setup-teslausb")
+		setupScript := "/root/bin/setup-teslausb"
+
+		// If the setup script doesn't exist, download it from the repo
+		if _, err := os.Stat(setupScript); os.IsNotExist(err) {
+			log.Println("[setup] setup-teslausb not found locally, downloading from repo...")
+			h.hub.Broadcast("setup_status", map[string]string{"status": "downloading_scripts"})
+
+			_, dlErr := shell.RunWithTimeout(60_000_000_000, "bash", "-c",
+				"mkdir -p /root/bin && curl -fsSL https://raw.githubusercontent.com/Scottmg1/Sentry-USB/main-dev/setup/pi/setup-teslausb -o /root/bin/setup-teslausb && chmod +x /root/bin/setup-teslausb")
+			if dlErr != nil {
+				h.hub.Broadcast("setup_status", map[string]string{
+					"status": "error",
+					"error":  "Failed to download setup scripts: " + dlErr.Error(),
+				})
+				return
+			}
+
+			// Also download configure.sh and other helper scripts
+			shell.RunWithTimeout(60_000_000_000, "bash", "-c",
+				"curl -fsSL https://raw.githubusercontent.com/Scottmg1/Sentry-USB/main-dev/setup/pi/configure.sh -o /root/bin/configure.sh && chmod +x /root/bin/configure.sh")
+			shell.RunWithTimeout(60_000_000_000, "bash", "-c",
+				"curl -fsSL https://raw.githubusercontent.com/Scottmg1/Sentry-USB/main-dev/setup/pi/envsetup.sh -o /root/bin/envsetup.sh && chmod +x /root/bin/envsetup.sh")
+
+			log.Println("[setup] Setup scripts downloaded")
+		}
+
+		h.hub.Broadcast("setup_status", map[string]string{"status": "running"})
+
+		output, err := shell.RunWithTimeout(600_000_000_000, "bash", setupScript)
 		if err != nil {
+			log.Printf("[setup] Setup failed: %v", err)
 			h.hub.Broadcast("setup_status", map[string]string{
 				"status": "error",
 				"error":  err.Error(),
+				"output": output,
 			})
 			return
 		}
 
+		log.Println("[setup] Setup completed successfully")
 		h.hub.Broadcast("setup_status", map[string]string{
 			"status": "complete",
 			"output": output,

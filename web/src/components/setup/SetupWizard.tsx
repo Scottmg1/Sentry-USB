@@ -1,5 +1,5 @@
-import { useState, useCallback } from "react"
-import { ChevronLeft, ChevronRight, Check, Loader2 } from "lucide-react"
+import { useState, useCallback, useEffect, useRef } from "react"
+import { ChevronLeft, ChevronRight, Check, Loader2, AlertCircle, CheckCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { WelcomeStep } from "./steps/WelcomeStep"
 import { NetworkStep } from "./steps/NetworkStep"
@@ -44,11 +44,16 @@ interface SetupWizardProps {
   onClose: () => void
 }
 
+type SetupPhase = "wizard" | "applying" | "running" | "complete" | "error"
+
 export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
   const [currentStep, setCurrentStep] = useState(0)
   const [formData, setFormData] = useState<SetupFormData>(initialData ?? {})
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [phase, setPhase] = useState<SetupPhase>("wizard")
+  const [setupMessage, setSetupMessage] = useState("")
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const handleChange = useCallback((key: string, value: string) => {
     setFormData((prev) => ({ ...prev, [key]: value }))
@@ -57,6 +62,61 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
   const handleBatchChange = useCallback((updates: Record<string, string>) => {
     setFormData((prev) => ({ ...prev, ...updates }))
   }, [])
+
+  // Poll setup status while running
+  useEffect(() => {
+    if (phase !== "running") return
+    pollRef.current = setInterval(async () => {
+      try {
+        const res = await fetch("/api/setup/status")
+        const data = await res.json()
+        if (data.setup_finished) {
+          setPhase("complete")
+          setSetupMessage("Setup completed successfully! Your device is ready.")
+          if (pollRef.current) clearInterval(pollRef.current)
+        } else if (!data.setup_running) {
+          // Setup stopped but not finished — might be an error
+          setPhase("error")
+          setSetupMessage("Setup stopped unexpectedly. Check logs for details.")
+          if (pollRef.current) clearInterval(pollRef.current)
+        }
+      } catch {
+        // Server might be restarting
+      }
+    }, 3000)
+    return () => { if (pollRef.current) clearInterval(pollRef.current) }
+  }, [phase])
+
+  // Also listen to WebSocket for real-time updates
+  useEffect(() => {
+    if (phase !== "running" && phase !== "applying") return
+    let ws: WebSocket | null = null
+    try {
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:"
+      ws = new WebSocket(`${protocol}//${window.location.host}/api/ws`)
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data)
+          if (msg.type === "setup_status") {
+            const d = msg.data
+            if (d.status === "starting" || d.status === "downloading_scripts") {
+              setPhase("running")
+              setSetupMessage("Downloading setup scripts...")
+            } else if (d.status === "running") {
+              setSetupMessage("Running setup... This may take several minutes.")
+            } else if (d.status === "complete") {
+              setPhase("complete")
+              setSetupMessage("Setup completed successfully! Your device is ready.")
+            } else if (d.status === "error") {
+              setPhase("error")
+              setSetupMessage(d.error || "Setup failed. Check logs for details.")
+            }
+          }
+        } catch { /* ignore parse errors */ }
+      }
+    } catch { /* ws not available */ }
+    return () => { ws?.close() }
+  }, [phase])
 
   const StepComponent = steps[currentStep].component
 
@@ -75,13 +135,21 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
       })
       if (!res.ok) throw new Error("Failed to save configuration")
 
-      // Optionally trigger setup
-      const runRes = await fetch("/api/setup/run", { method: "POST" })
-      if (!runRes.ok) throw new Error("Failed to start setup")
+      setPhase("applying")
+      setSetupMessage("Configuration saved. Starting setup...")
 
-      onClose()
+      // Trigger setup
+      const runRes = await fetch("/api/setup/run", { method: "POST" })
+      if (!runRes.ok) {
+        const err = await runRes.json()
+        throw new Error(err.error || "Failed to start setup")
+      }
+
+      setPhase("running")
+      setSetupMessage("Running setup... This may take several minutes.")
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Unknown error")
+      setPhase("wizard")
     } finally {
       setSaving(false)
     }
@@ -90,6 +158,72 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
   const isLast = currentStep === steps.length - 1
   const isFirst = currentStep === 0
 
+  // ── Progress screen (shown after Apply) ──
+  if (phase !== "wizard") {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+        <div className="glass-card flex w-full max-w-lg flex-col items-center gap-6 p-10 text-center">
+          {phase === "applying" || phase === "running" ? (
+            <>
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-blue-500/20">
+                <Loader2 className="h-8 w-8 animate-spin text-blue-400" />
+              </div>
+              <div>
+                <h2 className="text-xl font-semibold text-slate-100">Setting Up SentryUSB</h2>
+                <p className="mt-2 text-sm text-slate-400">{setupMessage}</p>
+                <p className="mt-4 text-xs text-slate-600">
+                  This process creates disk images, configures archiving, and sets up USB gadget mode.
+                  It may take 5-15 minutes. Do not power off the device.
+                </p>
+              </div>
+            </>
+          ) : phase === "complete" ? (
+            <>
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/20">
+                <CheckCircle className="h-8 w-8 text-emerald-400" />
+              </div>
+              <div>
+                <h2 className="text-xl font-semibold text-slate-100">Setup Complete!</h2>
+                <p className="mt-2 text-sm text-slate-400">{setupMessage}</p>
+              </div>
+              <button
+                onClick={onClose}
+                className="rounded-lg bg-blue-500 px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-600"
+              >
+                Go to Dashboard
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-red-500/20">
+                <AlertCircle className="h-8 w-8 text-red-400" />
+              </div>
+              <div>
+                <h2 className="text-xl font-semibold text-slate-100">Setup Error</h2>
+                <p className="mt-2 text-sm text-red-400">{setupMessage}</p>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => { setPhase("wizard"); setCurrentStep(steps.length - 1) }}
+                  className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-slate-300 transition-colors hover:bg-white/10"
+                >
+                  Back to Wizard
+                </button>
+                <button
+                  onClick={handleApply}
+                  className="rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-600"
+                >
+                  Retry
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // ── Wizard steps ──
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
       <div className="glass-card relative flex h-[90vh] w-full max-w-3xl flex-col overflow-hidden">
