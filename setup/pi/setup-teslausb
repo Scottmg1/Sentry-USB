@@ -153,9 +153,14 @@ then
     ROOTSTART=$(partx --show -g -o START "${ROOT_PARTITION_DEVICE}")
     ROOTSIZE=$(partx --show -g -o SECTORS "${ROOT_PARTITION_DEVICE}")
     ROOTSIZE=$((ROOTSIZE + INCREASE_ROOT_SIZE))
-    echo "$ROOTSTART,$ROOTSIZE" | sfdisk --force --no-reread "${BOOT_DISK}" -N "${ROOT_PART_NUM}"
-    setup_progress "increased root partition size"
-    REBOOT=true
+    if echo "$ROOTSTART,$ROOTSIZE" | sfdisk --force --no-reread "${BOOT_DISK}" -N "${ROOT_PART_NUM}"
+    then
+      setup_progress "increased root partition size"
+      REBOOT=true
+    else
+      setup_progress "WARNING: failed to increase root partition size. The root partition may already be at maximum size."
+      setup_progress "Continuing setup without resizing root partition."
+    fi
   else
     setup_progress "increasing root filesystem size to match partition size"
     resize2fs "${ROOT_PARTITION_DEVICE}"
