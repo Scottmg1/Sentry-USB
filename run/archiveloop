@@ -871,6 +871,8 @@ then
 
   archive_clips
 
+  /root/bin/post-archive-process.sh || log "post-archive processing failed"
+
   /root/bin/awake_stop || true
 
   doubleblink
@@ -901,6 +903,8 @@ do
   fi
 
   archive_clips
+
+  /root/bin/post-archive-process.sh || log "post-archive processing failed"
 
   /root/bin/awake_stop || true
 

@@ -1,5 +1,7 @@
-import { Wifi, Radio } from "lucide-react"
+import { useEffect, useState } from "react"
+import { Wifi, Radio, CheckCircle, AlertCircle, RefreshCw, Pencil } from "lucide-react"
 import type { StepProps } from "../SetupWizard"
+import { cn } from "@/lib/utils"
 
 function Field({
   label,
@@ -35,8 +37,45 @@ function Field({
   )
 }
 
-export function NetworkStep({ data, onChange }: StepProps) {
+interface DetectedWifi {
+  current: { ssid: string; connected: boolean; source: string }
+  config_ssid: string
+}
+
+export function NetworkStep({ data, onChange, onBatchChange }: StepProps) {
   const apEnabled = !!data.AP_SSID
+  const [detected, setDetected] = useState<DetectedWifi | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [editing, setEditing] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    fetch("/api/wifi")
+      .then((r) => r.json())
+      .then((d: DetectedWifi) => {
+        if (cancelled) return
+        setDetected(d)
+
+        // Pre-fill SSID from detected config if the wizard field is empty
+        if (!data.SSID) {
+          const ssid = d.config_ssid || d.current.ssid
+          if (ssid) {
+            onChange("SSID", ssid)
+          }
+        }
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [])
+
+  const detectedSSID = detected?.current.ssid || ""
+  const configSSID = detected?.config_ssid || ""
+  const isConnected = detected?.current.connected ?? false
+
+  // Show the detected banner if we have a detected SSID and user isn't manually editing
+  const showDetectedBanner = !loading && detectedSSID && !editing
 
   return (
     <div className="space-y-6">
@@ -48,30 +87,80 @@ export function NetworkStep({ data, onChange }: StepProps) {
             Home WiFi
           </h3>
         </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field
-            label="SSID"
-            field="SSID"
-            placeholder="Your WiFi network name"
-            data={data}
-            onChange={onChange}
-          />
-          <Field
-            label="Password"
-            field="WIFIPASS"
-            type="password"
-            placeholder="WiFi password"
-            data={data}
-            onChange={onChange}
-          />
-        </div>
+
+        {/* Loading state */}
+        {loading && (
+          <div className="flex items-center gap-2 rounded-lg border border-white/5 bg-white/[0.02] p-3">
+            <RefreshCw className="h-4 w-4 animate-spin text-slate-500" />
+            <p className="text-sm text-slate-500">Detecting WiFi configuration...</p>
+          </div>
+        )}
+
+        {/* Detected WiFi banner */}
+        {showDetectedBanner && (
+          <div className={cn(
+            "mb-4 flex items-center justify-between rounded-lg border p-4",
+            isConnected
+              ? "border-emerald-500/30 bg-emerald-500/10"
+              : "border-amber-500/30 bg-amber-500/10"
+          )}>
+            <div className="flex items-center gap-3">
+              {isConnected ? (
+                <CheckCircle className="h-5 w-5 text-emerald-400" />
+              ) : (
+                <AlertCircle className="h-5 w-5 text-amber-400" />
+              )}
+              <div>
+                <p className="text-sm font-medium text-slate-200">
+                  {isConnected ? "Connected to WiFi" : "WiFi Configured"}
+                </p>
+                <p className="text-xs text-slate-400">
+                  Network: <span className="font-medium text-slate-300">{detectedSSID}</span>
+                  {configSSID && configSSID !== detectedSSID && (
+                    <span className="ml-2 text-slate-500">
+                      (config: {configSSID})
+                    </span>
+                  )}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setEditing(true)}
+              className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-white/10"
+            >
+              <Pencil className="h-3 w-3" />
+              Change
+            </button>
+          </div>
+        )}
+
+        {/* WiFi fields — shown if no detected wifi, or user clicks Change, or loading failed */}
+        {(!showDetectedBanner || editing) && !loading && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field
+              label="SSID"
+              field="SSID"
+              placeholder="Your WiFi network name"
+              data={data}
+              onChange={onChange}
+            />
+            <Field
+              label="Password"
+              field="WIFIPASS"
+              type="password"
+              placeholder="WiFi password"
+              data={data}
+              onChange={onChange}
+            />
+          </div>
+        )}
       </div>
 
       {/* Hostname */}
       <Field
         label="Hostname"
         field="TESLAUSB_HOSTNAME"
-        placeholder="teslausb"
+        placeholder="sentryusb"
         data={data}
         onChange={onChange}
         hint="The device will be accessible at hostname.local"
@@ -96,9 +185,7 @@ export function NetworkStep({ data, onChange }: StepProps) {
             checked={apEnabled}
             onChange={(e) => {
               if (!e.target.checked) {
-                onChange("AP_SSID", "")
-                onChange("AP_PASS", "")
-                onChange("AP_IP", "")
+                onBatchChange({ AP_SSID: "", AP_PASS: "", AP_IP: "" })
               } else {
                 onChange("AP_SSID", "SENTRYUSB WIFI")
               }

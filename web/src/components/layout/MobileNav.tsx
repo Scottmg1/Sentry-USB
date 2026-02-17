@@ -4,6 +4,7 @@ import {
   Video,
   FolderOpen,
   ScrollText,
+  MapPin,
   Settings,
   X,
   Shield,
@@ -20,6 +21,7 @@ const navItems = [
   { to: "/viewer", icon: Video, label: "Viewer" },
   { to: "/files", icon: FolderOpen, label: "Files" },
   { to: "/logs", icon: ScrollText, label: "Logs" },
+  { to: "/drives", icon: MapPin, label: "Drives" },
   { to: "/settings", icon: Settings, label: "Settings" },
 ]
 

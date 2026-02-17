@@ -1,4 +1,4 @@
-import { Cog, Thermometer } from "lucide-react"
+import { Cog, Thermometer, MapPin } from "lucide-react"
 import type { StepProps } from "../SetupWizard"
 
 function Field({ label, field, type = "text", placeholder, data, onChange, hint }: {
@@ -81,6 +81,25 @@ export function AdvancedStep({ data, onChange }: StepProps) {
           <Field label="Dirty Background Bytes" field="DIRTY_BACKGROUND_BYTES" placeholder="65536"
             data={data} onChange={onChange} hint="VM write-back tuning. Leave empty for defaults." />
         </div>
+      </div>
+
+      {/* Drive Map */}
+      <div>
+        <div className="mb-3 flex items-center gap-2">
+          <MapPin className="h-4 w-4 text-blue-400" />
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400">
+            Drive Map
+          </h3>
+        </div>
+        <p className="mb-3 text-xs text-slate-500">
+          Automatically extract GPS data from dashcam clips after archiving and build a map of all your drives.
+        </p>
+        <label className="flex cursor-pointer items-center gap-2">
+          <input type="checkbox" checked={(data.DRIVE_MAP_ENABLED ?? "false") === "true"}
+            onChange={(e) => onChange("DRIVE_MAP_ENABLED", e.target.checked ? "true" : "false")}
+            className="h-4 w-4 rounded border-white/20 bg-white/5 accent-blue-500" />
+          <span className="text-sm text-slate-300">Enable drive map processing after archive</span>
+        </label>
       </div>
 
       {/* Source */}

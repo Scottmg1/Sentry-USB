@@ -5,6 +5,7 @@ import Viewer from "@/pages/Viewer"
 import Files from "@/pages/Files"
 import Logs from "@/pages/Logs"
 import Settings from "@/pages/Settings"
+import Drives from "@/pages/Drives"
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
           <Route path="/viewer" element={<Viewer />} />
           <Route path="/files" element={<Files />} />
           <Route path="/logs" element={<Logs />} />
+          <Route path="/drives" element={<Drives />} />
           <Route path="/settings" element={<Settings />} />
         </Route>
       </Routes>

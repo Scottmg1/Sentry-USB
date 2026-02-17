@@ -210,6 +210,90 @@ func boolToYesNo(b bool) string {
 	return "no"
 }
 
+type wifiInfo struct {
+	SSID      string `json:"ssid"`
+	Connected bool   `json:"connected"`
+	Source    string `json:"source"`
+}
+
+func (h *handlers) getWifiConfig(w http.ResponseWriter, r *http.Request) {
+	info := wifiInfo{}
+
+	// 1. Try nmcli (NetworkManager on Bookworm)
+	if out, err := shell.Run("nmcli", "-t", "-f", "active,ssid", "dev", "wifi"); err == nil {
+		for _, line := range strings.Split(out, "\n") {
+			if strings.HasPrefix(line, "yes:") {
+				info.SSID = strings.TrimPrefix(line, "yes:")
+				info.Connected = true
+				info.Source = "networkmanager"
+				break
+			}
+		}
+	}
+
+	// 2. Fallback: try iwgetid
+	if info.SSID == "" {
+		if out, err := shell.Run("iwgetid", "-r"); err == nil {
+			ssid := strings.TrimSpace(out)
+			if ssid != "" {
+				info.SSID = ssid
+				info.Connected = true
+				info.Source = "iwgetid"
+			}
+		}
+	}
+
+	// 3. Fallback: try wpa_supplicant.conf
+	if info.SSID == "" {
+		wpaPaths := []string{
+			"/etc/wpa_supplicant/wpa_supplicant.conf",
+			"/boot/firmware/wpa_supplicant.conf",
+			"/boot/wpa_supplicant.conf",
+		}
+		for _, p := range wpaPaths {
+			if data, err := os.ReadFile(p); err == nil {
+				for _, line := range strings.Split(string(data), "\n") {
+					line = strings.TrimSpace(line)
+					if strings.HasPrefix(line, "ssid=") {
+						val := strings.TrimPrefix(line, "ssid=")
+						val = strings.Trim(val, "\"")
+						if val != "" {
+							info.SSID = val
+							info.Source = "wpa_supplicant"
+							break
+						}
+					}
+				}
+				if info.SSID != "" {
+					break
+				}
+			}
+		}
+	}
+
+	// 4. Also check the SentryUSB config file for saved SSID
+	configSSID := ""
+	configPath := findConfigFilePath()
+	if configPath != "" {
+		if data, err := os.ReadFile(configPath); err == nil {
+			for _, line := range strings.Split(string(data), "\n") {
+				line = strings.TrimSpace(line)
+				if strings.HasPrefix(line, "export SSID=") {
+					val := strings.TrimPrefix(line, "export SSID=")
+					val = strings.Trim(val, "'\"")
+					configSSID = val
+					break
+				}
+			}
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"current":     info,
+		"config_ssid": configSSID,
+	})
+}
+
 func findConfigFilePath() string {
 	paths := []string{
 		"/root/teslausb_setup_variables.conf",

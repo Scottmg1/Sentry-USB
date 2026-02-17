@@ -10,6 +10,7 @@ import (
 	"os"
 
 	"github.com/Scottmg1/Sentry-USB/server/api"
+	"github.com/Scottmg1/Sentry-USB/server/drives"
 	"github.com/Scottmg1/Sentry-USB/server/ws"
 )
 
@@ -29,6 +30,10 @@ func main() {
 
 	// API routes
 	api.RegisterRoutes(mux, hub)
+
+	// Drive map routes
+	driveHandlers := api.NewDriveHandlers(drives.DefaultDataPath, hub)
+	api.RegisterDriveRoutes(mux, driveHandlers)
 
 	// WebSocket endpoint
 	mux.HandleFunc("/api/ws", func(w http.ResponseWriter, r *http.Request) {
