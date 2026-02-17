@@ -27,6 +27,7 @@ jobs:
 
       - name: Copy frontend into server/static
         run: |
+          mkdir -p server/static
           rm -rf server/static/*
           cp -r web/dist/* server/static/
           echo "Static files:"
