@@ -15,37 +15,81 @@ import {
 import { cn } from "@/lib/utils"
 import { SetupWizard } from "@/components/setup/SetupWizard"
 
+type ActionState = "idle" | "loading" | "success" | "error"
+
 function ActionButton({
   icon: Icon,
   label,
   description,
   variant = "default",
   onClick,
+  successMessage = "Done!",
+  errorMessage = "Failed",
 }: {
   icon: React.ElementType
   label: string
   description: string
   variant?: "default" | "danger"
-  onClick: () => void
+  onClick: () => void | string | Promise<void | string>
+  successMessage?: string
+  errorMessage?: string
 }) {
+  const [state, setState] = useState<ActionState>("idle")
+  const [msg, setMsg] = useState("")
+
+  async function handleClick() {
+    if (state === "loading") return
+    setState("loading")
+    setMsg("")
+    try {
+      const result = await onClick()
+      setState("success")
+      setMsg(typeof result === "string" ? result : successMessage)
+      setTimeout(() => { setState("idle"); setMsg("") }, 5000)
+    } catch (err) {
+      setState("error")
+      setMsg(err instanceof Error ? err.message : errorMessage)
+      setTimeout(() => { setState("idle"); setMsg("") }, 5000)
+    }
+  }
+
   return (
     <button
-      onClick={onClick}
-      className="glass-card glass-card-hover flex items-start gap-3 p-4 text-left transition-colors"
+      onClick={handleClick}
+      disabled={state === "loading"}
+      className="glass-card glass-card-hover flex items-start gap-3 p-4 text-left transition-colors disabled:opacity-70"
     >
       <div
         className={cn(
-          "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg",
+          "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-colors",
+          state === "loading" ? "bg-blue-500/15 text-blue-400" :
+          state === "success" ? "bg-emerald-500/15 text-emerald-400" :
+          state === "error" ? "bg-red-500/15 text-red-400" :
           variant === "danger"
             ? "bg-red-500/15 text-red-400"
             : "bg-blue-500/15 text-blue-400"
         )}
       >
-        <Icon className="h-5 w-5" />
+        {state === "loading" ? (
+          <Loader2 className="h-5 w-5 animate-spin" />
+        ) : state === "success" ? (
+          <CheckCircle className="h-5 w-5" />
+        ) : state === "error" ? (
+          <AlertCircle className="h-5 w-5" />
+        ) : (
+          <Icon className="h-5 w-5" />
+        )}
       </div>
       <div>
         <p className="text-sm font-medium text-slate-200">{label}</p>
-        <p className="mt-0.5 text-xs text-slate-500">{description}</p>
+        <p className={cn(
+          "mt-0.5 text-xs",
+          state === "success" ? "text-emerald-400" :
+          state === "error" ? "text-red-400" :
+          "text-slate-500"
+        )}>
+          {msg || description}
+        </p>
       </div>
     </button>
   )
@@ -158,13 +202,21 @@ export default function Settings() {
             icon={Unplug}
             label="Toggle USB Drives"
             description="Connect or disconnect drives from the host"
-            onClick={() => fetch("/api/system/toggle-drives", { method: "POST" })}
+            successMessage="Drives toggled successfully"
+            onClick={async () => {
+              const res = await fetch("/api/system/toggle-drives", { method: "POST" })
+              if (!res.ok) throw new Error("Failed to toggle drives")
+            }}
           />
           <ActionButton
             icon={RefreshCw}
             label="Trigger Archive Sync"
             description="Start archiving recorded clips now"
-            onClick={() => fetch("/api/system/trigger-sync", { method: "POST" })}
+            successMessage="Archive sync started"
+            onClick={async () => {
+              const res = await fetch("/api/system/trigger-sync", { method: "POST" })
+              if (!res.ok) throw new Error("Failed to trigger sync")
+            }}
           />
           <ActionButton
             icon={Gauge}
@@ -172,22 +224,23 @@ export default function Settings() {
             description="Test the network throughput"
             onClick={async () => {
               const start = Date.now()
-              try {
-                const res = await fetch("/api/system/speedtest")
-                const blob = await res.blob()
-                const elapsed = (Date.now() - start) / 1000
-                const mbps = ((blob.size * 8) / elapsed / 1_000_000).toFixed(1)
-                alert(`Download: ${mbps} Mbps\n${(blob.size / 1_000_000).toFixed(1)} MB in ${elapsed.toFixed(1)}s`)
-              } catch {
-                alert("Speed test failed. Check connection.")
-              }
+              const res = await fetch("/api/system/speedtest")
+              if (!res.ok) throw new Error("Speed test failed")
+              const blob = await res.blob()
+              const elapsed = (Date.now() - start) / 1000
+              const mbps = ((blob.size * 8) / elapsed / 1_000_000).toFixed(1)
+              return `${mbps} Mbps (${(blob.size / 1_000_000).toFixed(1)} MB in ${elapsed.toFixed(1)}s)`
             }}
           />
           <ActionButton
             icon={Bluetooth}
             label="Pair BLE with Car"
             description="Initiate Bluetooth Low Energy pairing"
-            onClick={() => fetch("/api/system/ble-pair", { method: "POST" })}
+            successMessage="BLE pairing initiated"
+            onClick={async () => {
+              const res = await fetch("/api/system/ble-pair", { method: "POST" })
+              if (!res.ok) throw new Error("Failed to initiate BLE pairing")
+            }}
           />
         </div>
       </div>
@@ -255,8 +308,13 @@ export default function Settings() {
           <ActionButton
             icon={SettingsIcon}
             label="Advanced Settings"
-            description="Edit raw configuration variables"
-            onClick={() => {}}
+            description="Open raw configuration file in browser"
+            onClick={async () => {
+              const res = await fetch("/api/setup/config")
+              if (!res.ok) throw new Error("Failed to load config")
+              setWizardOpen(true)
+            }}
+            successMessage="Opening wizard..."
           />
         </div>
       </div>

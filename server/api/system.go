@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/Scottmg1/Sentry-USB/server/shell"
 )
@@ -89,16 +90,21 @@ func (h *handlers) bleStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) refreshDiagnostics(w http.ResponseWriter, r *http.Request) {
-	go func() {
-		shell.Run("bash", "-c", "sudo /var/www/html/cgi-bin/diagnose.sh > /dev/null 2>&1")
-	}()
+	// Run setup-sentryusb diagnose, which writes to /tmp/diagnostics.txt
+	_, err := shell.RunWithTimeout(60*time.Second, "bash", "-c", "(sudo /root/bin/setup-sentryusb diagnose) &> /tmp/diagnostics.txt")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to generate diagnostics: "+err.Error())
+		return
+	}
 	writeOK(w)
 }
 
 func (h *handlers) getDiagnostics(w http.ResponseWriter, r *http.Request) {
 	data, err := os.ReadFile("/tmp/diagnostics.txt")
 	if err != nil {
-		writeError(w, http.StatusNotFound, "Diagnostics not available")
+		// File doesn't exist yet — not an error, just not generated
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Write([]byte("Diagnostics have not been generated yet.\nClick the Refresh button above to generate a diagnostics report."))
 		return
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")

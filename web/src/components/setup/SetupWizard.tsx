@@ -44,7 +44,7 @@ interface SetupWizardProps {
   onClose: () => void
 }
 
-type SetupPhase = "wizard" | "applying" | "running" | "complete" | "error"
+type SetupPhase = "wizard" | "applying" | "running" | "rebooting" | "complete" | "error"
 
 export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
   const [currentStep, setCurrentStep] = useState(0)
@@ -65,7 +65,7 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
 
   // Poll setup status while running
   useEffect(() => {
-    if (phase !== "running") return
+    if (phase !== "running" && phase !== "rebooting") return
     pollRef.current = setInterval(async () => {
       try {
         const res = await fetch("/api/setup/status")
@@ -74,14 +74,18 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
           setPhase("complete")
           setSetupMessage("Setup completed successfully! Your device is ready.")
           if (pollRef.current) clearInterval(pollRef.current)
-        } else if (!data.setup_running) {
-          // Setup stopped but not finished — might be an error
-          setPhase("error")
-          setSetupMessage("Setup stopped unexpectedly. Check logs for details.")
-          if (pollRef.current) clearInterval(pollRef.current)
+        } else if (!data.setup_running && phase === "running") {
+          // Setup stopped but not finished — switch to rebooting since
+          // the Pi reboots multiple times during setup.
+          setPhase("rebooting")
+          setSetupMessage("System is rebooting to continue setup. This page will reconnect automatically.")
         }
       } catch {
-        // Server might be restarting
+        // Server unreachable — likely rebooting, which is expected
+        if (phase !== "rebooting") {
+          setPhase("rebooting")
+          setSetupMessage("Waiting for device to come back online after reboot...")
+        }
       }
     }, 3000)
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
@@ -89,7 +93,7 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
 
   // Also listen to WebSocket for real-time updates
   useEffect(() => {
-    if (phase !== "running" && phase !== "applying") return
+    if (phase !== "running" && phase !== "applying" && phase !== "rebooting") return
     let ws: WebSocket | null = null
     try {
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:"
@@ -107,6 +111,9 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
             } else if (d.status === "complete") {
               setPhase("complete")
               setSetupMessage("Setup completed successfully! Your device is ready.")
+            } else if (d.status === "rebooting") {
+              setPhase("rebooting")
+              setSetupMessage(d.message || "System is rebooting to continue setup...")
             } else if (d.status === "error") {
               setPhase("error")
               setSetupMessage(d.error || "Setup failed. Check logs for details.")
@@ -163,7 +170,7 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
         <div className="glass-card flex w-full max-w-lg flex-col items-center gap-6 p-10 text-center">
-          {phase === "applying" || phase === "running" ? (
+          {phase === "applying" || phase === "running" || phase === "rebooting" ? (
             <>
               <div className="flex h-16 w-16 items-center justify-center rounded-full bg-blue-500/20">
                 <Loader2 className="h-8 w-8 animate-spin text-blue-400" />

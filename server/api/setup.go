@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/Scottmg1/Sentry-USB/server/config"
@@ -122,17 +123,30 @@ func (h *handlers) runSetup(w http.ResponseWriter, r *http.Request) {
 		// Timeout is long because setup installs packages, partitions, etc.
 		output, err := shell.RunWithTimeout(1800_000_000_000, "/etc/rc.local")
 		if err != nil {
+			errMsg := err.Error()
 			log.Printf("[setup] rc.local exited: %v", err)
-			// rc.local may exit due to reboot — check if setup is now complete
+
+			// rc.local may exit due to reboot — this is expected during setup.
+			// Detect reboot-related exits and report them as "rebooting" not "error".
+			isReboot := strings.Contains(errMsg, "shutdown") ||
+				strings.Contains(errMsg, "reboot") ||
+				strings.Contains(errMsg, "sleep operation in progress")
+
 			if isSetupFinished() {
 				h.hub.Broadcast("setup_status", map[string]string{
 					"status": "complete",
 					"output": output,
 				})
+			} else if isReboot {
+				log.Println("[setup] System is rebooting as part of setup — this is expected")
+				h.hub.Broadcast("setup_status", map[string]string{
+					"status":  "rebooting",
+					"message": "System is rebooting to continue setup. This page will reconnect automatically.",
+				})
 			} else {
 				h.hub.Broadcast("setup_status", map[string]string{
 					"status": "error",
-					"error":  err.Error(),
+					"error":  shell.CleanStderr(errMsg),
 					"output": output,
 				})
 			}

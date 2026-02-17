@@ -5,6 +5,8 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"regexp"
+	"strings"
 	"time"
 )
 
@@ -54,4 +56,17 @@ func RunCGI(scriptPath string) (string, error) {
 
 	// If no header separator found, return the whole output
 	return output, nil
+}
+
+// curlProgressRe matches curl's progress meter lines that leak into stderr.
+var curlProgressRe = regexp.MustCompile(`(?m)^\s*%\s+Total.*$|^\s*\d+\s+\d+\s+\d+\s+\d+\s+\d+\s+\d+.*$`)
+
+// CleanStderr strips noisy tool output (e.g. curl progress) from an error
+// message so the user sees only the meaningful part.
+func CleanStderr(msg string) string {
+	// Remove curl progress meter lines
+	msg = curlProgressRe.ReplaceAllString(msg, "")
+	// Collapse multiple blank lines / whitespace runs
+	msg = regexp.MustCompile(`\n{3,}`).ReplaceAllString(msg, "\n\n")
+	return strings.TrimSpace(msg)
 }

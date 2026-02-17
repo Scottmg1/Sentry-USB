@@ -23,11 +23,20 @@ export default function Logs() {
 
     async function fetchLog() {
       try {
-        const res = await fetch(activeLog.url + "?" + Math.random())
-        if (!res.ok) throw new Error("Failed to fetch")
+        // For diagnostics, use the dedicated endpoint that returns a
+        // helpful message when the file hasn't been generated yet.
+        const url = activeTab === "diagnostics"
+          ? "/api/diagnostics?" + Math.random()
+          : activeLog.url + "?" + Math.random()
+        const res = await fetch(url)
         const text = await res.text()
         if (mounted) {
-          setContent(text || "(empty)")
+          // The API may return JSON error for non-diagnostics logs
+          if (!res.ok && activeTab !== "diagnostics") {
+            setContent("Log file not available. It may not exist yet.")
+          } else {
+            setContent(text || "(empty)")
+          }
           setLoading(false)
           // Auto-scroll to bottom
           requestAnimationFrame(() => {
@@ -38,7 +47,7 @@ export default function Logs() {
         }
       } catch {
         if (mounted) {
-          setContent("Unable to load log file. Connect to SentryUSB.")
+          setContent("Unable to connect to SentryUSB. Is the device online?")
           setLoading(false)
         }
       }
@@ -46,14 +55,16 @@ export default function Logs() {
 
     fetchLog()
 
-    // Tail the log every 2s
-    const interval = setInterval(fetchLog, 2000)
+    // Tail the log every 2s (but not diagnostics — those are static until refreshed)
+    const interval = activeTab !== "diagnostics"
+      ? setInterval(fetchLog, 2000)
+      : undefined
 
     return () => {
       mounted = false
-      clearInterval(interval)
+      if (interval) clearInterval(interval)
     }
-  }, [activeLog.url])
+  }, [activeLog.url, activeTab])
 
   function handleDownload() {
     const blob = new Blob([content], { type: "text/plain" })

@@ -40,7 +40,7 @@ Browser (React SPA)  ←→  Go API Server (single ARM binary)  ←→  Shell Sc
 **Option B** — Install on existing Raspberry Pi OS:
 ```bash
 sudo -i
-curl -fsSL https://sentryusb.sentry-six.com | bash
+curl -fsSL https://usb.sentry-six.com | bash
 ```
 Then open `http://sentryusb.local` and complete the Setup Wizard.
 
