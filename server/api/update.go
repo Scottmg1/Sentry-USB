@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -91,15 +92,11 @@ func (h *handlers) runUpdate(w http.ResponseWriter, r *http.Request) {
 		tagOutput, tagErr := shell.RunWithTimeout(10*time.Second, "curl", "-sfL", "--max-time", "8",
 			fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", updateRepo))
 		if tagErr == nil {
-			// Parse the tag_name from JSON (simple extraction)
-			if idx := strings.Index(tagOutput, `"tag_name"`); idx >= 0 {
-				rest := tagOutput[idx:]
-				if start := strings.Index(rest, `":"`); start >= 0 {
-					rest = rest[start+3:]
-					if end := strings.Index(rest, `"`); end >= 0 {
-						versionTag = rest[:end]
-					}
-				}
+			var release struct {
+				TagName string `json:"tag_name"`
+			}
+			if json.Unmarshal([]byte(tagOutput), &release) == nil && release.TagName != "" {
+				versionTag = release.TagName
 			}
 		}
 
