@@ -46,7 +46,7 @@ fi
 g++ -o /root/cttseraser -D_FILE_OFFSET_BITS=64 "$SOURCE_DIR/teslausb-www/cttseraser.cpp" -lstdc++ -lfuse
 
 # install new UI (compiled js/css files)
-curlwrapper -L -o /tmp/webui.tgz https://github.com/marcone/teslausb-webui/releases/latest/download/teslausb-ui.tgz
+curlwrapper -L -o /tmp/webui.tgz https://github.com/Scottmg1/Sentry-USB/releases/latest/download/teslausb-ui.tgz
 tar -C /var/www/html -xf /tmp/webui.tgz
 if [ -d /var/www/html/new ] && ! [ -e /var/www/html/new/favicon.ico ]
 then

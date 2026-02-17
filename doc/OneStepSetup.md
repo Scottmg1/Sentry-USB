@@ -10,12 +10,12 @@ This is a streamlined process for setting up the Pi. You'll flash a preconfigure
 
 ## Configure the SD card before first boot of the Pi
 
-1.  Flash the [latest image release](https://github.com/marcone/teslausb/releases/latest) using [Raspberry Pi Imager](https://www.raspberrypi.com/software/) or a similar flashing tool.
+1.  Flash the [latest image release](https://github.com/Scottmg1/Sentry-USB/releases/latest) using [Raspberry Pi Imager](https://www.raspberrypi.com/software/) or a similar flashing tool.
 
     In Raspberry Pi Imager, you need to click 'Operating System' and then scroll _all the way down_ and select the 'Use custom' option.
 
 1.  Mount the card again, and in the `boot` directory create a `teslausb_setup_variables.conf` file to export the same environment variables normally needed for manual setup (including archive info, Wifi, and push notifications (if desired).
-    A sample conf file is located in the `boot` folder on the SD card. The latest sample is also available [from GitHub](https://github.com/marcone/teslausb/blob/main-dev/pi-gen-sources/00-teslausb-tweaks/files/teslausb_setup_variables.conf.sample).
+    A sample conf file is located in the `boot` folder on the SD card. The latest sample is also available [from GitHub](https://github.com/Scottmg1/Sentry-USB/blob/main-dev/pi-gen-sources/00-teslausb-tweaks/files/teslausb_setup_variables.conf.sample).
     The sample file contains documentation and suggestions for values.
 
     > **Note** When creating/editing the configuration file on Windows, ensure that it is saved with the correct extension. It is recommended to disable the "hide extensions for known file types" option in Windows so you can see the full file name.
@@ -107,7 +107,7 @@ Given that the Pi contains sensitive information like your home wifi password an
 - Try `date` to ensure the system clock is set correctly. If it is too far off, SSL/TLS Authentication will fail, preventing the installation from completing. You can set the date like `date -s "2 JAN 2022 15:04:05"`
 - Try `tail -f /teslausb/teslausb-headless-setup.log` to watch the logs during installation, which may shed some light on any errors occurring. Press `Ctrl-C` to stop watching logs.
 
-More troubleshooting information in the [wiki](https://github.com/marcone/teslausb/wiki/Troubleshooting)
+More troubleshooting information in the [wiki](https://github.com/Scottmg1/Sentry-USB/wiki/Troubleshooting)
 
 # Background information
 
@@ -127,4 +127,4 @@ At this point the next boot should start the Dashcam/music drives like normal. I
 
 # Image modification sources
 
-The sources for the image modifications, and instructions, are in the [pi-gen-sources folder](https://github.com/marcone/teslausb/tree/main-dev/pi-gen-sources).
+The sources for the image modifications, and instructions, are in the [pi-gen-sources folder](https://github.com/Scottmg1/Sentry-USB/tree/main-dev/pi-gen-sources).

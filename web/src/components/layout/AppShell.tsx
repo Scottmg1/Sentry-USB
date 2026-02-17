@@ -1,0 +1,50 @@
+import { useState } from "react"
+import { Outlet } from "react-router-dom"
+import { Menu } from "lucide-react"
+import { Sidebar } from "./Sidebar"
+import { MobileNav } from "./MobileNav"
+import { cn } from "@/lib/utils"
+
+export function AppShell() {
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
+
+  return (
+    <div className="flex h-full">
+      {/* Desktop sidebar */}
+      <div className="hidden md:block">
+        <Sidebar
+          collapsed={sidebarCollapsed}
+          onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
+        />
+      </div>
+
+      {/* Mobile nav drawer */}
+      <MobileNav open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
+
+      {/* Main content */}
+      <main
+        className={cn(
+          "flex-1 overflow-y-auto transition-all duration-300",
+          "md:ml-56",
+          sidebarCollapsed && "md:ml-16"
+        )}
+      >
+        {/* Mobile header */}
+        <div className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-white/5 bg-slate-950/80 px-4 backdrop-blur-md md:hidden">
+          <button
+            onClick={() => setMobileNavOpen(true)}
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-white/5 hover:text-slate-200"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+          <span className="text-sm font-semibold text-slate-100">SentryUSB</span>
+        </div>
+
+        <div className="p-4 md:p-6">
+          <Outlet />
+        </div>
+      </main>
+    </div>
+  )
+}

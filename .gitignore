@@ -4,3 +4,12 @@
 *.ipr
 *.iws
 .idea/
+
+# Go
+server/bin/
+server/static/*
+!server/static/.gitkeep
+
+# Node
+web/node_modules/
+web/dist/
