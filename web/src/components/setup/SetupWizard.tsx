@@ -146,7 +146,7 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
       }
 
       setPhase("running")
-      setSetupMessage("Running setup... This may take several minutes.")
+      setSetupMessage("Setup is running. The device will reboot several times during this process — this is normal.")
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Unknown error")
       setPhase("wizard")
@@ -173,7 +173,9 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
                 <p className="mt-2 text-sm text-slate-400">{setupMessage}</p>
                 <p className="mt-4 text-xs text-slate-600">
                   This process creates disk images, configures archiving, and sets up USB gadget mode.
-                  It may take 5-15 minutes. Do not power off the device.
+                  The device will reboot multiple times — this is completely normal.
+                  Setup continues automatically after each reboot. Do not power off the device.
+                  The full process may take 10-20 minutes.
                 </p>
               </div>
             </>

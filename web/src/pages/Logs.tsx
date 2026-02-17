@@ -3,9 +3,9 @@ import { ScrollText, Download, RefreshCw } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const logTabs = [
-  { id: "archiveloop", label: "Archive Loop", url: "/archiveloop.log" },
-  { id: "setup", label: "Setup Log", url: "/teslausb-headless-setup.log" },
-  { id: "diagnostics", label: "Diagnostics", url: "/diagnostics.txt" },
+  { id: "archiveloop", label: "Archive Loop", url: "/api/logs/archiveloop" },
+  { id: "setup", label: "Setup Log", url: "/api/logs/setup" },
+  { id: "diagnostics", label: "Diagnostics", url: "/api/logs/diagnostics" },
 ]
 
 export default function Logs() {
@@ -69,10 +69,10 @@ export default function Logs() {
     setLoading(true)
     setContent("Generating diagnostics...")
     try {
-      await fetch("/cgi-bin/diagnose.sh?" + Math.random())
+      await fetch("/api/diagnostics/refresh", { method: "POST" })
       // Wait a moment for diagnostics to generate
-      await new Promise((r) => setTimeout(r, 2000))
-      const res = await fetch("/diagnostics.txt?" + Math.random())
+      await new Promise((r) => setTimeout(r, 3000))
+      const res = await fetch("/api/logs/diagnostics?" + Math.random())
       const text = await res.text()
       setContent(text || "(empty)")
     } catch {

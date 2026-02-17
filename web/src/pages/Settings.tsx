@@ -170,7 +170,18 @@ export default function Settings() {
             icon={Gauge}
             label="Network Speed Test"
             description="Test the network throughput"
-            onClick={() => {}}
+            onClick={async () => {
+              const start = Date.now()
+              try {
+                const res = await fetch("/api/system/speedtest")
+                const blob = await res.blob()
+                const elapsed = (Date.now() - start) / 1000
+                const mbps = ((blob.size * 8) / elapsed / 1_000_000).toFixed(1)
+                alert(`Download: ${mbps} Mbps\n${(blob.size / 1_000_000).toFixed(1)} MB in ${elapsed.toFixed(1)}s`)
+              } catch {
+                alert("Speed test failed. Check connection.")
+              }
+            }}
           />
           <ActionButton
             icon={Bluetooth}

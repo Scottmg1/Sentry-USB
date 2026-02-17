@@ -40,6 +40,13 @@ func main() {
 		ws.ServeWs(hub, w, r)
 	})
 
+	// Serve TeslaCam video files (replaces nginx's role of serving /var/www/html/TeslaCam/)
+	// The FUSE mount at /var/www/html/TeslaCam maps to /mutable/TeslaCam via cttseraser
+	mux.Handle("/TeslaCam/", http.StripPrefix("/TeslaCam/", http.FileServer(http.Dir("/var/www/html/TeslaCam"))))
+
+	// Also serve /fs/ for music/lightshow/boombox autofs mounts
+	mux.Handle("/fs/", http.StripPrefix("/fs/", http.FileServer(http.Dir("/var/www/html/fs"))))
+
 	// Static file serving
 	if !*dev {
 		var staticFS http.FileSystem
