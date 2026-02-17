@@ -205,9 +205,12 @@ cat > "/etc/systemd/system/$SERVICE_NAME.service" << EOF
 Description=SentryUSB Web Server
 After=network-online.target
 Wants=network-online.target
+Conflicts=nginx.service
 
 [Service]
 Type=simple
+ExecStartPre=-/bin/systemctl stop nginx
+ExecStartPre=-/bin/systemctl disable nginx
 ExecStart=$INSTALL_DIR/$BINARY_NAME -port 80
 Restart=always
 RestartSec=5
