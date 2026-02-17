@@ -64,13 +64,30 @@ fi
 # Option B: Download from GitHub Releases
 if [ "$BINARY_INSTALLED" = false ]; then
     info "Downloading SentryUSB binary from GitHub Releases..."
+
+    # Try stable release first
     DOWNLOAD_URL="https://github.com/$REPO/releases/latest/download/$BINARY_NAME-$BINARY_SUFFIX"
     if curl -fsSL "$DOWNLOAD_URL" -o "$INSTALL_DIR/$BINARY_NAME" 2>/dev/null; then
         chmod +x "$INSTALL_DIR/$BINARY_NAME"
         BINARY_INSTALLED=true
-        ok "Binary downloaded from release"
+        ok "Binary downloaded from latest release"
     else
-        warn "No release binary found (this is normal for first-time setup)"
+        # Try finding the newest release (including pre-releases) via API
+        info "No stable release found, checking pre-releases..."
+        ASSET_URL=$(curl -fsSL "https://api.github.com/repos/$REPO/releases" 2>/dev/null \
+            | grep -o "\"browser_download_url\": *\"[^\"]*$BINARY_NAME-$BINARY_SUFFIX\"" \
+            | head -1 \
+            | grep -o 'https://[^"]*' || true)
+        if [ -n "$ASSET_URL" ]; then
+            if curl -fsSL "$ASSET_URL" -o "$INSTALL_DIR/$BINARY_NAME" 2>/dev/null; then
+                chmod +x "$INSTALL_DIR/$BINARY_NAME"
+                BINARY_INSTALLED=true
+                ok "Binary downloaded from pre-release"
+            fi
+        fi
+        if [ "$BINARY_INSTALLED" = false ]; then
+            warn "No release binary found (this is normal for first-time setup)"
+        fi
     fi
 fi
 
