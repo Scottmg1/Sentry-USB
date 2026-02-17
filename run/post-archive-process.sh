@@ -77,19 +77,15 @@ function process_clips_dir() {
   return 1
 }
 
-# Process ALL clip directories that exist
-PROCESSED=0
-for dir in /mnt/archive/SavedClips /mnt/archive/SentryClips /mnt/archive/RecentClips \
-           /mnt/cam/TeslaCam/SavedClips /mnt/cam/TeslaCam/SentryClips /mnt/cam/TeslaCam/RecentClips; do
-  if [ -d "$dir" ]; then
-    process_clips_dir "$dir" && PROCESSED=$((PROCESSED + 1))
-  fi
-done
-
-if [ $PROCESSED -eq 0 ]; then
-  log "No clips directories found, skipping"
+# Process RecentClips from local snapshot storage (not NFS archive, not live cam)
+CLIPS_DIR="/mutable/TeslaCam/RecentClips"
+if [ ! -d "$CLIPS_DIR" ]; then
+  log "RecentClips directory not found at $CLIPS_DIR, skipping"
   exit 0
 fi
+
+process_clips_dir "$CLIPS_DIR"
+PROCESSED=$?
 
 log "Drive processing complete. $PROCESSED directories processed."
 
