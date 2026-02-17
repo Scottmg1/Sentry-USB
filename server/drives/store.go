@@ -2,6 +2,7 @@ package drives
 
 import (
 	"encoding/json"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -162,4 +163,59 @@ func (s *Store) GetData() StoreData {
 		ProcessedFiles: append([]string{}, s.data.ProcessedFiles...),
 		Routes:         append([]Route{}, s.data.Routes...),
 	}
+}
+
+// ArchivePath returns the path where drive data is backed up on the archive mount.
+const archiveDataPath = "/mnt/archive/drive-data.json"
+
+// SyncToArchive copies the local drive data file to the archive mount.
+// This is best-effort — it silently returns nil if the archive is not mounted.
+func (s *Store) SyncToArchive() error {
+	// Check if archive is mounted
+	if _, err := os.Stat("/mnt/archive"); err != nil {
+		return nil
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	src, err := os.ReadFile(s.path)
+	if err != nil {
+		return err
+	}
+
+	tmp := archiveDataPath + ".tmp"
+	if err := os.WriteFile(tmp, src, 0644); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return os.Rename(tmp, archiveDataPath)
+}
+
+// RestoreFromArchive copies drive data from the archive mount to the local path
+// if the local file does not exist but the archive copy does.
+// This is best-effort and should be called before Load().
+func (s *Store) RestoreFromArchive() error {
+	// Only restore if local file is missing
+	if _, err := os.Stat(s.path); err == nil {
+		return nil
+	}
+
+	// Check if archive copy exists
+	src, err := os.ReadFile(archiveDataPath)
+	if err != nil {
+		return nil // archive not mounted or no backup — nothing to do
+	}
+
+	dir := filepath.Dir(s.path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+
+	if err := os.WriteFile(s.path, src, 0644); err != nil {
+		return err
+	}
+
+	log.Printf("[drives] Restored drive data from archive (%d bytes)", len(src))
+	return nil
 }

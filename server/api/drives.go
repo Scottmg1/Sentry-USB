@@ -27,6 +27,9 @@ type DriveHandlers struct {
 // NewDriveHandlers creates handlers with a store at the given data path.
 func NewDriveHandlers(dataPath string, hub broadcaster) *DriveHandlers {
 	store := drives.NewStore(dataPath)
+	if err := store.RestoreFromArchive(); err != nil {
+		log.Printf("[drives] Warning: failed to restore from archive: %v", err)
+	}
 	if err := store.Load(); err != nil {
 		log.Printf("[drives] Warning: failed to load drive data: %v", err)
 	}
@@ -174,6 +177,11 @@ func (dh *DriveHandlers) processFiles(w http.ResponseWriter, r *http.Request) {
 				"status": "error", "error": err.Error(),
 			})
 			return
+		}
+
+		// Sync drive data to archive mount (best-effort)
+		if err := dh.store.SyncToArchive(); err != nil {
+			log.Printf("[drives] Warning: failed to sync to archive: %v", err)
 		}
 
 		dh.hub.Broadcast("drive_process", map[string]interface{}{
