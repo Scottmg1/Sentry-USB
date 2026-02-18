@@ -146,7 +146,7 @@ export function StorageStep({ data, onChange }: StepProps) {
           <select
             value={data.DATA_DRIVE ?? ""}
             onChange={(e) => onChange("DATA_DRIVE", e.target.value)}
-            className="flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/25"
+            className="flex-1 rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/25 [&>option]:bg-slate-900 [&>option]:text-slate-100"
           >
             <option value="">None (use SD card)</option>
             {devices.map((d) => (

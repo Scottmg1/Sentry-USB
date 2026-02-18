@@ -42,12 +42,35 @@ func (h *handlers) listBlockDevices(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Also try to find the root device via /proc/mounts if cmdline didn't work
+	if rootDev == "" {
+		if data, err := os.ReadFile("/proc/mounts"); err == nil {
+			for _, line := range strings.Split(string(data), "\n") {
+				fields := strings.Fields(line)
+				if len(fields) >= 2 && fields[1] == "/" {
+					dev := strings.TrimPrefix(fields[0], "/dev/")
+					// Strip partition: mmcblk0p2 -> mmcblk0, sda1 -> sda
+					if idx := strings.LastIndex(dev, "p"); idx > 0 && strings.ContainsAny(dev[idx+1:], "0123456789") {
+						rootDev = dev[:idx]
+					} else {
+						rootDev = strings.TrimRight(dev, "0123456789")
+					}
+					break
+				}
+			}
+		}
+	}
+
 	for _, entry := range entries {
 		name := entry.Name()
 		if strings.HasPrefix(name, "loop") || strings.HasPrefix(name, "ram") || strings.HasPrefix(name, "zram") {
 			continue
 		}
 		if name == rootDev {
+			continue
+		}
+		// Always exclude mmcblk0 (SD card) even if root detection failed
+		if name == "mmcblk0" {
 			continue
 		}
 

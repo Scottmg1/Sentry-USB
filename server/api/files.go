@@ -22,6 +22,9 @@ type fileEntry struct {
 
 // Allowed base paths for file operations (security)
 var allowedBases = []string{
+	"/mutable/TeslaCam",
+	"/var/www/html/fs/Wraps",
+	"/var/www/html/fs/LicensePlate",
 	"/var/www/html/fs/Music",
 	"/var/www/html/fs/LightShow",
 	"/var/www/html/fs/Boombox",
@@ -67,9 +70,18 @@ func (h *handlers) listFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Auto-create the directory if it's one of our allowed bases
+	for _, base := range allowedBases {
+		if cleanPath == base {
+			os.MkdirAll(cleanPath, 0755)
+			break
+		}
+	}
+
 	entries, err := os.ReadDir(cleanPath)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "Directory not found: "+err.Error())
+		// If directory doesn't exist (e.g. gadget not mounted), return empty list
+		writeJSON(w, http.StatusOK, []fileEntry{})
 		return
 	}
 

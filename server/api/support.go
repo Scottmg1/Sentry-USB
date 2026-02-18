@@ -2,8 +2,10 @@ package api
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"time"
 )
@@ -39,6 +41,22 @@ func supportProxy(method, path string, payload []byte, authToken string, timeout
 	return respBody, resp.StatusCode, nil
 }
 
+// sanitizeJSON re-parses and re-serializes JSON to normalize any encoding issues
+// (e.g. diagnostics text containing backslash sequences like \usb that look like
+// incomplete Unicode escapes to strict JSON parsers).
+func sanitizeJSON(raw []byte) []byte {
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		// If it won't parse, return as-is
+		return raw
+	}
+	clean, err := json.Marshal(parsed)
+	if err != nil {
+		return raw
+	}
+	return clean
+}
+
 // POST /api/support/ticket — create a new support ticket
 func (h *handlers) createSupportTicket(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
@@ -47,6 +65,10 @@ func (h *handlers) createSupportTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer r.Body.Close()
+
+	// Re-serialize to normalize Unicode escapes in diagnostics text
+	body = sanitizeJSON(body)
+	log.Printf("[CHAT] Forwarding ticket creation (%d bytes)", len(body))
 
 	respBody, status, err := supportProxy("POST", "/chat/ticket", body, "", 30*time.Second)
 	if err != nil {
@@ -70,6 +92,8 @@ func (h *handlers) sendSupportMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer r.Body.Close()
+
+	body = sanitizeJSON(body)
 
 	respBody, status, err := supportProxy("POST", fmt.Sprintf("/chat/ticket/%s/message", ticketId), body, authToken, 30*time.Second)
 	if err != nil {
