@@ -56,19 +56,37 @@ then
   PARTITION_PREFIX=$(partition_prefix_for "$DATA_DRIVE")
   P1="${DATA_DRIVE}${PARTITION_PREFIX}1"
   P2="${DATA_DRIVE}${PARTITION_PREFIX}2"
-  # Check if backingfiles and mutable partitions already exist on this drive.
-  # By default, always wipe and recreate to avoid stale data from previous
-  # TeslaUSB/SentryUSB installs causing boot failures. Set PRESERVE_DATA_DRIVE=true
-  # to skip the wipe (e.g. during upgrades where data should be kept).
-  if [ "${PRESERVE_DATA_DRIVE:-false}" = "true" ] && \
-     [ /dev/disk/by-label/backingfiles -ef "$P2" ] && [ /dev/disk/by-label/mutable -ef "$P1" ]
+  # Check if backingfiles and mutable partitions already exist on this drive
+  # with the correct labels and filesystem types. If so, keep them — a wizard
+  # re-run only needs to recreate the .bin backing files, not the partitions.
+  # Set FORCE_WIPE_DATA_DRIVE=true to force a full wipe even if partitions look good.
+  if [ "${FORCE_WIPE_DATA_DRIVE:-false}" != "true" ] && \
+     [ /dev/disk/by-label/backingfiles -ef "$P2" ] && \
+     [ /dev/disk/by-label/mutable -ef "$P1" ] && \
+     blkid "$P2" | grep -q 'TYPE="xfs"' && \
+     blkid "$P1" | grep -q 'TYPE="ext4"'
   then
-    log_progress "PRESERVE_DATA_DRIVE is set and partitions exist. Skipping partition creation."
+    log_progress "Existing backingfiles (xfs) and mutable (ext4) partitions found on $DATA_DRIVE. Keeping them."
   else
     if [ /dev/disk/by-label/backingfiles -ef "$P2" ] || [ /dev/disk/by-label/mutable -ef "$P1" ]
     then
       log_progress "Found existing backingfiles/mutable partitions on $DATA_DRIVE. Wiping to start fresh."
     fi
+
+    # Unmount any partitions on the data drive before wiping, otherwise
+    # wipefs/parted/mkfs will hang waiting for exclusive device access.
+    log_progress "Unmounting partitions on $DATA_DRIVE..."
+    killall archiveloop 2>/dev/null || true
+    /root/bin/disable_gadget.sh 2>/dev/null || true
+    for mp in /mnt/cam /mnt/music /mnt/lightshow /mnt/boombox /backingfiles /mutable; do
+      umount "$mp" 2>/dev/null || true
+    done
+    # Also unmount by device in case the mount points differ
+    for part in "${P1}" "${P2}"; do
+      umount "$part" 2>/dev/null || true
+    done
+    sleep 1
+
     log_progress "WARNING !!! This will delete EVERYTHING in $DATA_DRIVE."
     wipefs -afq "$DATA_DRIVE"
     parted "$DATA_DRIVE" --script mktable gpt
