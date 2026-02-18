@@ -184,7 +184,8 @@ func (h *handlers) runUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// 5b. Send "before update" telemetry with old version so Discord shows the update is starting
-		if oldVersion != "" && oldVersion != "dev" && oldVersion != "unknown" {
+		// Only send updateAvailable=true if the version is actually changing
+		if oldVersion != "" && oldVersion != "dev" && oldVersion != "unknown" && oldVersion != versionTag {
 			sendTelemetry(oldVersion, true, versionTag)
 		}
 

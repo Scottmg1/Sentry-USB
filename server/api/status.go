@@ -326,6 +326,13 @@ func (h *handlers) getWifiConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Filter out obvious placeholder values for config SSID
+	lowerSSID := strings.ToLower(configSSID)
+	if lowerSSID == "your_ssid" || lowerSSID == "yourssid" || lowerSSID == "your_wifi" ||
+		lowerSSID == "ssid" || lowerSSID == "your_network" || lowerSSID == "" {
+		configSSID = ""
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"current":      info,
 		"config_ssid":  configSSID,

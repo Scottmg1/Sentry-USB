@@ -70,9 +70,9 @@ export function NetworkStep({ data, onChange, onBatchChange }: StepProps) {
         if (cancelled) return
         setDetected(d)
 
-        // Pre-fill SSID from detected config if the wizard field is empty
+        // Pre-fill SSID: prefer the actually connected SSID over config file value
         if (!data.SSID) {
-          const ssid = d.config_ssid || d.current.ssid
+          const ssid = d.current.ssid || d.config_ssid
           if (ssid) {
             onChange("SSID", ssid)
           }
