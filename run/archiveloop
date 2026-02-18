@@ -116,8 +116,33 @@ function archive_is_reachable () {
   true
 }
 
+function sync_user_media_to_cam () {
+  if ! has_cam_disk
+  then
+    return
+  fi
+  log "Syncing user media to cam drive..."
+  if ensure_mountpoint_is_mounted "$CAM_MOUNT"
+  then
+    for dir in Wraps LicensePlate
+    do
+      if [ -d "/mutable/$dir" ] && [ -n "$(ls -A "/mutable/$dir" 2>/dev/null)" ]
+      then
+        mkdir -p "$CAM_MOUNT/$dir"
+        rsync -a --delete "/mutable/$dir/" "$CAM_MOUNT/$dir/" >> "$LOG_FILE" 2>&1 \
+          || log "Failed to sync $dir to cam drive"
+      fi
+    done
+    unmount_mount_point "$CAM_MOUNT"
+    log "Done syncing user media."
+  else
+    log "Could not mount cam drive to sync user media."
+  fi
+}
+
 function connect_usb_drives_to_host() {
   log "Connecting usb to host..."
+  sync_user_media_to_cam
   /root/bin/enable_gadget.sh
   log "Connected usb to host."
   sleep 5
