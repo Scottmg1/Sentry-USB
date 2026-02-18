@@ -110,6 +110,10 @@ func (h *handlers) saveSetupConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Remount filesystem read-write — root fs is mounted read-only by default,
+	// so writing to /root/sentryusb.conf will fail without this.
+	shell.Run("bash", "-c", "/root/bin/remountfs_rw")
+
 	configPath := config.FindConfigPath()
 	if err := config.WriteFile(configPath, newConfig); err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to write config: "+err.Error())
