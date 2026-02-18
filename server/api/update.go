@@ -25,6 +25,17 @@ var (
 	fingerprintOnce   sync.Once
 )
 
+// getSBCModel reads the hardware model string (e.g. "Raspberry Pi 4 Model B Rev 1.4")
+func getSBCModel() string {
+	for _, p := range []string{"/proc/device-tree/model", "/sys/firmware/devicetree/base/model"} {
+		raw, err := os.ReadFile(p)
+		if err == nil {
+			return strings.TrimRight(string(raw), "\x00\n ")
+		}
+	}
+	return "unknown"
+}
+
 // getFingerprint generates a SHA-256 hash of /etc/machine-id + salt.
 // Cached after first call.
 func getFingerprint() string {
@@ -58,6 +69,7 @@ func sendTelemetry(currentVersion string, updateAvailable bool, newVersion strin
 			"update_available": updateAvailable,
 			"new_version":      newVersion,
 			"arch":             runtime.GOARCH,
+			"model":            getSBCModel(),
 		})
 		client := &http.Client{Timeout: 10 * time.Second}
 		resp, err := client.Post(telemetryURL, "application/json", bytes.NewReader(payload))
@@ -235,6 +247,9 @@ fi
 		} else {
 			log.Printf("[update] Shell scripts updated from %s", scriptRef)
 		}
+
+		// Send telemetry before restarting
+		sendTelemetry(versionTag, false, "")
 
 		broadcast("restarting", "Restarting SentryUSB service...")
 
