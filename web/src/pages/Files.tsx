@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react"
 import {
   FolderOpen,
   Upload,
+  Download,
   FolderPlus,
   Trash2,
   File,
@@ -240,14 +241,34 @@ export default function Files() {
             )}
             <p className="font-mono text-sm text-slate-400">{relativePath}</p>
           </div>
-          <div className="flex gap-1">
+          <div className="flex items-center gap-1">
             {selected.size > 0 && (
-              <button
-                onClick={handleDelete}
-                className="rounded p-1 text-slate-500 hover:bg-white/5 hover:text-red-400"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
+              <>
+                <span className="mr-1 rounded-full bg-blue-500/20 px-2 py-0.5 text-[10px] font-semibold text-blue-400">
+                  {selected.size} selected
+                </span>
+                <button
+                  onClick={() => {
+                    for (const p of selected) {
+                      const a = document.createElement("a")
+                      a.href = `/api/files/download?path=${encodeURIComponent(p)}`
+                      a.download = ""
+                      a.click()
+                    }
+                  }}
+                  className="rounded p-1 text-slate-500 hover:bg-white/5 hover:text-blue-400"
+                  title="Download selected"
+                >
+                  <Download className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={handleDelete}
+                  className="rounded p-1 text-slate-500 hover:bg-white/5 hover:text-red-400"
+                  title="Delete selected"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </>
             )}
           </div>
         </div>

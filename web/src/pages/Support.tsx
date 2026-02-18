@@ -142,7 +142,13 @@ export default function Support() {
         // Refresh diagnostics first
         await fetch("/api/diagnostics/refresh", { method: "POST" }).catch(() => {})
         const diagRes = await fetch("/api/diagnostics")
-        diagnostics = await diagRes.text()
+        let rawDiag = await diagRes.text()
+        // Sanitize: strip ANSI escape codes and replace lone surrogates / invalid chars
+        // that would break PostgreSQL JSONB on the support server
+        rawDiag = rawDiag.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "") // ANSI escapes
+        rawDiag = rawDiag.replace(/[\uD800-\uDFFF]/g, "\uFFFD") // lone surrogates
+        rawDiag = rawDiag.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "") // control chars (keep \t \n \r)
+        diagnostics = rawDiag
       }
 
       // Track the active ticket for this send (needed because setState is async)
@@ -421,16 +427,19 @@ export default function Support() {
 
             {/* Options row */}
             <div className="mb-2 flex items-center gap-3">
-              <label className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-500 hover:text-slate-300">
-                <input
-                  type="checkbox"
-                  checked={includeDiagnostics}
-                  onChange={e => setIncludeDiagnostics(e.target.checked)}
-                  className="accent-blue-500"
-                />
+              <button
+                type="button"
+                onClick={() => setIncludeDiagnostics(!includeDiagnostics)}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition-colors",
+                  includeDiagnostics
+                    ? "bg-blue-500/20 text-blue-400 ring-1 ring-blue-500/30"
+                    : "text-slate-500 hover:bg-white/5 hover:text-slate-300"
+                )}
+              >
                 <FileText className="h-3.5 w-3.5" />
                 Diagnostics
-              </label>
+              </button>
               <label className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-500 hover:text-slate-300">
                 <Paperclip className="h-3.5 w-3.5" />
                 Attach

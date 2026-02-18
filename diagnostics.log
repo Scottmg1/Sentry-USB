@@ -1,0 +1,2137 @@
+====== summary ======
+hardware: Raspberry Pi Zero 2 W Rev 1.0
+OS: Debian GNU/Linux 12 (bookworm)
+NFS archiving selected
+lun0 connected, from file /backingfiles/cam_disk.bin
+lun1 connected, from file /backingfiles/lightshow_disk.bin
+Snapshot interval: 3480
+5 snapshots mounted
+Gadget state: not attached. 118.4 seconds ago: mass storage ready, but not connected to host (check cable)
+====== disk / images ======
+Model: SD SN256 (sd/mmc)
+Disk /dev/mmcblk0: 256GB
+Sector size (logical/physical): 512B/512B
+Partition Table: msdos
+Disk Flags: 
+Number  Start   End     Size    Type     File system  Flags
+ 1      8389kB  545MB   537MB   primary  fat32        lba
+ 2      545MB   5914MB  5369MB  primary  ext4
+ 3      5914MB  256GB   250GB   primary  xfs
+ 4      256GB   256GB   315MB   primary  ext4
+cam disk image has 102 extents
+Model:  (file)
+Disk /backingfiles/cam_disk.bin: 68.7GB
+Sector size (logical/physical): 512B/512B
+Partition Table: msdos
+Disk Flags: 
+Number  Start   End     Size    Type     File system  Flags
+ 1      1049kB  68.7GB  68.7GB  primary  fat32        lba
+no music disk image found
+lightshow disk image has 2 extents
+Model:  (file)
+Disk /backingfiles/lightshow_disk.bin: 1074MB
+Sector size (logical/physical): 512B/512B
+Partition Table: msdos
+Disk Flags: 
+Number  Start   End     Size    Type     File system  Flags
+ 1      1049kB  1074MB  1073MB  primary  fat32        lba
+no boombox disk image found
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/mmcblk0p1  510M   56M  455M  11% /boot/firmware
+/dev/mmcblk0p2  4.9G  1.6G  3.1G  34% /
+/dev/mmcblk0p3  233G   18G  215G   8% /backingfiles
+/dev/mmcblk0p4  284M  769K  265M   1% /mutable
+====== network ======
+lo: flags=73<UP,LOOPBACK,RUNNING>  mtu 65536
+        inet 127.0.0.1  netmask 255.0.0.0
+        inet6 ::1  prefixlen 128  scopeid 0x10<host>
+        loop  txqueuelen 1000  (Local Loopback)
+        RX packets 18  bytes 2781 (2.7 KiB)
+        RX errors 0  dropped 0  overruns 0  frame 0
+        TX packets 18  bytes 2781 (2.7 KiB)
+        TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
+wlan0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500
+        inet 192.168.1.87  netmask 255.255.255.0  broadcast 192.168.1.255
+        inet6 fe80::6dd0:707c:8512:b0e0  prefixlen 64  scopeid 0x20<link>
+        ether 2c:cf:67:b5:95:70  txqueuelen 1000  (Ethernet)
+        RX packets 1815  bytes 157309 (153.6 KiB)
+        RX errors 0  dropped 0  overruns 0  frame 0
+        TX packets 3848  bytes 4181507 (3.9 MiB)
+        TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
+          Link Quality=47/70  Signal level=-63 dBm  
+====== fstab ======
+proc            /proc           proc    defaults          0       0
+PARTUUID=33504cfd-01  /boot/firmware  vfat    defaults,ro          0       2
+PARTUUID=33504cfd-02  /               ext4    defaults,noatime,ro  0       1
+# a swapfile is not a swap partition, no line here
+#   use  dphys-swapfile swap[on|off]  for that
+LABEL=backingfiles /backingfiles xfs auto,rw,noatime 0 2
+LABEL=mutable /mutable ext4 auto,rw 0 2
+/backingfiles/cam_disk.bin /mnt/cam sentryusb noauto 0 0
+/backingfiles/lightshow_disk.bin /mnt/lightshow sentryusb noauto 0 0
+PaniniToaster:/volume1/TeslaCam /mnt/archive nfs rw,noauto,nolock,proto=tcp,vers=3 0 0
+mount.ctts#/mutable/TeslaCam /var/www/html/TeslaCam fuse defaults,nofail,x-systemd.requires=/mutable 0 0
+tmpfs /var/log tmpfs nodev,nosuid 0 0
+tmpfs /var/tmp tmpfs nodev,nosuid 0 0
+tmpfs /tmp    tmpfs nodev,nosuid 0 0
+tmpfs /var/spool tmpfs nodev,nosuid 0 0
+tmpfs /var/lib/ntp tmpfs nodev,nosuid 0 0
+====== mounts ======
+sysfs on /sys type sysfs (rw,nosuid,nodev,noexec,relatime)
+proc on /proc type proc (rw,relatime)
+udev on /dev type devtmpfs (rw,nosuid,relatime,size=76116k,nr_inodes=19029,mode=755)
+devpts on /dev/pts type devpts (rw,nosuid,noexec,relatime,gid=5,mode=620,ptmxmode=000)
+tmpfs on /run type tmpfs (rw,nosuid,nodev,noexec,relatime,size=85256k,mode=755)
+/dev/mmcblk0p2 on / type ext4 (ro,noatime)
+securityfs on /sys/kernel/security type securityfs (rw,nosuid,nodev,noexec,relatime)
+tmpfs on /dev/shm type tmpfs (rw,nosuid,nodev)
+tmpfs on /run/lock type tmpfs (rw,nosuid,nodev,noexec,relatime,size=5120k)
+cgroup2 on /sys/fs/cgroup type cgroup2 (rw,nosuid,nodev,noexec,relatime,nsdelegate,memory_recursiveprot)
+pstore on /sys/fs/pstore type pstore (rw,nosuid,nodev,noexec,relatime)
+bpf on /sys/fs/bpf type bpf (rw,nosuid,nodev,noexec,relatime,mode=700)
+systemd-1 on /proc/sys/fs/binfmt_misc type autofs (rw,relatime,fd=30,pgrp=1,timeout=0,minproto=5,maxproto=5,direct,pipe_ino=4615)
+mqueue on /dev/mqueue type mqueue (rw,nosuid,nodev,noexec,relatime)
+debugfs on /sys/kernel/debug type debugfs (rw,nosuid,nodev,noexec,relatime)
+tracefs on /sys/kernel/tracing type tracefs (rw,nosuid,nodev,noexec,relatime)
+fusectl on /sys/fs/fuse/connections type fusectl (rw,nosuid,nodev,noexec,relatime)
+configfs on /sys/kernel/config type configfs (rw,nosuid,nodev,noexec,relatime)
+ramfs on /run/credentials/systemd-tmpfiles-setup-dev.service type ramfs (ro,nosuid,nodev,noexec,relatime,mode=700)
+ramfs on /run/credentials/systemd-sysctl.service type ramfs (ro,nosuid,nodev,noexec,relatime,mode=700)
+tmpfs on /tmp type tmpfs (rw,nosuid,nodev,relatime)
+tmpfs on /var/lib/ntp type tmpfs (rw,nosuid,nodev,relatime)
+tmpfs on /var/log type tmpfs (rw,nosuid,nodev,relatime)
+tmpfs on /var/spool type tmpfs (rw,nosuid,nodev,relatime)
+tmpfs on /var/tmp type tmpfs (rw,nosuid,nodev,relatime)
+/dev/mmcblk0p1 on /boot/firmware type vfat (ro,relatime,fmask=0022,dmask=0022,codepage=437,iocharset=ascii,shortname=mixed,errors=remount-ro)
+/dev/mmcblk0p4 on /mutable type ext4 (rw,relatime)
+cttseraser on /var/www/html/TeslaCam type fuse.cttseraser (rw,relatime,user_id=0,group_id=0,allow_other)
+/dev/mmcblk0p3 on /backingfiles type xfs (rw,noatime,attr2,inode64,logbufs=8,logbsize=32k,noquota)
+ramfs on /run/credentials/systemd-tmpfiles-setup.service type ramfs (ro,nosuid,nodev,noexec,relatime,mode=700)
+sunrpc on /run/rpc_pipefs type rpc_pipefs (rw,relatime)
+binfmt_misc on /proc/sys/fs/binfmt_misc type binfmt_misc (rw,nosuid,nodev,noexec,relatime)
+/root/bin/auto.sentryusb on /tmp/snapshots type autofs (rw,relatime,fd=6,pgrp=516,timeout=300,minproto=5,maxproto=5,indirect,pipe_ino=2867)
+/root/bin/auto.www on /var/www/html/fs type autofs (rw,relatime,fd=12,pgrp=516,timeout=300,minproto=5,maxproto=5,indirect,pipe_ino=3826)
+/backingfiles/snapshots/snap-000002/snap.bin on /tmp/snapshots/snap-000002 type vfat (ro,relatime,fmask=0000,dmask=0000,allow_utime=0022,codepage=437,iocharset=ascii,shortname=mixed,utf8,time_offset=-420,errors=remount-ro)
+/backingfiles/snapshots/snap-000003/snap.bin on /tmp/snapshots/snap-000003 type vfat (ro,relatime,fmask=0000,dmask=0000,allow_utime=0022,codepage=437,iocharset=ascii,shortname=mixed,utf8,time_offset=-420,errors=remount-ro)
+/backingfiles/snapshots/snap-000004/snap.bin on /tmp/snapshots/snap-000004 type vfat (ro,relatime,fmask=0000,dmask=0000,allow_utime=0022,codepage=437,iocharset=ascii,shortname=mixed,utf8,time_offset=-420,errors=remount-ro)
+/backingfiles/snapshots/snap-000005/snap.bin on /tmp/snapshots/snap-000005 type vfat (ro,relatime,fmask=0000,dmask=0000,allow_utime=0022,codepage=437,iocharset=ascii,shortname=mixed,utf8,time_offset=-420,errors=remount-ro)
+====== initial setup boot log ======
+no boot log found
+====== rc.local log ======
+Feb 18 00:59:12 sentryusb systemd[1]: Starting rc-local.service - /etc/rc.local Compatibility...
+Feb 18 00:59:12 sentryusb rc.local[727]: My IP address is 192.168.1.87
+Feb 18 00:59:12 sentryusb rc.local[727]: /etc/rc.local: line 63: /sentryusb/sentryusb-setup.log: Read-only file system
+Feb 18 00:59:12 sentryusb rc.local[727]: can't write to /sentryusb/sentryusb-setup.log
+Feb 18 00:59:12 sentryusb rc.local[727]: Detecting whether to configure wifi
+Feb 18 00:59:12 sentryusb systemd[1]: Started rc-local.service - /etc/rc.local Compatibility.
+====== setup log ======
+Tue 17 Feb 14:07:26 PST 2026 : Detecting whether to configure wifi
+Tue 17 Feb 14:07:26 PST 2026 : skipping wifi setup because variables not specified
+Tue 17 Feb 14:07:26 PST 2026 : Grabbing main setup file.
+Tue 17 Feb 14:07:26 PST 2026 : Starting setup.
+Tue 17 Feb 14:07:27 PST 2026 : curl -L https://github.com/Scottmg1/Sentry-USB/archive/main-dev.tar.gz
+Tue 17 Feb 14:07:29 PST 2026 : Downloaded /root/bin/envsetup.sh ...
+Tue 17 Feb 14:07:29 PST 2026 : increased root partition size
+Tue 17 Feb 14:07:29 PST 2026 : rebooting for changes to take effect
+Tue 17 Feb 14:07:37 PST 2026 : Detecting whether to configure wifi
+Tue 17 Feb 14:07:37 PST 2026 : skipping wifi setup because variables not specified
+Tue 17 Feb 14:07:37 PST 2026 : Starting setup.
+Tue 17 Feb 14:07:37 PST 2026 : increasing root filesystem size to match partition size
+Tue 17 Feb 14:07:38 PST 2026 : rebooting to apply dwc2 overlay change
+Tue 17 Feb 14:07:47 PST 2026 : Detecting whether to configure wifi
+Tue 17 Feb 14:07:47 PST 2026 : skipping wifi setup because variables not specified
+Tue 17 Feb 14:07:48 PST 2026 : Starting setup.
+Tue 17 Feb 14:07:48 PST 2026 : increasing root filesystem size to match partition size
+Tue 17 Feb 14:07:48 PST 2026 : curl -L https://github.com/Scottmg1/Sentry-USB/archive/main-dev.tar.gz
+Tue 17 Feb 14:07:51 PST 2026 : Downloaded /tmp/534/setup-sentryusb ...
+Tue 17 Feb 14:07:51 PST 2026 : /root/bin/setup-sentryusb is up to date
+Tue 17 Feb 14:07:51 PST 2026 : Downloaded /tmp/534/rc.local ...
+Tue 17 Feb 14:07:51 PST 2026 : rc.local is up to date
+Tue 17 Feb 14:07:51 PST 2026 : Updating package index files...
+Tue 17 Feb 14:08:11 PST 2026 : Verifying that the requested configuration is valid...
+Tue 17 Feb 14:08:11 PST 2026 : Downloaded /tmp/verify-configuration.sh ...
+Tue 17 Feb 14:08:11 PST 2026 : Checking XFS support
+Tue 17 Feb 14:10:06 PST 2026 : XFS supported
+Tue 17 Feb 14:10:06 PST 2026 : DATA_DRIVE is not set. SD card will be used.
+Tue 17 Feb 14:10:06 PST 2026 : Verifying that there is sufficient space available on the MicroSD card...
+Tue 17 Feb 14:10:06 PST 2026 : There is sufficient space available.
+Tue 17 Feb 14:10:10 PST 2026 : Downloading common runtime scripts.
+Tue 17 Feb 14:10:10 PST 2026 : Downloaded /root/bin/remountfs_rw ...
+Tue 17 Feb 14:10:10 PST 2026 : Downloaded /root/bin/make_snapshot.sh ...
+Tue 17 Feb 14:10:10 PST 2026 : Downloaded /root/bin/release_snapshot.sh ...
+Tue 17 Feb 14:10:10 PST 2026 : Downloaded /root/bin/manage_free_space.sh ...
+Tue 17 Feb 14:10:10 PST 2026 : Downloaded /root/bin/force_sync.sh ...
+Tue 17 Feb 14:10:10 PST 2026 : Downloaded /root/bin/mountoptsforimage ...
+Tue 17 Feb 14:10:10 PST 2026 : Downloaded /root/bin/mountimage ...
+Tue 17 Feb 14:10:10 PST 2026 : Downloaded /root/bin/enable_gadget.sh ...
+Tue 17 Feb 14:10:10 PST 2026 : Downloaded /root/bin/disable_gadget.sh ...
+Tue 17 Feb 14:10:10 PST 2026 : Updated cmdline.txt from:
+Tue 17 Feb 14:10:10 PST 2026 : console=serial0,115200 console=tty1 root=PARTUUID=33504cfd-02 rootfstype=ext4 fsck.repair=yes rootwait cfg80211.ieee80211_regdom=US
+Tue 17 Feb 14:10:10 PST 2026 : to:
+Tue 17 Feb 14:10:10 PST 2026 : console=serial0,115200 console=tty1 root=PARTUUID=33504cfd-02 rootfstype=ext4 fsck.repair=yes rootwait cfg80211.ieee80211_regdom=US modules-load=dwc2,g_ether
+Tue 17 Feb 14:10:16 PST 2026 : Downloaded /tmp/create-backingfiles-partition.sh ...
+Tue 17 Feb 14:10:16 PST 2026 : create-backingfiles-partition: Checking existing partitions...
+Tue 17 Feb 14:10:16 PST 2026 : create-backingfiles-partition: Modifying partition table for backing files partition...
+Tue 17 Feb 14:10:17 PST 2026 : create-backingfiles-partition: Modifying partition table for mutable (writable) partition for script usage...
+Tue 17 Feb 14:10:17 PST 2026 : create-backingfiles-partition: Writing updated partitions to fstab and cmdline.txt
+Tue 17 Feb 14:10:17 PST 2026 : create-backingfiles-partition: Formatting new partitions...
+Tue 17 Feb 14:10:30 PST 2026 : Mounting the partition for the backing files...
+Tue 17 Feb 14:10:30 PST 2026 : Mounted the partition for the backing files.
+Tue 17 Feb 14:10:30 PST 2026 : Mounting the mutable partition...
+Tue 17 Feb 14:10:30 PST 2026 : Mounted the mutable partition.
+Tue 17 Feb 14:10:30 PST 2026 : Creating backing disk files.
+Tue 17 Feb 14:10:30 PST 2026 : Downloaded /tmp/create-backingfiles.sh ...
+Tue 17 Feb 14:10:30 PST 2026 : create-backingfiles: starting
+Tue 17 Feb 14:10:30 PST 2026 : create-backingfiles: cam: 64G, music: 0, lightshow: 1G, boombox: 0 mountpoint: /backingfiles, exfat: false
+Tue 17 Feb 14:10:30 PST 2026 : create-backingfiles: /backingfiles/cam_disk.bin should be created
+Tue 17 Feb 14:10:30 PST 2026 : create-backingfiles: /backingfiles/cam_disk.bin should be created
+Tue 17 Feb 14:10:30 PST 2026 : create-backingfiles: Allocating 67108864K for /backingfiles/cam_disk.bin...
+Tue 17 Feb 14:10:31 PST 2026 : create-backingfiles: Creating filesystem with label 'CAM'
+Tue 17 Feb 14:10:32 PST 2026 : create-backingfiles: /backingfiles/lightshow_disk.bin should be created
+Tue 17 Feb 14:10:32 PST 2026 : create-backingfiles: Allocating 1048576K for /backingfiles/lightshow_disk.bin...
+Tue 17 Feb 14:10:33 PST 2026 : create-backingfiles: Creating filesystem with label 'LIGHTSHOW'
+Tue 17 Feb 14:10:33 PST 2026 : create-backingfiles: done
+Tue 17 Feb 14:10:33 PST 2026 : updated /etc/fstab for /mnt/cam
+Tue 17 Feb 14:10:33 PST 2026 : updated /etc/fstab for /mnt/lightshow
+Tue 17 Feb 14:10:33 PST 2026 : calling configure.sh
+Tue 17 Feb 14:10:33 PST 2026 : Downloaded /tmp/configure.sh ...
+Tue 17 Feb 14:10:33 PST 2026 : configure: TeslaFi API not enabled because no TeslaFi credential was provided.
+Tue 17 Feb 14:10:33 PST 2026 : configure: Installing required package for Tessie API: jq
+Tue 17 Feb 14:10:50 PST 2026 : configure: Tessie API enabled.
+Tue 17 Feb 14:10:50 PST 2026 : configure: Tesla BLE API not enabled because no Tesla BLE VIN was provided.
+Tue 17 Feb 14:10:50 PST 2026 : configure: Awake Webhook not enabled because no webhook URL was provided.
+Tue 17 Feb 14:10:50 PST 2026 : configure: Installing temperature monitor script
+Tue 17 Feb 14:10:50 PST 2026 : Downloaded /root/bin/temperature_monitor ...
+Tue 17 Feb 14:10:50 PST 2026 : configure: Pushover not enabled.
+Tue 17 Feb 14:10:50 PST 2026 : configure: Gotify not enabled.
+Tue 17 Feb 14:10:50 PST 2026 : configure: IFTTT not enabled.
+Tue 17 Feb 14:10:50 PST 2026 : configure: Discord not enabled.
+Tue 17 Feb 14:10:50 PST 2026 : configure: Webhook enabled.
+Tue 17 Feb 14:10:50 PST 2026 : configure: Slack not enabled.
+Tue 17 Feb 14:10:50 PST 2026 : configure: Matrix not configured.
+Tue 17 Feb 14:10:50 PST 2026 : configure: Telegram not enabled.
+Tue 17 Feb 14:10:50 PST 2026 : configure: SNS not configured.
+Tue 17 Feb 14:10:50 PST 2026 : Downloaded /root/bin/send-push-message ...
+Tue 17 Feb 14:10:50 PST 2026 : Downloaded /root/bin/send_sns.py ...
+Tue 17 Feb 14:10:50 PST 2026 : Downloaded /root/bin/send_matrix.py ...
+Tue 17 Feb 14:10:50 PST 2026 : configure: Checking archive configs: 
+Tue 17 Feb 14:10:51 PST 2026 : configure: rsync seems to work OK
+Tue 17 Feb 14:10:51 PST 2026 : configure: done
+Tue 17 Feb 14:10:51 PST 2026 : configure: Using archive module: run/nfs_archive
+Tue 17 Feb 14:10:51 PST 2026 : configure: Installing base archive scripts into /root/bin
+Tue 17 Feb 14:10:51 PST 2026 : Downloaded /root/bin/envsetup.sh ...
+Tue 17 Feb 14:10:51 PST 2026 : Downloaded /root/bin/archiveloop ...
+Tue 17 Feb 14:10:51 PST 2026 : Downloaded /root/bin/waitforidle ...
+Tue 17 Feb 14:10:51 PST 2026 : Downloaded /root/bin/remountfs_rw ...
+Tue 17 Feb 14:10:51 PST 2026 : Downloaded /root/bin/awake_start ...
+Tue 17 Feb 14:10:51 PST 2026 : Downloaded /root/bin/awake_stop ...
+Tue 17 Feb 14:10:51 PST 2026 : configure: Installing archive module scripts
+Tue 17 Feb 14:10:51 PST 2026 : Downloaded /tmp/verify-and-configure-archive.sh ...
+Tue 17 Feb 14:10:51 PST 2026 : Downloaded /root/bin/archive-clips.sh ...
+Tue 17 Feb 14:10:51 PST 2026 : Downloaded /root/bin/connect-archive.sh ...
+Tue 17 Feb 14:10:51 PST 2026 : Downloaded /root/bin/disconnect-archive.sh ...
+Tue 17 Feb 14:10:51 PST 2026 : Downloaded /root/bin/archive-is-reachable.sh ...
+Tue 17 Feb 14:10:51 PST 2026 : verify-and-configure-archive: Installing/updating required packages if needed
+Tue 17 Feb 14:11:32 PST 2026 : verify-and-configure-archive: Done
+Tue 17 Feb 14:11:32 PST 2026 : verify-and-configure-archive: Verifying that the archive server PaniniToaster is reachable...
+Tue 17 Feb 14:11:32 PST 2026 : verify-and-configure-archive: The archive server is reachable.
+Tue 17 Feb 14:11:32 PST 2026 : verify-and-configure-archive: Verifying that the archive share is mountable...
+Tue 17 Feb 14:11:32 PST 2026 : verify-and-configure-archive: Trying NFS mount command-line:
+Tue 17 Feb 14:11:32 PST 2026 : verify-and-configure-archive: mount -t nfs 'PaniniToaster:/volume1/TeslaCam' '/tmp/archivetestmount' -o 'rw,noauto,nolock,proto=tcp,vers=3'
+Tue 17 Feb 14:11:33 PST 2026 : verify-and-configure-archive: The archive share is mountable.
+Tue 17 Feb 14:11:33 PST 2026 : verify-and-configure-archive: Configuring the archive...
+Tue 17 Feb 14:11:33 PST 2026 : verify-and-configure-archive: Configured the archive.
+Tue 17 Feb 14:11:35 PST 2026 : Downloaded /tmp/configure-automount.sh ...
+Tue 17 Feb 14:12:07 PST 2026 : Downloaded /root/bin/auto.sentryusb ...
+Tue 17 Feb 14:12:07 PST 2026 : configure-automount: converting snapshot mountpoints to links
+Tue 17 Feb 14:12:07 PST 2026 : configure-automount: configured automount
+Tue 17 Feb 14:12:07 PST 2026 : Downloaded /tmp/configure-web.sh ...
+Tue 17 Feb 14:12:07 PST 2026 : configuring web (SentryUSB mode)
+Tue 17 Feb 14:13:10 PST 2026 : Downloaded /root/bin/auto.www ...
+Tue 17 Feb 14:13:15 PST 2026 : done configuring web
+Tue 17 Feb 14:13:15 PST 2026 : Downloaded /tmp/configure-ssh.sh ...
+Tue 17 Feb 14:13:15 PST 2026 : configuring ssh
+Tue 17 Feb 14:13:15 PST 2026 : done configuring ssh
+Tue 17 Feb 14:13:15 PST 2026 : Downloaded /tmp/make-root-fs-readonly.sh ...
+Tue 17 Feb 14:13:15 PST 2026 : make-root-fs-readonly: start
+Tue 17 Feb 14:13:15 PST 2026 : make-root-fs-readonly: Disabling unnecessary service...
+Tue 17 Feb 14:13:18 PST 2026 : make-root-fs-readonly: Removing unwanted packages...
+Tue 17 Feb 14:14:10 PST 2026 : make-root-fs-readonly: Installing ntp and busybox-syslogd...
+Tue 17 Feb 14:15:18 PST 2026 : make-root-fs-readonly: Configuring system...
+Tue 17 Feb 14:15:18 PST 2026 : make-root-fs-readonly: Moving fake-hwclock data
+Tue 17 Feb 14:15:19 PST 2026 : make-root-fs-readonly: done
+Tue 17 Feb 14:15:19 PST 2026 : Skipping package upgrade.
+Tue 17 Feb 14:15:19 PST 2026 : Running post-setup tasks
+Tue 17 Feb 14:15:19 PST 2026 : setup/pi/once/clean_sentry_files_archived
+Tue 17 Feb 14:15:19 PST 2026 : Downloaded /tmp//clean_sentry_files_archived ...
+Tue 17 Feb 14:15:25 PST 2026 : All done.
+====== archiveloop log ======
+==============================================
+Tue 17 Feb 14:15:28 PST 2026: Starting archiveloop at 11.71 seconds uptime...
+Tue 17 Feb 14:15:28 PST 2026: Running fsck on /backingfiles/cam_disk.bin...
+Tue 17 Feb 14:15:28 PST 2026: Temperature Monitor: Not enabled.
+Tue 17 Feb 14:15:29 PST 2026: | fsck from util-linux 2.38.1
+Tue 17 Feb 14:15:30 PST 2026: | fsck.fat 4.2 (2021-01-31)
+Tue 17 Feb 14:15:30 PST 2026: | /dev/loop0p1: 4 files, 3/2096606 clusters
+Tue 17 Feb 14:15:30 PST 2026: Finished fsck on /backingfiles/cam_disk.bin.
+Tue 17 Feb 14:15:30 PST 2026: Running fsck on /backingfiles/lightshow_disk.bin...
+Tue 17 Feb 14:15:30 PST 2026: | fsck from util-linux 2.38.1
+Tue 17 Feb 14:15:30 PST 2026: | fsck.fat 4.2 (2021-01-31)
+Tue 17 Feb 14:15:30 PST 2026: | /dev/loop0p1: 3 files, 2/261367 clusters
+Tue 17 Feb 14:15:30 PST 2026: Finished fsck on /backingfiles/lightshow_disk.bin.
+Tue 17 Feb 14:15:31 PST 2026: cleaning cam mount
+Tue 17 Feb 14:15:31 PST 2026: Ensuring cam file is mounted...
+Tue 17 Feb 14:15:31 PST 2026: Disconnecting usb from host...
+Tue 17 Feb 14:15:31 PST 2026: Disconnected usb from host.
+Tue 17 Feb 14:15:31 PST 2026: Mounted /mnt/cam.
+Tue 17 Feb 14:15:31 PST 2026: Ensured cam file is mounted.
+Tue 17 Feb 14:15:31 PST 2026: Trimming free space in /mnt/cam, which has 2 extents
+Tue 17 Feb 14:15:32 PST 2026: Trim complete, image now has 2 extents
+Tue 17 Feb 14:15:32 PST 2026: Unmounting /mnt/cam...
+Tue 17 Feb 14:15:32 PST 2026: Unmounted /mnt/cam.
+Tue 17 Feb 14:15:32 PST 2026: done cleaning cam mount
+Tue 17 Feb 14:15:32 PST 2026: taking snapshot of cam disk in /backingfiles/snapshots/snap-000000
+Tue 17 Feb 14:15:32 PST 2026: took snapshot
+Tue 17 Feb 14:15:33 PST 2026: comparing new snapshot with /backingfiles/snapshots/snap--00001/snap.bin
+Tue 17 Feb 14:15:33 PST 2026: making links for /tmp/snapshots/snap-000000, retargeted to /backingfiles/snapshots/snap-000000/mnt
+Tue 17 Feb 14:15:33 PST 2026: made all links for /tmp/snapshots/snap-000000
+Tue 17 Feb 14:15:33 PST 2026: Connecting usb to host...
+Tue 17 Feb 14:15:33 PST 2026: Connected usb to host.
+Tue 17 Feb 14:15:39 PST 2026: Trying to set time...
+Tue 17 Feb 14:15:58 PST 2026: Time adjusted by 19.088739 seconds after 1.310000 seconds
+Tue 17 Feb 14:15:58 PST 2026: Starting background task to keep car awake.
+Tue 17 Feb 14:15:58 PST 2026: Archiving...
+Tue 17 Feb 14:15:58 PST 2026: Mounted /mnt/archive.
+Tue 17 Feb 14:15:58 PST 2026: Checking saved folder count...
+Tue 17 Feb 14:15:58 PST 2026: There are 0 event folder(s) with 0 file(s) and 0 track mode file(s) to move.  0 short recording(s) will be skipped.
+Tue 17 Feb 14:15:58 PST 2026: cleaning cam mount
+Tue 17 Feb 14:15:58 PST 2026: Ensuring cam file is mounted...
+Tue 17 Feb 14:15:58 PST 2026: Disconnecting usb from host...
+Tue 17 Feb 14:15:59 PST 2026: Running fsck on /backingfiles/cam_disk.bin...
+Tue 17 Feb 14:15:59 PST 2026: | fsck from util-linux 2.38.1
+Tue 17 Feb 14:15:59 PST 2026: | fsck.fat 4.2 (2021-01-31)
+Tue 17 Feb 14:15:59 PST 2026: | /dev/loop1p1: 4 files, 3/2096606 clusters
+Tue 17 Feb 14:15:59 PST 2026: Finished fsck on /backingfiles/cam_disk.bin.
+Tue 17 Feb 14:15:59 PST 2026: Running fsck on /backingfiles/lightshow_disk.bin...
+Tue 17 Feb 14:15:59 PST 2026: | fsck from util-linux 2.38.1
+Tue 17 Feb 14:15:59 PST 2026: | fsck.fat 4.2 (2021-01-31)
+Tue 17 Feb 14:15:59 PST 2026: | /dev/loop1p1: 3 files, 2/261367 clusters
+Tue 17 Feb 14:15:59 PST 2026: Finished fsck on /backingfiles/lightshow_disk.bin.
+Tue 17 Feb 14:15:59 PST 2026: Disconnected usb from host.
+Tue 17 Feb 14:15:59 PST 2026: Mounted /mnt/cam.
+Tue 17 Feb 14:15:59 PST 2026: Ensured cam file is mounted.
+Tue 17 Feb 14:16:00 PST 2026: Trimming free space in /mnt/cam, which has 2 extents
+Tue 17 Feb 14:16:00 PST 2026: Trim complete, image now has 2 extents
+Tue 17 Feb 14:16:00 PST 2026: Unmounting /mnt/cam...
+Tue 17 Feb 14:16:00 PST 2026: Unmounted /mnt/cam.
+Tue 17 Feb 14:16:00 PST 2026: done cleaning cam mount
+Tue 17 Feb 14:16:00 PST 2026: Finished archiving.
+Tue 17 Feb 14:16:00 PST 2026: Music archive not configured or unreachable
+Tue 17 Feb 14:16:00 PST 2026: post-archive processing failed
+Tue 17 Feb 14:16:00 PST 2026: Stopping background task that is keeping car awake.
+Tue 17 Feb 14:16:00 PST 2026: Unmounted /mnt/archive.
+Tue 17 Feb 14:16:00 PST 2026: Connecting usb to host...
+Tue 17 Feb 14:16:00 PST 2026: Connected usb to host.
+Tue 17 Feb 14:16:05 PST 2026: Waiting for archive to be unreachable...
+==============================================
+Tue 17 Feb 14:17:01 PST 2026: Starting archiveloop at 11.71 seconds uptime...
+Tue 17 Feb 14:17:01 PST 2026: Running fsck on /backingfiles/cam_disk.bin...
+Tue 17 Feb 14:17:01 PST 2026: Temperature Monitor: Not enabled.
+Tue 17 Feb 14:17:02 PST 2026: | fsck from util-linux 2.38.1
+Tue 17 Feb 14:17:03 PST 2026: | fsck.fat 4.2 (2021-01-31)
+Tue 17 Feb 14:17:03 PST 2026: | /dev/loop0p1: 4 files, 3/2096606 clusters
+Tue 17 Feb 14:17:03 PST 2026: Finished fsck on /backingfiles/cam_disk.bin.
+Tue 17 Feb 14:17:03 PST 2026: Running fsck on /backingfiles/lightshow_disk.bin...
+Tue 17 Feb 14:17:03 PST 2026: | fsck from util-linux 2.38.1
+Tue 17 Feb 14:17:04 PST 2026: | fsck.fat 4.2 (2021-01-31)
+Tue 17 Feb 14:17:04 PST 2026: | /dev/loop0p1: 3 files, 2/261367 clusters
+Tue 17 Feb 14:17:04 PST 2026: Finished fsck on /backingfiles/lightshow_disk.bin.
+Tue 17 Feb 14:17:04 PST 2026: cleaning cam mount
+Tue 17 Feb 14:17:04 PST 2026: Ensuring cam file is mounted...
+Tue 17 Feb 14:17:04 PST 2026: Disconnecting usb from host...
+Tue 17 Feb 14:17:04 PST 2026: Disconnected usb from host.
+Tue 17 Feb 14:17:04 PST 2026: Mounted /mnt/cam.
+Tue 17 Feb 14:17:04 PST 2026: Ensured cam file is mounted.
+Tue 17 Feb 14:17:04 PST 2026: Trimming free space in /mnt/cam, which has 4 extents
+Tue 17 Feb 14:17:05 PST 2026: Trim complete, image now has 4 extents
+Tue 17 Feb 14:17:05 PST 2026: Unmounting /mnt/cam...
+Tue 17 Feb 14:17:05 PST 2026: Unmounted /mnt/cam.
+Tue 17 Feb 14:17:05 PST 2026: done cleaning cam mount
+Tue 17 Feb 14:17:05 PST 2026: taking snapshot of cam disk in /backingfiles/snapshots/snap-000001
+Tue 17 Feb 14:17:05 PST 2026: took snapshot
+Tue 17 Feb 14:17:06 PST 2026: comparing new snapshot with /backingfiles/snapshots/snap-000000/snap.bin
+Tue 17 Feb 14:17:06 PST 2026: new snapshot is identical to previous one, discarding
+Tue 17 Feb 14:17:06 PST 2026: releasing snapshot /backingfiles/snapshots/snap-000001
+Tue 17 Feb 14:17:06 PST 2026: Connecting usb to host...
+Tue 17 Feb 14:17:06 PST 2026: Connected usb to host.
+Tue 17 Feb 14:17:11 PST 2026: Trying to set time...
+Tue 17 Feb 14:54:58 PST 2026: Time adjusted by 2266.133984 seconds after 1.260000 seconds
+Tue 17 Feb 14:54:58 PST 2026: Starting background task to keep car awake.
+Tue 17 Feb 14:54:58 PST 2026: Archiving...
+Tue 17 Feb 14:54:58 PST 2026: Mounted /mnt/archive.
+Tue 17 Feb 14:54:58 PST 2026: Checking saved folder count...
+Tue 17 Feb 14:54:58 PST 2026: There are 0 event folder(s) with 0 file(s) and 0 track mode file(s) to move.  0 short recording(s) will be skipped.
+Tue 17 Feb 14:54:58 PST 2026: cleaning cam mount
+Tue 17 Feb 14:54:58 PST 2026: Ensuring cam file is mounted...
+Tue 17 Feb 14:54:58 PST 2026: Disconnecting usb from host...
+Tue 17 Feb 14:54:59 PST 2026: Running fsck on /backingfiles/cam_disk.bin...
+Tue 17 Feb 14:54:59 PST 2026: | fsck from util-linux 2.38.1
+Tue 17 Feb 14:54:59 PST 2026: | fsck.fat 4.2 (2021-01-31)
+Tue 17 Feb 14:54:59 PST 2026: | There are differences between boot sector and its backup.
+Tue 17 Feb 14:54:59 PST 2026: | This is mostly harmless. Differences: (offset:original/backup)
+Tue 17 Feb 14:54:59 PST 2026: |   65:01/00
+Tue 17 Feb 14:54:59 PST 2026: |   Not automatically fixing this.
+Tue 17 Feb 14:54:59 PST 2026: | Dirty bit is set. Fs was not properly unmounted and some data may be corrupt.
+Tue 17 Feb 14:54:59 PST 2026: |  Automatically removing dirty bit.
+Tue 17 Feb 14:54:59 PST 2026: | 
+Tue 17 Feb 14:54:59 PST 2026: | *** Filesystem was changed ***
+Tue 17 Feb 14:54:59 PST 2026: | Writing changes.
+Tue 17 Feb 14:54:59 PST 2026: | /dev/loop0p1: 4 files, 3/2096606 clusters
+Tue 17 Feb 14:54:59 PST 2026: Finished fsck on /backingfiles/cam_disk.bin.
+Tue 17 Feb 14:54:59 PST 2026: Running fsck on /backingfiles/lightshow_disk.bin...
+Tue 17 Feb 14:54:59 PST 2026: | fsck from util-linux 2.38.1
+Tue 17 Feb 14:54:59 PST 2026: | fsck.fat 4.2 (2021-01-31)
+Tue 17 Feb 14:54:59 PST 2026: | /dev/loop0p1: 3 files, 2/261367 clusters
+Tue 17 Feb 14:54:59 PST 2026: Finished fsck on /backingfiles/lightshow_disk.bin.
+Tue 17 Feb 14:54:59 PST 2026: Disconnected usb from host.
+Tue 17 Feb 14:54:59 PST 2026: Mounted /mnt/cam.
+Tue 17 Feb 14:54:59 PST 2026: Ensured cam file is mounted.
+Tue 17 Feb 14:55:00 PST 2026: Trimming free space in /mnt/cam, which has 4 extents
+Tue 17 Feb 14:55:00 PST 2026: Trim complete, image now has 4 extents
+Tue 17 Feb 14:55:00 PST 2026: Unmounting /mnt/cam...
+Tue 17 Feb 14:55:00 PST 2026: Unmounted /mnt/cam.
+Tue 17 Feb 14:55:00 PST 2026: done cleaning cam mount
+Tue 17 Feb 14:55:00 PST 2026: Finished archiving.
+Tue 17 Feb 14:55:00 PST 2026: Music archive not configured or unreachable
+Tue 17 Feb 14:55:00 PST 2026: post-archive processing failed
+Tue 17 Feb 14:55:00 PST 2026: Stopping background task that is keeping car awake.
+Tue 17 Feb 14:55:00 PST 2026: Unmounted /mnt/archive.
+Tue 17 Feb 14:55:00 PST 2026: Connecting usb to host...
+Tue 17 Feb 14:55:00 PST 2026: Connected usb to host.
+Tue 17 Feb 14:55:05 PST 2026: Waiting for archive to be unreachable...
+Tue 17 Feb 14:58:05 PST 2026: Sleeping before retry ...
+Tue 17 Feb 14:58:06 PST 2026: Retrying (1) 'archive_is_reachable' ...
+Tue 17 Feb 14:58:12 PST 2026: Sleeping before retry ...
+Tue 17 Feb 14:58:13 PST 2026: Retrying (2) 'archive_is_reachable' ...
+Tue 17 Feb 14:58:13 PST 2026: Sleeping before retry ...
+Tue 17 Feb 14:58:14 PST 2026: Retrying (3) 'archive_is_reachable' ...
+Tue 17 Feb 14:58:14 PST 2026: Sleeping before retry ...
+Tue 17 Feb 14:58:15 PST 2026: Retrying (4) 'archive_is_reachable' ...
+Tue 17 Feb 14:58:15 PST 2026: Sleeping before retry ...
+Tue 17 Feb 14:58:16 PST 2026: Retrying (5) 'archive_is_reachable' ...
+Tue 17 Feb 14:58:16 PST 2026: Sleeping before retry ...
+Tue 17 Feb 14:58:17 PST 2026: Retrying (6) 'archive_is_reachable' ...
+Tue 17 Feb 14:58:17 PST 2026: Sleeping before retry ...
+Tue 17 Feb 14:58:18 PST 2026: Retrying (7) 'archive_is_reachable' ...
+Tue 17 Feb 14:58:18 PST 2026: Sleeping before retry ...
+Tue 17 Feb 14:58:19 PST 2026: Retrying (8) 'archive_is_reachable' ...
+Tue 17 Feb 14:58:20 PST 2026: Sleeping before retry ...
+Tue 17 Feb 14:58:21 PST 2026: Retrying (9) 'archive_is_reachable' ...
+Tue 17 Feb 14:58:21 PST 2026: Sleeping before retry ...
+Tue 17 Feb 14:58:22 PST 2026: Retrying (10) 'archive_is_reachable' ...
+Tue 17 Feb 14:58:22 PST 2026: Attempts exhausted.
+Tue 17 Feb 14:58:22 PST 2026: Archive is unreachable.
+Tue 17 Feb 14:58:22 PST 2026: Waiting for archive to be reachable...
+Tue 17 Feb 15:52:46 PST 2026: waiting up to 90 seconds for idle interval
+Tue 17 Feb 15:53:05 PST 2026: write in progress
+Tue 17 Feb 15:53:08 PST 2026: no longer writing, wrote 49078272
+Tue 17 Feb 15:53:09 PST 2026: going back to writing state
+Tue 17 Feb 15:53:10 PST 2026: no longer writing, wrote 761856
+Tue 17 Feb 15:53:17 PST 2026: no writes seen in the last 5 seconds
+Tue 17 Feb 15:53:17 PST 2026: taking snapshot of cam disk in /backingfiles/snapshots/snap-000001
+Tue 17 Feb 15:53:19 PST 2026: took snapshot
+Tue 17 Feb 15:53:20 PST 2026: comparing new snapshot with /backingfiles/snapshots/snap-000000/snap.bin
+Tue 17 Feb 15:53:20 PST 2026: making links for /tmp/snapshots/snap-000001, retargeted to /backingfiles/snapshots/snap-000001/mnt
+Tue 17 Feb 15:53:22 PST 2026: made all links for /tmp/snapshots/snap-000001
+Tue 17 Feb 15:57:33 PST 2026: Archive is reachable.
+Tue 17 Feb 15:57:33 PST 2026: Trying to set time...
+Tue 17 Feb 15:57:34 PST 2026: Time adjusted by 1.367474 seconds after 1.370000 seconds
+Tue 17 Feb 15:57:34 PST 2026: Starting background task to keep car awake.
+Tue 17 Feb 15:57:45 PST 2026: Tessie: Failed to send command. Check your TESSIE_API_TOKEN and TESSIE_VIN are set correctly. If they are, your car may be offline or asleep.
+Tue 17 Feb 15:57:45 PST 2026: Tessie: Retrying after 30s in case the connection was poor.
+Tue 17 Feb 15:57:54 PST 2026: taking snapshot of cam disk in /backingfiles/snapshots/snap-000002
+Tue 17 Feb 15:57:56 PST 2026: took snapshot
+Tue 17 Feb 15:57:57 PST 2026: comparing new snapshot with /backingfiles/snapshots/snap-000001/snap.bin
+Tue 17 Feb 15:57:57 PST 2026: making links for /tmp/snapshots/snap-000002, retargeted to /backingfiles/snapshots/snap-000002/mnt
+Tue 17 Feb 15:57:59 PST 2026: made all links for /tmp/snapshots/snap-000002
+Tue 17 Feb 15:57:59 PST 2026: Archiving...
+Tue 17 Feb 15:58:00 PST 2026: Mounted /mnt/archive.
+Tue 17 Feb 15:58:00 PST 2026: Checking saved folder count...
+Tue 17 Feb 15:58:01 PST 2026: There are 1 event folder(s) with 299 file(s) and 0 track mode file(s) to move.  0 short recording(s) will be skipped.
+Tue 17 Feb 15:58:01 PST 2026: Starting recording archiving
+Tue 17 Feb 15:58:01 PST 2026: Archiving 299 file(s) including 1 event folder(s) starting at Tue 17 Feb 15:58:01 PST 2026
+Tue 17 Feb 15:58:01 PST 2026: Sending Webhook message.
+Tue 17 Feb 16:02:57 PST 2026: Error during archiving. Archived 47 files in 4m56s
+Tue 17 Feb 16:02:57 PST 2026: Sending Webhook message.
+2026/02/17 15:58:02 [14967] building file list
+2026/02/17 15:58:02 [14967] done
+2026/02/17 15:58:02 [14967] cd+++++++++ RecentClips/2026-02-17/
+2026/02/17 15:58:02 [14967] cd+++++++++ SentryClips/2026-02-17_15-53-07/
+2026/02/17 15:58:03 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-42-35-back.mp4
+2026/02/17 15:58:14 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-42-35-front.mp4
+2026/02/17 15:58:23 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-42-35-left_repeater.mp4
+2026/02/17 15:58:29 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-42-35-right_repeater.mp4
+2026/02/17 15:58:36 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-43-35-back.mp4
+2026/02/17 15:58:44 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-43-35-front.mp4
+2026/02/17 15:58:51 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-43-35-left_repeater.mp4
+2026/02/17 15:58:57 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-43-35-right_repeater.mp4
+2026/02/17 15:59:03 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-44-35-back.mp4
+2026/02/17 15:59:14 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-44-35-front.mp4
+2026/02/17 15:59:19 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-44-35-left_repeater.mp4
+2026/02/17 15:59:25 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-44-35-right_repeater.mp4
+2026/02/17 15:59:32 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-45-35-back.mp4
+2026/02/17 15:59:39 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-45-35-front.mp4
+2026/02/17 15:59:46 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-45-35-left_repeater.mp4
+2026/02/17 15:59:52 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-45-35-right_repeater.mp4
+2026/02/17 15:59:58 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-46-36-back.mp4
+2026/02/17 16:00:07 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-46-36-front.mp4
+2026/02/17 16:00:14 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-46-36-left_repeater.mp4
+2026/02/17 16:00:20 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-46-36-right_repeater.mp4
+2026/02/17 16:00:26 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-47-36-back.mp4
+2026/02/17 16:00:34 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-47-36-front.mp4
+2026/02/17 16:00:41 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-47-36-left_repeater.mp4
+2026/02/17 16:00:48 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-47-36-right_repeater.mp4
+2026/02/17 16:00:55 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-48-36-back.mp4
+2026/02/17 16:01:03 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-48-36-front.mp4
+2026/02/17 16:01:14 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-48-36-left_repeater.mp4
+2026/02/17 16:01:17 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-48-36-right_repeater.mp4
+2026/02/17 16:01:24 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-49-37-back.mp4
+2026/02/17 16:01:32 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-49-37-front.mp4
+2026/02/17 16:01:39 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-49-37-left_repeater.mp4
+2026/02/17 16:01:45 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-49-37-right_repeater.mp4
+2026/02/17 16:01:52 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-50-37-back.mp4
+2026/02/17 16:02:00 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-50-37-front.mp4
+2026/02/17 16:02:06 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-50-37-left_repeater.mp4
+2026/02/17 16:02:15 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-50-37-right_repeater.mp4
+2026/02/17 16:02:20 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-51-37-back.mp4
+2026/02/17 16:02:27 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-51-37-front.mp4
+2026/02/17 16:02:34 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-51-37-left_repeater.mp4
+2026/02/17 16:02:40 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-51-37-right_repeater.mp4
+2026/02/17 16:02:45 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-52-38-back.mp4
+2026/02/17 16:02:49 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-52-38-front.mp4
+2026/02/17 16:02:52 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-52-38-left_repeater.mp4
+2026/02/17 16:02:54 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/2026-02-17_15-52-38-right_repeater.mp4
+2026/02/17 16:02:54 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/event.json
+2026/02/17 16:02:57 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/event.mp4
+2026/02/17 16:02:57 [14967] >f+++++++++ SentryClips/2026-02-17_15-53-07/thumb.png
+2026/02/17 16:02:57 [14967] Number of files: 303 (reg: 299, dir: 4)
+2026/02/17 16:02:57 [14967] Number of created files: 49 (reg: 47, dir: 2)
+2026/02/17 16:02:57 [14967] Number of deleted files: 0
+2026/02/17 16:02:57 [14967] Number of regular files transferred: 47
+2026/02/17 16:02:57 [14967] Total file size: 8.76G bytes
+2026/02/17 16:02:57 [14967] Total transferred file size: 1.16G bytes
+2026/02/17 16:02:57 [14967] Literal data: 1.16G bytes
+2026/02/17 16:02:57 [14967] Matched data: 0 bytes
+2026/02/17 16:02:57 [14967] File list size: 0
+2026/02/17 16:02:57 [14967] File list generation time: 0.169 seconds
+2026/02/17 16:02:57 [14967] File list transfer time: 0.000 seconds
+2026/02/17 16:02:57 [14967] Total bytes sent: 1.16G
+2026/02/17 16:02:57 [14967] Total bytes received: 2.19K
+2026/02/17 16:02:57 [14967] sent 1.16G bytes  received 2.19K bytes  3.93M bytes/sec
+2026/02/17 16:02:57 [14967] total size is 8.76G  speedup is 7.55
+2026/02/17 16:02:57 [14967] sent 1160306929 bytes  received 2198 bytes  total size 8759421036
+2026/02/17 16:02:57 [14967] rsync error: some files/attrs were not transferred (see previous errors) (code 23) at main.c(1338) [sender=3.2.7]
+building file list ... done
+rsync: [generator] recv_generator: mkdir "/mnt/archive/RecentClips/2026-02-17" failed: Permission denied (13)
+*** Skipping any contents from this failed directory ***
+RecentClips/2026-02-17/
+SentryClips/2026-02-17_15-53-07/
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-42-35-back.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-42-35-front.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-42-35-left_repeater.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-42-35-right_repeater.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-43-35-back.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-43-35-front.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-43-35-left_repeater.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-43-35-right_repeater.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-44-35-back.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-44-35-front.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-44-35-left_repeater.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-44-35-right_repeater.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-45-35-back.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-45-35-front.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-45-35-left_repeater.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-45-35-right_repeater.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-46-36-back.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-46-36-front.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-46-36-left_repeater.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-46-36-right_repeater.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-47-36-back.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-47-36-front.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-47-36-left_repeater.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-47-36-right_repeater.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-48-36-back.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-48-36-front.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-48-36-left_repeater.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-48-36-right_repeater.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-49-37-back.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-49-37-front.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-49-37-left_repeater.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-49-37-right_repeater.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-50-37-back.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-50-37-front.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-50-37-left_repeater.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-50-37-right_repeater.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-51-37-back.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-51-37-front.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-51-37-left_repeater.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-51-37-right_repeater.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-52-38-back.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-52-38-front.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-52-38-left_repeater.mp4
+SentryClips/2026-02-17_15-53-07/2026-02-17_15-52-38-right_repeater.mp4
+SentryClips/2026-02-17_15-53-07/event.json
+SentryClips/2026-02-17_15-53-07/event.mp4
+SentryClips/2026-02-17_15-53-07/thumb.png
+Number of files: 303 (reg: 299, dir: 4)
+Number of created files: 49 (reg: 47, dir: 2)
+Number of deleted files: 0
+Number of regular files transferred: 47
+Total file size: 8.76G bytes
+Total transferred file size: 1.16G bytes
+Literal data: 1.16G bytes
+Matched data: 0 bytes
+File list size: 0
+File list generation time: 0.169 seconds
+File list transfer time: 0.000 seconds
+Total bytes sent: 1.16G
+Total bytes received: 2.19K
+sent 1.16G bytes  received 2.19K bytes  3.93M bytes/sec
+total size is 8.76G  speedup is 7.55
+rsync error: some files/attrs were not transferred (see previous errors) (code 23) at main.c(1338) [sender=3.2.7]
+Tue 17 Feb 16:02:58 PST 2026: Skipping cleaning step after archive error
+Tue 17 Feb 16:02:58 PST 2026: Finished archiving.
+Tue 17 Feb 16:02:58 PST 2026: Music archive not configured or unreachable
+Tue 17 Feb 16:02:58 PST 2026: post-archive processing failed
+Tue 17 Feb 16:02:58 PST 2026: Stopping background task that is keeping car awake.
+Tue 17 Feb 16:02:58 PST 2026: Connecting usb to host...
+Tue 17 Feb 16:02:58 PST 2026: Connected usb to host.
+Tue 17 Feb 16:02:58 PST 2026: Unmounted /mnt/archive.
+Tue 17 Feb 16:03:03 PST 2026: Waiting for archive to be unreachable...
+Tue 17 Feb 16:08:13 PST 2026: Simulating archive being unreachable.
+Tue 17 Feb 16:08:13 PST 2026: Waiting for archive to be reachable...
+Tue 17 Feb 16:08:13 PST 2026: Archive is reachable.
+Tue 17 Feb 16:08:13 PST 2026: Trying to set time...
+Tue 17 Feb 16:08:18 PST 2026: Time adjusted by 4.621726 seconds after 4.620000 seconds
+Tue 17 Feb 16:08:18 PST 2026: Starting background task to keep car awake.
+Tue 17 Feb 16:08:38 PST 2026: taking snapshot of cam disk in /backingfiles/snapshots/snap-000003
+Tue 17 Feb 16:08:40 PST 2026: took snapshot
+Tue 17 Feb 16:08:41 PST 2026: comparing new snapshot with /backingfiles/snapshots/snap-000002/snap.bin
+Tue 17 Feb 16:08:41 PST 2026: making links for /tmp/snapshots/snap-000003, retargeted to /backingfiles/snapshots/snap-000003/mnt
+Tue 17 Feb 16:08:44 PST 2026: made all links for /tmp/snapshots/snap-000003
+Tue 17 Feb 16:08:44 PST 2026: Archiving...
+Tue 17 Feb 16:08:44 PST 2026: Mounted /mnt/archive.
+Tue 17 Feb 16:08:44 PST 2026: Checking saved folder count...
+Tue 17 Feb 16:08:44 PST 2026: There are 0 event folder(s) with 296 file(s) and 0 track mode file(s) to move.  0 short recording(s) will be skipped.
+Tue 17 Feb 16:08:44 PST 2026: Starting recording archiving
+Tue 17 Feb 16:08:45 PST 2026: Archiving 296 file(s) starting at Tue 17 Feb 16:08:45 PST 2026
+Tue 17 Feb 16:08:45 PST 2026: Sending Webhook message.
+Tue 17 Feb 16:08:46 PST 2026: Error during archiving. Archived 0 files in 1s
+Tue 17 Feb 16:08:46 PST 2026: Sending Webhook message.
+2026/02/17 16:08:45 [17054] building file list
+2026/02/17 16:08:46 [17054] done
+2026/02/17 16:08:46 [17054] cd+++++++++ RecentClips/2026-02-17/
+2026/02/17 16:08:46 [17054] Number of files: 298 (reg: 296, dir: 2)
+2026/02/17 16:08:46 [17054] Number of created files: 1 (dir: 1)
+2026/02/17 16:08:46 [17054] Number of deleted files: 0
+2026/02/17 16:08:46 [17054] Number of regular files transferred: 0
+2026/02/17 16:08:46 [17054] Total file size: 8.82G bytes
+2026/02/17 16:08:46 [17054] Total transferred file size: 0 bytes
+2026/02/17 16:08:46 [17054] Literal data: 0 bytes
+2026/02/17 16:08:46 [17054] Matched data: 0 bytes
+2026/02/17 16:08:46 [17054] File list size: 0
+2026/02/17 16:08:46 [17054] File list generation time: 0.165 seconds
+2026/02/17 16:08:46 [17054] File list transfer time: 0.000 seconds
+2026/02/17 16:08:46 [17054] Total bytes sent: 6.92K
+2026/02/17 16:08:46 [17054] Total bytes received: 19
+2026/02/17 16:08:46 [17054] sent 6.92K bytes  received 19 bytes  4.62K bytes/sec
+2026/02/17 16:08:46 [17054] total size is 8.82G  speedup is 1,272,281.46
+2026/02/17 16:08:46 [17054] sent 6922 bytes  received 24 bytes  total size 8824544233
+2026/02/17 16:08:46 [17054] rsync error: some files/attrs were not transferred (see previous errors) (code 23) at main.c(1338) [sender=3.2.7]
+building file list ... done
+rsync: [generator] recv_generator: mkdir "/mnt/archive/RecentClips/2026-02-17" failed: Permission denied (13)
+*** Skipping any contents from this failed directory ***
+RecentClips/2026-02-17/
+Number of files: 298 (reg: 296, dir: 2)
+Number of created files: 1 (dir: 1)
+Number of deleted files: 0
+Number of regular files transferred: 0
+Total file size: 8.82G bytes
+Total transferred file size: 0 bytes
+Literal data: 0 bytes
+Matched data: 0 bytes
+File list size: 0
+File list generation time: 0.165 seconds
+File list transfer time: 0.000 seconds
+Total bytes sent: 6.92K
+Total bytes received: 19
+sent 6.92K bytes  received 19 bytes  4.62K bytes/sec
+total size is 8.82G  speedup is 1,272,281.46
+rsync error: some files/attrs were not transferred (see previous errors) (code 23) at main.c(1338) [sender=3.2.7]
+Tue 17 Feb 16:08:47 PST 2026: Skipping cleaning step after archive error
+Tue 17 Feb 16:08:47 PST 2026: Finished archiving.
+Tue 17 Feb 16:08:47 PST 2026: Music archive not configured or unreachable
+Tue 17 Feb 16:08:47 PST 2026: post-archive processing failed
+Tue 17 Feb 16:08:47 PST 2026: Stopping background task that is keeping car awake.
+Tue 17 Feb 16:08:47 PST 2026: Unmounted /mnt/archive.
+Tue 17 Feb 16:08:47 PST 2026: Connecting usb to host...
+Tue 17 Feb 16:08:47 PST 2026: Connected usb to host.
+Tue 17 Feb 16:08:52 PST 2026: Waiting for archive to be unreachable...
+Tue 17 Feb 16:51:22 PST 2026: waiting up to 90 seconds for idle interval
+Tue 17 Feb 16:51:35 PST 2026: write in progress
+Tue 17 Feb 16:51:41 PST 2026: no longer writing, wrote 111763456
+Tue 17 Feb 16:51:48 PST 2026: no writes seen in the last 5 seconds
+Tue 17 Feb 16:51:48 PST 2026: taking snapshot of cam disk in /backingfiles/snapshots/snap-000004
+Tue 17 Feb 16:51:50 PST 2026: took snapshot
+Tue 17 Feb 16:51:50 PST 2026: comparing new snapshot with /backingfiles/snapshots/snap-000003/snap.bin
+Tue 17 Feb 16:51:50 PST 2026: making links for /tmp/snapshots/snap-000004, retargeted to /backingfiles/snapshots/snap-000004/mnt
+Tue 17 Feb 16:51:53 PST 2026: made all links for /tmp/snapshots/snap-000004
+Tue 17 Feb 17:49:53 PST 2026: waiting up to 90 seconds for idle interval
+Tue 17 Feb 17:51:35 PST 2026: couldn't determine idle interval
+Tue 17 Feb 17:51:35 PST 2026: taking snapshot of cam disk in /backingfiles/snapshots/snap-000005
+Tue 17 Feb 17:51:38 PST 2026: took snapshot
+Tue 17 Feb 17:51:38 PST 2026: comparing new snapshot with /backingfiles/snapshots/snap-000004/snap.bin
+Tue 17 Feb 17:51:38 PST 2026: making links for /tmp/snapshots/snap-000005, retargeted to /backingfiles/snapshots/snap-000005/mnt
+Tue 17 Feb 17:51:41 PST 2026: made all links for /tmp/snapshots/snap-000005
+Tue 17 Feb 18:49:41 PST 2026: waiting up to 90 seconds for idle interval
+Tue 17 Feb 18:51:23 PST 2026: couldn't determine idle interval
+Tue 17 Feb 18:51:23 PST 2026: taking snapshot of cam disk in /backingfiles/snapshots/snap-000006
+Tue 17 Feb 18:51:25 PST 2026: took snapshot
+Tue 17 Feb 18:51:26 PST 2026: comparing new snapshot with /backingfiles/snapshots/snap-000005/snap.bin
+Tue 17 Feb 18:51:26 PST 2026: new snapshot is identical to previous one, discarding
+Tue 17 Feb 18:51:26 PST 2026: releasing snapshot /backingfiles/snapshots/snap-000006
+Tue 17 Feb 19:49:26 PST 2026: waiting up to 90 seconds for idle interval
+Tue 17 Feb 19:51:08 PST 2026: couldn't determine idle interval
+Tue 17 Feb 19:51:08 PST 2026: taking snapshot of cam disk in /backingfiles/snapshots/snap-000006
+Tue 17 Feb 19:51:10 PST 2026: took snapshot
+Tue 17 Feb 19:51:11 PST 2026: comparing new snapshot with /backingfiles/snapshots/snap-000005/snap.bin
+Tue 17 Feb 19:51:11 PST 2026: new snapshot is identical to previous one, discarding
+Tue 17 Feb 19:51:11 PST 2026: releasing snapshot /backingfiles/snapshots/snap-000006
+Tue 17 Feb 20:49:11 PST 2026: waiting up to 90 seconds for idle interval
+Tue 17 Feb 20:50:53 PST 2026: couldn't determine idle interval
+Tue 17 Feb 20:50:53 PST 2026: taking snapshot of cam disk in /backingfiles/snapshots/snap-000006
+Tue 17 Feb 20:50:55 PST 2026: took snapshot
+Tue 17 Feb 20:50:56 PST 2026: comparing new snapshot with /backingfiles/snapshots/snap-000005/snap.bin
+Tue 17 Feb 20:50:56 PST 2026: new snapshot is identical to previous one, discarding
+Tue 17 Feb 20:50:56 PST 2026: releasing snapshot /backingfiles/snapshots/snap-000006
+Tue 17 Feb 21:48:56 PST 2026: waiting up to 90 seconds for idle interval
+Tue 17 Feb 21:50:38 PST 2026: couldn't determine idle interval
+Tue 17 Feb 21:50:38 PST 2026: taking snapshot of cam disk in /backingfiles/snapshots/snap-000006
+Tue 17 Feb 21:50:40 PST 2026: took snapshot
+Tue 17 Feb 21:50:41 PST 2026: comparing new snapshot with /backingfiles/snapshots/snap-000005/snap.bin
+Tue 17 Feb 21:50:41 PST 2026: new snapshot is identical to previous one, discarding
+Tue 17 Feb 21:50:41 PST 2026: releasing snapshot /backingfiles/snapshots/snap-000006
+Tue 17 Feb 22:48:41 PST 2026: waiting up to 90 seconds for idle interval
+Tue 17 Feb 22:50:23 PST 2026: couldn't determine idle interval
+Tue 17 Feb 22:50:23 PST 2026: taking snapshot of cam disk in /backingfiles/snapshots/snap-000006
+Tue 17 Feb 22:50:26 PST 2026: took snapshot
+Tue 17 Feb 22:50:26 PST 2026: comparing new snapshot with /backingfiles/snapshots/snap-000005/snap.bin
+Tue 17 Feb 22:50:26 PST 2026: new snapshot is identical to previous one, discarding
+Tue 17 Feb 22:50:26 PST 2026: releasing snapshot /backingfiles/snapshots/snap-000006
+Tue 17 Feb 23:48:26 PST 2026: waiting up to 90 seconds for idle interval
+Tue 17 Feb 23:50:08 PST 2026: couldn't determine idle interval
+Tue 17 Feb 23:50:08 PST 2026: taking snapshot of cam disk in /backingfiles/snapshots/snap-000006
+Tue 17 Feb 23:50:10 PST 2026: took snapshot
+Tue 17 Feb 23:50:11 PST 2026: comparing new snapshot with /backingfiles/snapshots/snap-000005/snap.bin
+Tue 17 Feb 23:50:11 PST 2026: new snapshot is identical to previous one, discarding
+Tue 17 Feb 23:50:11 PST 2026: releasing snapshot /backingfiles/snapshots/snap-000006
+==============================================
+Tue 17 Feb 23:17:02 PST 2026: Starting archiveloop at 9.55 seconds uptime...
+Tue 17 Feb 23:17:02 PST 2026: Running fsck on /backingfiles/cam_disk.bin...
+Tue 17 Feb 23:17:02 PST 2026: Temperature Monitor: Not enabled.
+Tue 17 Feb 23:17:02 PST 2026: | fsck from util-linux 2.38.1
+Tue 17 Feb 23:17:04 PST 2026: | fsck.fat 4.2 (2021-01-31)
+Tue 17 Feb 23:17:04 PST 2026: | There are differences between boot sector and its backup.
+Tue 17 Feb 23:17:04 PST 2026: | This is mostly harmless. Differences: (offset:original/backup)
+Tue 17 Feb 23:17:04 PST 2026: |   65:01/00
+Tue 17 Feb 23:17:04 PST 2026: |   Not automatically fixing this.
+Tue 17 Feb 23:17:04 PST 2026: | Dirty bit is set. Fs was not properly unmounted and some data may be corrupt.
+Tue 17 Feb 23:17:04 PST 2026: |  Automatically removing dirty bit.
+Tue 17 Feb 23:17:04 PST 2026: | 
+Tue 17 Feb 23:17:04 PST 2026: | *** Filesystem was changed ***
+Tue 17 Feb 23:17:04 PST 2026: | Writing changes.
+Tue 17 Feb 23:17:04 PST 2026: | /dev/loop0p1: 295 files, 241162/2096606 clusters
+Tue 17 Feb 23:17:04 PST 2026: Finished fsck on /backingfiles/cam_disk.bin.
+Tue 17 Feb 23:17:04 PST 2026: Running fsck on /backingfiles/lightshow_disk.bin...
+Tue 17 Feb 23:17:04 PST 2026: | fsck from util-linux 2.38.1
+Tue 17 Feb 23:17:04 PST 2026: | fsck.fat 4.2 (2021-01-31)
+Tue 17 Feb 23:17:04 PST 2026: | /dev/loop0p1: 3 files, 2/261367 clusters
+Tue 17 Feb 23:17:04 PST 2026: Finished fsck on /backingfiles/lightshow_disk.bin.
+Tue 17 Feb 23:17:05 PST 2026: cleaning cam mount
+Tue 17 Feb 23:17:05 PST 2026: Ensuring cam file is mounted...
+Tue 17 Feb 23:17:05 PST 2026: Disconnecting usb from host...
+Tue 17 Feb 23:17:05 PST 2026: Disconnected usb from host.
+Tue 17 Feb 23:17:05 PST 2026: Mounted /mnt/cam.
+Tue 17 Feb 23:17:05 PST 2026: Ensured cam file is mounted.
+Tue 17 Feb 23:17:06 PST 2026: Trimming free space in /mnt/cam, which has 112 extents
+Tue 17 Feb 23:17:06 PST 2026: Trim complete, image now has 102 extents
+Tue 17 Feb 23:17:06 PST 2026: Unmounting /mnt/cam...
+Tue 17 Feb 23:17:06 PST 2026: Unmounted /mnt/cam.
+Tue 17 Feb 23:17:06 PST 2026: done cleaning cam mount
+Tue 17 Feb 23:17:06 PST 2026: taking snapshot of cam disk in /backingfiles/snapshots/snap-000006
+Tue 17 Feb 23:17:06 PST 2026: took snapshot
+Tue 17 Feb 23:17:07 PST 2026: comparing new snapshot with /backingfiles/snapshots/snap-000005/snap.bin
+Tue 17 Feb 23:17:07 PST 2026: new snapshot is identical to previous one, discarding
+Tue 17 Feb 23:17:07 PST 2026: releasing snapshot /backingfiles/snapshots/snap-000006
+Tue 17 Feb 23:17:07 PST 2026: Connecting usb to host...
+Tue 17 Feb 23:17:07 PST 2026: Connected usb to host.
+Tue 17 Feb 23:17:13 PST 2026: Trying to set time...
+Wed 18 Feb 00:13:44 PST 2026: Time adjusted by 3391.244115 seconds after 1.270000 seconds
+Wed 18 Feb 00:13:44 PST 2026: Starting background task to keep car awake.
+Wed 18 Feb 00:13:44 PST 2026: Archiving...
+Wed 18 Feb 00:13:44 PST 2026: Mounted /mnt/archive.
+Wed 18 Feb 00:13:44 PST 2026: Checking saved folder count...
+Wed 18 Feb 00:13:45 PST 2026: There are 0 event folder(s) with 584 file(s) and 0 track mode file(s) to move.  0 short recording(s) will be skipped.
+Wed 18 Feb 00:13:45 PST 2026: Starting recording archiving
+Wed 18 Feb 00:13:45 PST 2026: Archiving 584 file(s) starting at Wed 18 Feb 00:13:45 PST 2026
+Wed 18 Feb 00:13:45 PST 2026: Sending Webhook message.
+Wed 18 Feb 00:13:46 PST 2026: Error during archiving. Archived 0 files in 1s
+Wed 18 Feb 00:13:46 PST 2026: Sending Webhook message.
+2026/02/18 00:13:46 [962] building file list
+2026/02/18 00:13:46 [962] done
+2026/02/18 00:13:46 [962] cd+++++++++ RecentClips/2026-02-17/
+2026/02/18 00:13:46 [962] Number of files: 586 (reg: 584, dir: 2)
+2026/02/18 00:13:46 [962] Number of created files: 1 (dir: 1)
+2026/02/18 00:13:46 [962] Number of deleted files: 0
+2026/02/18 00:13:46 [962] Number of regular files transferred: 0
+2026/02/18 00:13:46 [962] Total file size: 16.90G bytes
+2026/02/18 00:13:46 [962] Total transferred file size: 0 bytes
+2026/02/18 00:13:46 [962] Literal data: 0 bytes
+2026/02/18 00:13:46 [962] Matched data: 0 bytes
+2026/02/18 00:13:46 [962] File list size: 0
+2026/02/18 00:13:46 [962] File list generation time: 0.192 seconds
+2026/02/18 00:13:46 [962] File list transfer time: 0.000 seconds
+2026/02/18 00:13:46 [962] Total bytes sent: 13.55K
+2026/02/18 00:13:46 [962] Total bytes received: 19
+2026/02/18 00:13:46 [962] sent 13.55K bytes  received 19 bytes  27.13K bytes/sec
+2026/02/18 00:13:46 [962] total size is 16.90G  speedup is 1,245,541.58
+2026/02/18 00:13:46 [962] sent 13553 bytes  received 24 bytes  total size 16898262626
+2026/02/18 00:13:46 [962] rsync error: some files/attrs were not transferred (see previous errors) (code 23) at main.c(1338) [sender=3.2.7]
+building file list ... done
+rsync: [generator] recv_generator: mkdir "/mnt/archive/RecentClips/2026-02-17" failed: Permission denied (13)
+*** Skipping any contents from this failed directory ***
+RecentClips/2026-02-17/
+Number of files: 586 (reg: 584, dir: 2)
+Number of created files: 1 (dir: 1)
+Number of deleted files: 0
+Number of regular files transferred: 0
+Total file size: 16.90G bytes
+Total transferred file size: 0 bytes
+Literal data: 0 bytes
+Matched data: 0 bytes
+File list size: 0
+File list generation time: 0.192 seconds
+File list transfer time: 0.000 seconds
+Total bytes sent: 13.55K
+Total bytes received: 19
+sent 13.55K bytes  received 19 bytes  27.13K bytes/sec
+total size is 16.90G  speedup is 1,245,541.58
+rsync error: some files/attrs were not transferred (see previous errors) (code 23) at main.c(1338) [sender=3.2.7]
+Wed 18 Feb 00:13:47 PST 2026: Skipping cleaning step after archive error
+Wed 18 Feb 00:13:47 PST 2026: Finished archiving.
+Wed 18 Feb 00:13:47 PST 2026: Music archive not configured or unreachable
+Wed 18 Feb 00:13:47 PST 2026: post-archive processing failed
+Wed 18 Feb 00:13:47 PST 2026: Stopping background task that is keeping car awake.
+Wed 18 Feb 00:13:47 PST 2026: Unmounted /mnt/archive.
+Wed 18 Feb 00:13:47 PST 2026: Connecting usb to host...
+Wed 18 Feb 00:13:47 PST 2026: Connected usb to host.
+Wed 18 Feb 00:13:52 PST 2026: Waiting for archive to be unreachable...
+==============================================
+Wed 18 Feb 00:17:01 PST 2026: Starting archiveloop at 9.28 seconds uptime...
+Wed 18 Feb 00:17:01 PST 2026: Running fsck on /backingfiles/cam_disk.bin...
+Wed 18 Feb 00:17:02 PST 2026: Temperature Monitor: Not enabled.
+Wed 18 Feb 00:17:02 PST 2026: | fsck from util-linux 2.38.1
+Wed 18 Feb 00:17:04 PST 2026: | fsck.fat 4.2 (2021-01-31)
+Wed 18 Feb 00:17:04 PST 2026: | /dev/loop0p1: 295 files, 241162/2096606 clusters
+Wed 18 Feb 00:17:04 PST 2026: Finished fsck on /backingfiles/cam_disk.bin.
+Wed 18 Feb 00:17:04 PST 2026: Running fsck on /backingfiles/lightshow_disk.bin...
+Wed 18 Feb 00:17:04 PST 2026: | fsck from util-linux 2.38.1
+Wed 18 Feb 00:17:04 PST 2026: | fsck.fat 4.2 (2021-01-31)
+Wed 18 Feb 00:17:04 PST 2026: | /dev/loop0p1: 3 files, 2/261367 clusters
+Wed 18 Feb 00:17:04 PST 2026: Finished fsck on /backingfiles/lightshow_disk.bin.
+Wed 18 Feb 00:17:04 PST 2026: cleaning cam mount
+Wed 18 Feb 00:17:04 PST 2026: Ensuring cam file is mounted...
+Wed 18 Feb 00:17:04 PST 2026: Disconnecting usb from host...
+Wed 18 Feb 00:17:04 PST 2026: Disconnected usb from host.
+Wed 18 Feb 00:17:05 PST 2026: Mounted /mnt/cam.
+Wed 18 Feb 00:17:05 PST 2026: Ensured cam file is mounted.
+Wed 18 Feb 00:17:05 PST 2026: Trimming free space in /mnt/cam, which has 102 extents
+Wed 18 Feb 00:17:06 PST 2026: Trim complete, image now has 102 extents
+Wed 18 Feb 00:17:06 PST 2026: Unmounting /mnt/cam...
+Wed 18 Feb 00:17:06 PST 2026: Unmounted /mnt/cam.
+Wed 18 Feb 00:17:06 PST 2026: done cleaning cam mount
+Wed 18 Feb 00:17:06 PST 2026: taking snapshot of cam disk in /backingfiles/snapshots/snap-000006
+Wed 18 Feb 00:17:06 PST 2026: took snapshot
+Wed 18 Feb 00:17:07 PST 2026: comparing new snapshot with /backingfiles/snapshots/snap-000005/snap.bin
+Wed 18 Feb 00:17:07 PST 2026: new snapshot is identical to previous one, discarding
+Wed 18 Feb 00:17:07 PST 2026: releasing snapshot /backingfiles/snapshots/snap-000006
+Wed 18 Feb 00:17:07 PST 2026: Connecting usb to host...
+Wed 18 Feb 00:17:07 PST 2026: Connected usb to host.
+Wed 18 Feb 00:17:13 PST 2026: Trying to set time...
+Wed 18 Feb 00:27:12 PST 2026: Time adjusted by 599.057973 seconds after 1.250000 seconds
+Wed 18 Feb 00:27:12 PST 2026: Starting background task to keep car awake.
+Wed 18 Feb 00:27:12 PST 2026: Archiving...
+Wed 18 Feb 00:27:12 PST 2026: Mounted /mnt/archive.
+Wed 18 Feb 00:27:12 PST 2026: Checking saved folder count...
+Wed 18 Feb 00:27:13 PST 2026: There are 0 event folder(s) with 584 file(s) and 0 track mode file(s) to move.  0 short recording(s) will be skipped.
+Wed 18 Feb 00:27:13 PST 2026: Starting recording archiving
+Wed 18 Feb 00:27:13 PST 2026: Archiving 584 file(s) starting at Wed 18 Feb 00:27:13 PST 2026
+Wed 18 Feb 00:27:13 PST 2026: Sending Webhook message.
+Wed 18 Feb 00:27:14 PST 2026: Error during archiving. Archived 0 files in 1s
+Wed 18 Feb 00:27:14 PST 2026: Sending Webhook message.
+2026/02/18 00:27:14 [966] building file list
+2026/02/18 00:27:14 [966] done
+2026/02/18 00:27:14 [966] cd+++++++++ RecentClips/2026-02-17/
+2026/02/18 00:27:14 [966] Number of files: 586 (reg: 584, dir: 2)
+2026/02/18 00:27:14 [966] Number of created files: 1 (dir: 1)
+2026/02/18 00:27:14 [966] Number of deleted files: 0
+2026/02/18 00:27:14 [966] Number of regular files transferred: 0
+2026/02/18 00:27:14 [966] Total file size: 16.90G bytes
+2026/02/18 00:27:14 [966] Total transferred file size: 0 bytes
+2026/02/18 00:27:14 [966] Literal data: 0 bytes
+2026/02/18 00:27:14 [966] Matched data: 0 bytes
+2026/02/18 00:27:14 [966] File list size: 0
+2026/02/18 00:27:14 [966] File list generation time: 0.192 seconds
+2026/02/18 00:27:14 [966] File list transfer time: 0.000 seconds
+2026/02/18 00:27:14 [966] Total bytes sent: 13.55K
+2026/02/18 00:27:14 [966] Total bytes received: 19
+2026/02/18 00:27:14 [966] sent 13.55K bytes  received 19 bytes  27.13K bytes/sec
+2026/02/18 00:27:14 [966] total size is 16.90G  speedup is 1,245,541.58
+2026/02/18 00:27:14 [966] sent 13553 bytes  received 24 bytes  total size 16898262626
+2026/02/18 00:27:14 [966] rsync error: some files/attrs were not transferred (see previous errors) (code 23) at main.c(1338) [sender=3.2.7]
+building file list ... done
+rsync: [generator] recv_generator: mkdir "/mnt/archive/RecentClips/2026-02-17" failed: Permission denied (13)
+*** Skipping any contents from this failed directory ***
+RecentClips/2026-02-17/
+Number of files: 586 (reg: 584, dir: 2)
+Number of created files: 1 (dir: 1)
+Number of deleted files: 0
+Number of regular files transferred: 0
+Total file size: 16.90G bytes
+Total transferred file size: 0 bytes
+Literal data: 0 bytes
+Matched data: 0 bytes
+File list size: 0
+File list generation time: 0.192 seconds
+File list transfer time: 0.000 seconds
+Total bytes sent: 13.55K
+Total bytes received: 19
+sent 13.55K bytes  received 19 bytes  27.13K bytes/sec
+total size is 16.90G  speedup is 1,245,541.58
+rsync error: some files/attrs were not transferred (see previous errors) (code 23) at main.c(1338) [sender=3.2.7]
+Wed 18 Feb 00:27:15 PST 2026: Skipping cleaning step after archive error
+Wed 18 Feb 00:27:15 PST 2026: Finished archiving.
+Wed 18 Feb 00:27:15 PST 2026: Music archive not configured or unreachable
+Wed 18 Feb 00:27:15 PST 2026: post-archive processing failed
+Wed 18 Feb 00:27:15 PST 2026: Stopping background task that is keeping car awake.
+Wed 18 Feb 00:27:15 PST 2026: Unmounted /mnt/archive.
+Wed 18 Feb 00:27:15 PST 2026: Connecting usb to host...
+Wed 18 Feb 00:27:15 PST 2026: Connected usb to host.
+Wed 18 Feb 00:27:20 PST 2026: Waiting for archive to be unreachable...
+Wed 18 Feb 00:27:28 PST 2026: Simulating archive being unreachable.
+Wed 18 Feb 00:27:28 PST 2026: Waiting for archive to be reachable...
+Wed 18 Feb 00:27:28 PST 2026: Archive is reachable.
+Wed 18 Feb 00:27:28 PST 2026: Trying to set time...
+Wed 18 Feb 00:27:29 PST 2026: Time adjusted by 0.668406 seconds after 0.660000 seconds
+Wed 18 Feb 00:27:29 PST 2026: Starting background task to keep car awake.
+Wed 18 Feb 00:27:49 PST 2026: taking snapshot of cam disk in /backingfiles/snapshots/snap-000006
+Wed 18 Feb 00:27:51 PST 2026: took snapshot
+Wed 18 Feb 00:27:51 PST 2026: comparing new snapshot with /backingfiles/snapshots/snap-000005/snap.bin
+Wed 18 Feb 00:27:51 PST 2026: new snapshot is identical to previous one, discarding
+Wed 18 Feb 00:27:51 PST 2026: releasing snapshot /backingfiles/snapshots/snap-000006
+Wed 18 Feb 00:27:51 PST 2026: Archiving...
+Wed 18 Feb 00:27:52 PST 2026: Mounted /mnt/archive.
+Wed 18 Feb 00:27:52 PST 2026: Checking saved folder count...
+Wed 18 Feb 00:27:52 PST 2026: There are 0 event folder(s) with 584 file(s) and 0 track mode file(s) to move.  0 short recording(s) will be skipped.
+Wed 18 Feb 00:27:52 PST 2026: Starting recording archiving
+Wed 18 Feb 00:27:52 PST 2026: Archiving 584 file(s) starting at Wed 18 Feb 00:27:52 PST 2026
+Wed 18 Feb 00:27:52 PST 2026: Sending Webhook message.
+Wed 18 Feb 00:27:54 PST 2026: Error during archiving. Archived 0 files in 2s
+Wed 18 Feb 00:27:54 PST 2026: Sending Webhook message.
+2026/02/18 00:27:53 [1273] building file list
+2026/02/18 00:27:53 [1273] done
+2026/02/18 00:27:53 [1273] cd+++++++++ RecentClips/2026-02-17/
+2026/02/18 00:27:53 [1273] Number of files: 586 (reg: 584, dir: 2)
+2026/02/18 00:27:53 [1273] Number of created files: 1 (dir: 1)
+2026/02/18 00:27:53 [1273] Number of deleted files: 0
+2026/02/18 00:27:53 [1273] Number of regular files transferred: 0
+2026/02/18 00:27:53 [1273] Total file size: 16.90G bytes
+2026/02/18 00:27:53 [1273] Total transferred file size: 0 bytes
+2026/02/18 00:27:53 [1273] Literal data: 0 bytes
+2026/02/18 00:27:53 [1273] Matched data: 0 bytes
+2026/02/18 00:27:53 [1273] File list size: 0
+2026/02/18 00:27:53 [1273] File list generation time: 0.274 seconds
+2026/02/18 00:27:53 [1273] File list transfer time: 0.000 seconds
+2026/02/18 00:27:53 [1273] Total bytes sent: 13.55K
+2026/02/18 00:27:53 [1273] Total bytes received: 19
+2026/02/18 00:27:53 [1273] sent 13.55K bytes  received 19 bytes  27.13K bytes/sec
+2026/02/18 00:27:53 [1273] total size is 16.90G  speedup is 1,245,541.58
+2026/02/18 00:27:53 [1273] sent 13553 bytes  received 24 bytes  total size 16898262626
+2026/02/18 00:27:53 [1273] rsync error: some files/attrs were not transferred (see previous errors) (code 23) at main.c(1338) [sender=3.2.7]
+building file list ... done
+rsync: [generator] recv_generator: mkdir "/mnt/archive/RecentClips/2026-02-17" failed: Permission denied (13)
+*** Skipping any contents from this failed directory ***
+RecentClips/2026-02-17/
+Number of files: 586 (reg: 584, dir: 2)
+Number of created files: 1 (dir: 1)
+Number of deleted files: 0
+Number of regular files transferred: 0
+Total file size: 16.90G bytes
+Total transferred file size: 0 bytes
+Literal data: 0 bytes
+Matched data: 0 bytes
+File list size: 0
+File list generation time: 0.274 seconds
+File list transfer time: 0.000 seconds
+Total bytes sent: 13.55K
+Total bytes received: 19
+sent 13.55K bytes  received 19 bytes  27.13K bytes/sec
+total size is 16.90G  speedup is 1,245,541.58
+rsync error: some files/attrs were not transferred (see previous errors) (code 23) at main.c(1338) [sender=3.2.7]
+Wed 18 Feb 00:27:54 PST 2026: Skipping cleaning step after archive error
+Wed 18 Feb 00:27:54 PST 2026: Finished archiving.
+Wed 18 Feb 00:27:54 PST 2026: Music archive not configured or unreachable
+Wed 18 Feb 00:27:54 PST 2026: post-archive processing failed
+Wed 18 Feb 00:27:54 PST 2026: Stopping background task that is keeping car awake.
+Wed 18 Feb 00:27:54 PST 2026: Unmounted /mnt/archive.
+Wed 18 Feb 00:27:54 PST 2026: Connecting usb to host...
+Wed 18 Feb 00:27:54 PST 2026: Connected usb to host.
+Wed 18 Feb 00:27:59 PST 2026: Waiting for archive to be unreachable...
+Wed 18 Feb 00:50:25 PST 2026: Simulating archive being unreachable.
+Wed 18 Feb 00:50:25 PST 2026: Waiting for archive to be reachable...
+Wed 18 Feb 00:50:25 PST 2026: Archive is reachable.
+Wed 18 Feb 00:50:26 PST 2026: Trying to set time...
+Wed 18 Feb 00:50:26 PST 2026: Time adjusted by 0.826118 seconds after 0.830000 seconds
+Wed 18 Feb 00:50:26 PST 2026: Starting background task to keep car awake.
+Wed 18 Feb 00:50:47 PST 2026: taking snapshot of cam disk in /backingfiles/snapshots/snap-000006
+Wed 18 Feb 00:50:48 PST 2026: took snapshot
+Wed 18 Feb 00:50:49 PST 2026: comparing new snapshot with /backingfiles/snapshots/snap-000005/snap.bin
+Wed 18 Feb 00:50:49 PST 2026: new snapshot is identical to previous one, discarding
+Wed 18 Feb 00:50:49 PST 2026: releasing snapshot /backingfiles/snapshots/snap-000006
+Wed 18 Feb 00:50:49 PST 2026: Archiving...
+Wed 18 Feb 00:50:49 PST 2026: Mounted /mnt/archive.
+Wed 18 Feb 00:50:49 PST 2026: Checking saved folder count...
+Wed 18 Feb 00:50:51 PST 2026: There are 0 event folder(s) with 584 file(s) and 0 track mode file(s) to move.  0 short recording(s) will be skipped.
+Wed 18 Feb 00:50:51 PST 2026: Starting recording archiving
+Wed 18 Feb 00:50:51 PST 2026: Archiving 584 file(s) starting at Wed 18 Feb 00:50:51 PST 2026
+Wed 18 Feb 00:50:51 PST 2026: Sending Webhook message.
+Wed 18 Feb 00:50:52 PST 2026: Error during archiving. Archived 0 files in 1s
+Wed 18 Feb 00:50:52 PST 2026: Sending Webhook message.
+2026/02/18 00:50:51 [8157] building file list
+2026/02/18 00:50:52 [8157] done
+2026/02/18 00:50:52 [8157] cd+++++++++ RecentClips/2026-02-17/
+2026/02/18 00:50:52 [8157] Number of files: 586 (reg: 584, dir: 2)
+2026/02/18 00:50:52 [8157] Number of created files: 1 (dir: 1)
+2026/02/18 00:50:52 [8157] Number of deleted files: 0
+2026/02/18 00:50:52 [8157] Number of regular files transferred: 0
+2026/02/18 00:50:52 [8157] Total file size: 16.90G bytes
+2026/02/18 00:50:52 [8157] Total transferred file size: 0 bytes
+2026/02/18 00:50:52 [8157] Literal data: 0 bytes
+2026/02/18 00:50:52 [8157] Matched data: 0 bytes
+2026/02/18 00:50:52 [8157] File list size: 0
+2026/02/18 00:50:52 [8157] File list generation time: 0.321 seconds
+2026/02/18 00:50:52 [8157] File list transfer time: 0.000 seconds
+2026/02/18 00:50:52 [8157] Total bytes sent: 13.55K
+2026/02/18 00:50:52 [8157] Total bytes received: 19
+2026/02/18 00:50:52 [8157] sent 13.55K bytes  received 19 bytes  9.04K bytes/sec
+2026/02/18 00:50:52 [8157] total size is 16.90G  speedup is 1,245,541.58
+2026/02/18 00:50:52 [8157] sent 13553 bytes  received 24 bytes  total size 16898262626
+2026/02/18 00:50:52 [8157] rsync error: some files/attrs were not transferred (see previous errors) (code 23) at main.c(1338) [sender=3.2.7]
+building file list ... done
+rsync: [generator] recv_generator: mkdir "/mnt/archive/RecentClips/2026-02-17" failed: Permission denied (13)
+*** Skipping any contents from this failed directory ***
+RecentClips/2026-02-17/
+Number of files: 586 (reg: 584, dir: 2)
+Number of created files: 1 (dir: 1)
+Number of deleted files: 0
+Number of regular files transferred: 0
+Total file size: 16.90G bytes
+Total transferred file size: 0 bytes
+Literal data: 0 bytes
+Matched data: 0 bytes
+File list size: 0
+File list generation time: 0.321 seconds
+File list transfer time: 0.000 seconds
+Total bytes sent: 13.55K
+Total bytes received: 19
+sent 13.55K bytes  received 19 bytes  9.04K bytes/sec
+total size is 16.90G  speedup is 1,245,541.58
+rsync error: some files/attrs were not transferred (see previous errors) (code 23) at main.c(1338) [sender=3.2.7]
+Wed 18 Feb 00:50:53 PST 2026: Skipping cleaning step after archive error
+Wed 18 Feb 00:50:53 PST 2026: Finished archiving.
+Wed 18 Feb 00:50:53 PST 2026: Music archive not configured or unreachable
+Wed 18 Feb 00:50:53 PST 2026: post-archive processing failed
+Wed 18 Feb 00:50:53 PST 2026: Stopping background task that is keeping car awake.
+Wed 18 Feb 00:50:53 PST 2026: Unmounted /mnt/archive.
+Wed 18 Feb 00:50:53 PST 2026: Connecting usb to host...
+Wed 18 Feb 00:50:53 PST 2026: Connected usb to host.
+Wed 18 Feb 00:50:58 PST 2026: Waiting for archive to be unreachable...
+Wed 18 Feb 00:51:37 PST 2026: Simulating archive being unreachable.
+Wed 18 Feb 00:51:37 PST 2026: Waiting for archive to be reachable...
+Wed 18 Feb 00:51:37 PST 2026: Archive is reachable.
+Wed 18 Feb 00:51:37 PST 2026: Trying to set time...
+Wed 18 Feb 00:51:38 PST 2026: Time adjusted by 0.943199 seconds after 0.930000 seconds
+Wed 18 Feb 00:51:38 PST 2026: Starting background task to keep car awake.
+Wed 18 Feb 00:51:58 PST 2026: taking snapshot of cam disk in /backingfiles/snapshots/snap-000006
+Wed 18 Feb 00:52:00 PST 2026: took snapshot
+Wed 18 Feb 00:52:01 PST 2026: comparing new snapshot with /backingfiles/snapshots/snap-000005/snap.bin
+Wed 18 Feb 00:52:01 PST 2026: new snapshot is identical to previous one, discarding
+Wed 18 Feb 00:52:01 PST 2026: releasing snapshot /backingfiles/snapshots/snap-000006
+Wed 18 Feb 00:52:01 PST 2026: Archiving...
+Wed 18 Feb 00:52:01 PST 2026: Mounted /mnt/archive.
+Wed 18 Feb 00:52:01 PST 2026: Checking saved folder count...
+Wed 18 Feb 00:52:02 PST 2026: There are 0 event folder(s) with 584 file(s) and 0 track mode file(s) to move.  0 short recording(s) will be skipped.
+Wed 18 Feb 00:52:02 PST 2026: Starting recording archiving
+Wed 18 Feb 00:52:02 PST 2026: Archiving 584 file(s) starting at Wed 18 Feb 00:52:02 PST 2026
+Wed 18 Feb 00:52:02 PST 2026: Sending Webhook message.
+Wed 18 Feb 00:52:03 PST 2026: Error during archiving. Archived 0 files in 1s
+Wed 18 Feb 00:52:04 PST 2026: Sending Webhook message.
+2026/02/18 00:52:03 [8696] building file list
+2026/02/18 00:52:03 [8696] done
+2026/02/18 00:52:03 [8696] cd+++++++++ RecentClips/2026-02-17/
+2026/02/18 00:52:03 [8696] Number of files: 586 (reg: 584, dir: 2)
+2026/02/18 00:52:03 [8696] Number of created files: 1 (dir: 1)
+2026/02/18 00:52:03 [8696] Number of deleted files: 0
+2026/02/18 00:52:03 [8696] Number of regular files transferred: 0
+2026/02/18 00:52:03 [8696] Total file size: 16.90G bytes
+2026/02/18 00:52:03 [8696] Total transferred file size: 0 bytes
+2026/02/18 00:52:03 [8696] Literal data: 0 bytes
+2026/02/18 00:52:03 [8696] Matched data: 0 bytes
+2026/02/18 00:52:03 [8696] File list size: 0
+2026/02/18 00:52:03 [8696] File list generation time: 0.321 seconds
+2026/02/18 00:52:03 [8696] File list transfer time: 0.000 seconds
+2026/02/18 00:52:03 [8696] Total bytes sent: 13.55K
+2026/02/18 00:52:03 [8696] Total bytes received: 19
+2026/02/18 00:52:03 [8696] sent 13.55K bytes  received 19 bytes  27.13K bytes/sec
+2026/02/18 00:52:03 [8696] total size is 16.90G  speedup is 1,245,541.58
+2026/02/18 00:52:03 [8696] sent 13553 bytes  received 24 bytes  total size 16898262626
+2026/02/18 00:52:03 [8696] rsync error: some files/attrs were not transferred (see previous errors) (code 23) at main.c(1338) [sender=3.2.7]
+building file list ... done
+rsync: [generator] recv_generator: mkdir "/mnt/archive/RecentClips/2026-02-17" failed: Permission denied (13)
+*** Skipping any contents from this failed directory ***
+RecentClips/2026-02-17/
+Number of files: 586 (reg: 584, dir: 2)
+Number of created files: 1 (dir: 1)
+Number of deleted files: 0
+Number of regular files transferred: 0
+Total file size: 16.90G bytes
+Total transferred file size: 0 bytes
+Literal data: 0 bytes
+Matched data: 0 bytes
+File list size: 0
+File list generation time: 0.321 seconds
+File list transfer time: 0.000 seconds
+Total bytes sent: 13.55K
+Total bytes received: 19
+sent 13.55K bytes  received 19 bytes  27.13K bytes/sec
+total size is 16.90G  speedup is 1,245,541.58
+rsync error: some files/attrs were not transferred (see previous errors) (code 23) at main.c(1338) [sender=3.2.7]
+Wed 18 Feb 00:52:04 PST 2026: Skipping cleaning step after archive error
+Wed 18 Feb 00:52:04 PST 2026: Finished archiving.
+Wed 18 Feb 00:52:04 PST 2026: Music archive not configured or unreachable
+Wed 18 Feb 00:52:04 PST 2026: post-archive processing failed
+Wed 18 Feb 00:52:05 PST 2026: Stopping background task that is keeping car awake.
+Wed 18 Feb 00:52:05 PST 2026: Unmounted /mnt/archive.
+Wed 18 Feb 00:52:05 PST 2026: Connecting usb to host...
+Wed 18 Feb 00:52:05 PST 2026: Connected usb to host.
+Wed 18 Feb 00:52:10 PST 2026: Waiting for archive to be unreachable...
+Wed 18 Feb 00:56:04 PST 2026: Simulating archive being unreachable.
+Wed 18 Feb 00:56:04 PST 2026: Waiting for archive to be reachable...
+Wed 18 Feb 00:56:04 PST 2026: Archive is reachable.
+Wed 18 Feb 00:56:04 PST 2026: Trying to set time...
+Wed 18 Feb 00:56:05 PST 2026: Time adjusted by 0.870445 seconds after 0.870000 seconds
+Wed 18 Feb 00:56:05 PST 2026: Starting background task to keep car awake.
+Wed 18 Feb 00:56:25 PST 2026: taking snapshot of cam disk in /backingfiles/snapshots/snap-000006
+Wed 18 Feb 00:56:28 PST 2026: took snapshot
+Wed 18 Feb 00:56:28 PST 2026: comparing new snapshot with /backingfiles/snapshots/snap-000005/snap.bin
+Wed 18 Feb 00:56:28 PST 2026: new snapshot is identical to previous one, discarding
+Wed 18 Feb 00:56:28 PST 2026: releasing snapshot /backingfiles/snapshots/snap-000006
+Wed 18 Feb 00:56:28 PST 2026: Archiving...
+Wed 18 Feb 00:56:29 PST 2026: Mounted /mnt/archive.
+Wed 18 Feb 00:56:29 PST 2026: Checking saved folder count...
+Wed 18 Feb 00:56:29 PST 2026: There are 0 event folder(s) with 584 file(s) and 0 track mode file(s) to move.  0 short recording(s) will be skipped.
+Wed 18 Feb 00:56:29 PST 2026: Starting recording archiving
+Wed 18 Feb 00:56:29 PST 2026: Archiving 584 file(s) starting at Wed 18 Feb 00:56:29 PST 2026
+Wed 18 Feb 00:56:29 PST 2026: Sending Webhook message.
+Wed 18 Feb 00:56:31 PST 2026: Error during archiving. Archived 0 files in 2s
+Wed 18 Feb 00:56:31 PST 2026: Sending Webhook message.
+2026/02/18 00:56:30 [10481] building file list
+2026/02/18 00:56:30 [10481] done
+2026/02/18 00:56:30 [10481] cd+++++++++ RecentClips/2026-02-17/
+2026/02/18 00:56:31 [10481] Number of files: 586 (reg: 584, dir: 2)
+2026/02/18 00:56:31 [10481] Number of created files: 1 (dir: 1)
+2026/02/18 00:56:31 [10481] Number of deleted files: 0
+2026/02/18 00:56:31 [10481] Number of regular files transferred: 0
+2026/02/18 00:56:31 [10481] Total file size: 16.90G bytes
+2026/02/18 00:56:31 [10481] Total transferred file size: 0 bytes
+2026/02/18 00:56:31 [10481] Literal data: 0 bytes
+2026/02/18 00:56:31 [10481] Matched data: 0 bytes
+2026/02/18 00:56:31 [10481] File list size: 0
+2026/02/18 00:56:31 [10481] File list generation time: 0.323 seconds
+2026/02/18 00:56:31 [10481] File list transfer time: 0.000 seconds
+2026/02/18 00:56:31 [10481] Total bytes sent: 13.55K
+2026/02/18 00:56:31 [10481] Total bytes received: 19
+2026/02/18 00:56:31 [10481] sent 13.55K bytes  received 19 bytes  27.13K bytes/sec
+2026/02/18 00:56:31 [10481] total size is 16.90G  speedup is 1,245,541.58
+2026/02/18 00:56:31 [10481] sent 13553 bytes  received 24 bytes  total size 16898262626
+2026/02/18 00:56:31 [10481] rsync error: some files/attrs were not transferred (see previous errors) (code 23) at main.c(1338) [sender=3.2.7]
+building file list ... done
+rsync: [generator] recv_generator: mkdir "/mnt/archive/RecentClips/2026-02-17" failed: Permission denied (13)
+*** Skipping any contents from this failed directory ***
+RecentClips/2026-02-17/
+Number of files: 586 (reg: 584, dir: 2)
+Number of created files: 1 (dir: 1)
+Number of deleted files: 0
+Number of regular files transferred: 0
+Total file size: 16.90G bytes
+Total transferred file size: 0 bytes
+Literal data: 0 bytes
+Matched data: 0 bytes
+File list size: 0
+File list generation time: 0.323 seconds
+File list transfer time: 0.000 seconds
+Total bytes sent: 13.55K
+Total bytes received: 19
+sent 13.55K bytes  received 19 bytes  27.13K bytes/sec
+total size is 16.90G  speedup is 1,245,541.58
+rsync error: some files/attrs were not transferred (see previous errors) (code 23) at main.c(1338) [sender=3.2.7]
+Wed 18 Feb 00:56:32 PST 2026: Skipping cleaning step after archive error
+Wed 18 Feb 00:56:32 PST 2026: Finished archiving.
+Wed 18 Feb 00:56:32 PST 2026: Music archive not configured or unreachable
+Wed 18 Feb 00:56:32 PST 2026: post-archive processing failed
+Wed 18 Feb 00:56:32 PST 2026: Stopping background task that is keeping car awake.
+Wed 18 Feb 00:56:32 PST 2026: Unmounted /mnt/archive.
+Wed 18 Feb 00:56:32 PST 2026: Connecting usb to host...
+Wed 18 Feb 00:56:32 PST 2026: Connected usb to host.
+Wed 18 Feb 00:56:37 PST 2026: Waiting for archive to be unreachable...
+Wed 18 Feb 00:59:07 PST 2026: Sleeping before retry ...
+==============================================
+Wed 18 Feb 00:59:07 PST 2026: Starting archiveloop at 12.63 seconds uptime...
+Wed 18 Feb 00:59:07 PST 2026: Running fsck on /backingfiles/cam_disk.bin...
+Wed 18 Feb 00:59:07 PST 2026: | fsck from util-linux 2.38.1
+Wed 18 Feb 00:59:09 PST 2026: | fsck.fat 4.2 (2021-01-31)
+Wed 18 Feb 00:59:09 PST 2026: | /dev/loop0p1: 295 files, 241162/2096606 clusters
+Wed 18 Feb 00:59:09 PST 2026: Finished fsck on /backingfiles/cam_disk.bin.
+Wed 18 Feb 00:59:09 PST 2026: Running fsck on /backingfiles/lightshow_disk.bin...
+Wed 18 Feb 00:59:09 PST 2026: | fsck from util-linux 2.38.1
+Wed 18 Feb 00:59:10 PST 2026: | fsck.fat 4.2 (2021-01-31)
+Wed 18 Feb 00:59:10 PST 2026: | /dev/loop0p1: 3 files, 2/261367 clusters
+Wed 18 Feb 00:59:10 PST 2026: Finished fsck on /backingfiles/lightshow_disk.bin.
+Wed 18 Feb 00:59:10 PST 2026: cleaning cam mount
+Wed 18 Feb 00:59:10 PST 2026: Ensuring cam file is mounted...
+Wed 18 Feb 00:59:10 PST 2026: Disconnecting usb from host...
+Wed 18 Feb 00:59:10 PST 2026: Disconnected usb from host.
+Wed 18 Feb 00:59:10 PST 2026: Mounted /mnt/cam.
+Wed 18 Feb 00:59:10 PST 2026: Ensured cam file is mounted.
+Wed 18 Feb 00:59:11 PST 2026: Trimming free space in /mnt/cam, which has 102 extents
+Wed 18 Feb 00:59:11 PST 2026: Trim complete, image now has 102 extents
+Wed 18 Feb 00:59:11 PST 2026: Unmounting /mnt/cam...
+Wed 18 Feb 00:59:11 PST 2026: Unmounted /mnt/cam.
+Wed 18 Feb 00:59:11 PST 2026: done cleaning cam mount
+Wed 18 Feb 00:59:11 PST 2026: taking snapshot of cam disk in /backingfiles/snapshots/snap-000006
+Wed 18 Feb 00:59:11 PST 2026: took snapshot
+Wed 18 Feb 00:59:12 PST 2026: comparing new snapshot with /backingfiles/snapshots/snap-000005/snap.bin
+Wed 18 Feb 00:59:12 PST 2026: new snapshot is identical to previous one, discarding
+Wed 18 Feb 00:59:12 PST 2026: releasing snapshot /backingfiles/snapshots/snap-000006
+Wed 18 Feb 00:59:13 PST 2026: Connecting usb to host...
+Wed 18 Feb 00:59:13 PST 2026: Connected usb to host.
+Wed 18 Feb 00:59:18 PST 2026: Trying to set time...
+Wed 18 Feb 00:59:40 PST 2026: Time adjusted by 21.710152 seconds after 1.290000 seconds
+Wed 18 Feb 00:59:40 PST 2026: Starting background task to keep car awake.
+Wed 18 Feb 00:59:40 PST 2026: Archiving...
+Wed 18 Feb 00:59:41 PST 2026: Mounted /mnt/archive.
+Wed 18 Feb 00:59:41 PST 2026: Checking saved folder count...
+Wed 18 Feb 00:59:41 PST 2026: There are 0 event folder(s) with 584 file(s) and 0 track mode file(s) to move.  0 short recording(s) will be skipped.
+Wed 18 Feb 00:59:41 PST 2026: Starting recording archiving
+Wed 18 Feb 00:59:41 PST 2026: Archiving 584 file(s) starting at Wed 18 Feb 00:59:41 PST 2026
+Wed 18 Feb 00:59:42 PST 2026: Sending Webhook message.
+Wed 18 Feb 00:59:43 PST 2026: Error during archiving. Archived 0 files in 2s
+Wed 18 Feb 00:59:43 PST 2026: Sending Webhook message.
+2026/02/18 00:59:42 [960] building file list
+2026/02/18 00:59:42 [960] done
+2026/02/18 00:59:42 [960] cd+++++++++ RecentClips/2026-02-17/
+2026/02/18 00:59:42 [960] Number of files: 586 (reg: 584, dir: 2)
+2026/02/18 00:59:42 [960] Number of created files: 1 (dir: 1)
+2026/02/18 00:59:42 [960] Number of deleted files: 0
+2026/02/18 00:59:42 [960] Number of regular files transferred: 0
+2026/02/18 00:59:42 [960] Total file size: 16.90G bytes
+2026/02/18 00:59:42 [960] Total transferred file size: 0 bytes
+2026/02/18 00:59:42 [960] Literal data: 0 bytes
+2026/02/18 00:59:42 [960] Matched data: 0 bytes
+2026/02/18 00:59:42 [960] File list size: 0
+2026/02/18 00:59:42 [960] File list generation time: 0.193 seconds
+2026/02/18 00:59:42 [960] File list transfer time: 0.000 seconds
+2026/02/18 00:59:42 [960] Total bytes sent: 13.55K
+2026/02/18 00:59:42 [960] Total bytes received: 19
+2026/02/18 00:59:42 [960] sent 13.55K bytes  received 19 bytes  27.13K bytes/sec
+2026/02/18 00:59:42 [960] total size is 16.90G  speedup is 1,245,541.58
+2026/02/18 00:59:42 [960] sent 13553 bytes  received 24 bytes  total size 16898262626
+2026/02/18 00:59:42 [960] rsync error: some files/attrs were not transferred (see previous errors) (code 23) at main.c(1338) [sender=3.2.7]
+building file list ... done
+rsync: [generator] recv_generator: mkdir "/mnt/archive/RecentClips/2026-02-17" failed: Permission denied (13)
+*** Skipping any contents from this failed directory ***
+RecentClips/2026-02-17/
+Number of files: 586 (reg: 584, dir: 2)
+Number of created files: 1 (dir: 1)
+Number of deleted files: 0
+Number of regular files transferred: 0
+Total file size: 16.90G bytes
+Total transferred file size: 0 bytes
+Literal data: 0 bytes
+Matched data: 0 bytes
+File list size: 0
+File list generation time: 0.193 seconds
+File list transfer time: 0.000 seconds
+Total bytes sent: 13.55K
+Total bytes received: 19
+sent 13.55K bytes  received 19 bytes  27.13K bytes/sec
+total size is 16.90G  speedup is 1,245,541.58
+rsync error: some files/attrs were not transferred (see previous errors) (code 23) at main.c(1338) [sender=3.2.7]
+Wed 18 Feb 00:59:43 PST 2026: Skipping cleaning step after archive error
+Wed 18 Feb 00:59:43 PST 2026: Finished archiving.
+Wed 18 Feb 00:59:43 PST 2026: Music archive not configured or unreachable
+Wed 18 Feb 00:59:43 PST 2026: post-archive processing failed
+Wed 18 Feb 00:59:43 PST 2026: Stopping background task that is keeping car awake.
+Wed 18 Feb 00:59:43 PST 2026: Unmounted /mnt/archive.
+Wed 18 Feb 00:59:43 PST 2026: Connecting usb to host...
+Wed 18 Feb 00:59:43 PST 2026: Connected usb to host.
+Wed 18 Feb 00:59:48 PST 2026: Waiting for archive to be unreachable...
+Wed 18 Feb 00:59:53 PST 2026: Simulating archive being unreachable.
+Wed 18 Feb 00:59:54 PST 2026: Waiting for archive to be reachable...
+Wed 18 Feb 00:59:54 PST 2026: Archive is reachable.
+Wed 18 Feb 00:59:54 PST 2026: Trying to set time...
+Wed 18 Feb 00:59:54 PST 2026: Time adjusted by 0.555045 seconds after 0.550000 seconds
+Wed 18 Feb 00:59:54 PST 2026: Starting background task to keep car awake.
+Wed 18 Feb 01:00:14 PST 2026: taking snapshot of cam disk in /backingfiles/snapshots/snap-000006
+Wed 18 Feb 01:00:16 PST 2026: took snapshot
+Wed 18 Feb 01:00:17 PST 2026: comparing new snapshot with /backingfiles/snapshots/snap-000005/snap.bin
+Wed 18 Feb 01:00:17 PST 2026: new snapshot is identical to previous one, discarding
+Wed 18 Feb 01:00:17 PST 2026: releasing snapshot /backingfiles/snapshots/snap-000006
+Wed 18 Feb 01:00:17 PST 2026: Archiving...
+Wed 18 Feb 01:00:17 PST 2026: Mounted /mnt/archive.
+Wed 18 Feb 01:00:17 PST 2026: Checking saved folder count...
+Wed 18 Feb 01:00:18 PST 2026: There are 0 event folder(s) with 584 file(s) and 0 track mode file(s) to move.  0 short recording(s) will be skipped.
+Wed 18 Feb 01:00:18 PST 2026: Starting recording archiving
+Wed 18 Feb 01:00:18 PST 2026: Archiving 584 file(s) starting at Wed 18 Feb 01:00:18 PST 2026
+Wed 18 Feb 01:00:18 PST 2026: Sending Webhook message.
+Wed 18 Feb 01:00:19 PST 2026: Error during archiving. Archived 0 files in 1s
+Wed 18 Feb 01:00:19 PST 2026: Sending Webhook message.
+2026/02/18 01:00:18 [1249] building file list
+2026/02/18 01:00:19 [1249] done
+2026/02/18 01:00:19 [1249] cd+++++++++ RecentClips/2026-02-17/
+2026/02/18 01:00:19 [1249] Number of files: 586 (reg: 584, dir: 2)
+2026/02/18 01:00:19 [1249] Number of created files: 1 (dir: 1)
+2026/02/18 01:00:19 [1249] Number of deleted files: 0
+2026/02/18 01:00:19 [1249] Number of regular files transferred: 0
+2026/02/18 01:00:19 [1249] Total file size: 16.90G bytes
+2026/02/18 01:00:19 [1249] Total transferred file size: 0 bytes
+2026/02/18 01:00:19 [1249] Literal data: 0 bytes
+2026/02/18 01:00:19 [1249] Matched data: 0 bytes
+2026/02/18 01:00:19 [1249] File list size: 0
+2026/02/18 01:00:19 [1249] File list generation time: 0.277 seconds
+2026/02/18 01:00:19 [1249] File list transfer time: 0.000 seconds
+2026/02/18 01:00:19 [1249] Total bytes sent: 13.55K
+2026/02/18 01:00:19 [1249] Total bytes received: 19
+2026/02/18 01:00:19 [1249] sent 13.55K bytes  received 19 bytes  9.04K bytes/sec
+2026/02/18 01:00:19 [1249] total size is 16.90G  speedup is 1,245,541.58
+2026/02/18 01:00:19 [1249] sent 13553 bytes  received 24 bytes  total size 16898262626
+2026/02/18 01:00:19 [1249] rsync error: some files/attrs were not transferred (see previous errors) (code 23) at main.c(1338) [sender=3.2.7]
+building file list ... done
+rsync: [generator] recv_generator: mkdir "/mnt/archive/RecentClips/2026-02-17" failed: Permission denied (13)
+*** Skipping any contents from this failed directory ***
+RecentClips/2026-02-17/
+Number of files: 586 (reg: 584, dir: 2)
+Number of created files: 1 (dir: 1)
+Number of deleted files: 0
+Number of regular files transferred: 0
+Total file size: 16.90G bytes
+Total transferred file size: 0 bytes
+Literal data: 0 bytes
+Matched data: 0 bytes
+File list size: 0
+File list generation time: 0.277 seconds
+File list transfer time: 0.000 seconds
+Total bytes sent: 13.55K
+Total bytes received: 19
+sent 13.55K bytes  received 19 bytes  9.04K bytes/sec
+total size is 16.90G  speedup is 1,245,541.58
+rsync error: some files/attrs were not transferred (see previous errors) (code 23) at main.c(1338) [sender=3.2.7]
+Wed 18 Feb 01:00:20 PST 2026: Skipping cleaning step after archive error
+Wed 18 Feb 01:00:20 PST 2026: Finished archiving.
+Wed 18 Feb 01:00:20 PST 2026: Music archive not configured or unreachable
+Wed 18 Feb 01:00:20 PST 2026: post-archive processing failed
+Wed 18 Feb 01:00:20 PST 2026: Stopping background task that is keeping car awake.
+Wed 18 Feb 01:00:20 PST 2026: Unmounted /mnt/archive.
+Wed 18 Feb 01:00:20 PST 2026: Connecting usb to host...
+Wed 18 Feb 01:00:20 PST 2026: Connected usb to host.
+Wed 18 Feb 01:00:25 PST 2026: Waiting for archive to be unreachable...
+Wed 18 Feb 01:00:27 PST 2026: Temperature Monitor: 38.628°C (max=41.318°C 2026-02-18 00:59:07)
+Wed 18 Feb 01:00:28 PST 2026: Sending Webhook message.
+====== system log ======
+Feb 18 00:59:07 sentryusb syslog.info syslogd started: BusyBox v1.35.0
+Feb 18 00:59:08 sentryusb daemon.info bluetoothd[426]: Bluetooth daemon 5.66
+Feb 18 00:59:08 sentryusb daemon.info dbus-daemon[430]: [system] Successfully activated service 'org.freedesktop.systemd1'
+Feb 18 00:59:08 sentryusb authpriv.notice polkitd[433]: Loading rules from directory /etc/polkit-1/rules.d
+Feb 18 00:59:09 sentryusb authpriv.notice polkitd[433]: Loading rules from directory /usr/share/polkit-1/rules.d
+Feb 18 00:59:09 sentryusb daemon.info bluetoothd[426]: Starting SDP server
+Feb 18 00:59:09 sentryusb authpriv.notice polkitd[433]: Finished loading, compiling and executing 4 rules
+Feb 18 00:59:09 sentryusb daemon.warn bluetoothd[426]: profiles/audio/vcp.c:vcp_init() D-Bus experimental not enabled
+Feb 18 00:59:09 sentryusb daemon.err bluetoothd[426]: src/plugin.c:plugin_init() Failed to init vcp plugin
+Feb 18 00:59:09 sentryusb daemon.warn bluetoothd[426]: profiles/audio/mcp.c:mcp_init() D-Bus experimental not enabled
+Feb 18 00:59:09 sentryusb daemon.err bluetoothd[426]: src/plugin.c:plugin_init() Failed to init mcp plugin
+Feb 18 00:59:09 sentryusb daemon.warn bluetoothd[426]: profiles/audio/bap.c:bap_init() D-Bus experimental not enabled
+Feb 18 00:59:09 sentryusb daemon.err bluetoothd[426]: src/plugin.c:plugin_init() Failed to init bap plugin
+Feb 18 00:59:09 sentryusb authpriv.notice polkitd[433]: Acquired the name org.freedesktop.PolicyKit1 on the system bus
+Feb 18 00:59:09 sentryusb daemon.info dbus-daemon[430]: [system] Activating via systemd: service name='org.freedesktop.hostname1' unit='dbus-org.freedesktop.hostname1.service' requested by ':1.2' (uid=0 pid=426 comm="/usr/libexec/bluetooth/bluetoothd")
+Feb 18 00:59:09 sentryusb daemon.info bluetoothd[426]: Bluetooth management interface 1.23 initialized
+Feb 18 00:59:09 sentryusb daemon.notice wpa_supplicant[525]: Successfully initialized wpa_supplicant
+Feb 18 00:59:09 sentryusb daemon.info dbus-daemon[430]: [system] Successfully activated service 'org.freedesktop.hostname1'
+Feb 18 00:59:09 sentryusb daemon.err bluetoothd[426]: profiles/sap/server.c:sap_server_register() Sap driver initialization failed.
+Feb 18 00:59:09 sentryusb daemon.err bluetoothd[426]: sap-server: Operation not permitted (1)
+Feb 18 00:59:09 sentryusb daemon.info ModemManager[535]: <info>  ModemManager (version 1.20.4) starting in system bus...
+Feb 18 00:59:10 sentryusb daemon.notice ntpd[590]: INIT: ntpd ntpsec-1.2.2: Starting
+Feb 18 00:59:10 sentryusb daemon.notice ntpd[590]: INIT: Command line: /usr/sbin/ntpd -p /run/ntpd.pid -c /etc/ntpsec/ntp.conf -g -N -u ntpsec:ntpsec
+Feb 18 00:59:10 sentryusb daemon.info ntpd[605]: INIT: precision = 0.729 usec (-20)
+Feb 18 00:59:10 sentryusb daemon.info ntpd[605]: INIT: successfully locked into RAM
+Feb 18 00:59:10 sentryusb daemon.info ntpd[605]: CONFIG: readconfig: parsing file: /etc/ntpsec/ntp.conf
+Feb 18 00:59:10 sentryusb daemon.err ntpd[605]: CONFIG: restrict nopeer ignored
+Feb 18 00:59:10 sentryusb daemon.notice ntpd[605]: CLOCK: leapsecond file ('/usr/share/zoneinfo/leap-seconds.list'): good hash signature
+Feb 18 00:59:10 sentryusb daemon.notice ntpd[605]: CLOCK: leapsecond file ('/usr/share/zoneinfo/leap-seconds.list'): loaded, expire=2026-06-28T00:00Z last=2017-01-01T00:00Z ofs=37
+Feb 18 00:59:10 sentryusb daemon.info ntpd[605]: INIT: Using SO_TIMESTAMPNS(ns)
+Feb 18 00:59:10 sentryusb daemon.info ntpd[605]: IO: Listen and drop on 0 v6wildcard [::]:123
+Feb 18 00:59:10 sentryusb daemon.info ntpd[605]: IO: Listen and drop on 1 v4wildcard 0.0.0.0:123
+Feb 18 00:59:10 sentryusb daemon.info ntpd[605]: IO: Listen normally on 2 lo 127.0.0.1:123
+Feb 18 00:59:10 sentryusb daemon.info ntpd[605]: IO: Listen normally on 3 lo [::1]:123
+Feb 18 00:59:10 sentryusb daemon.info ntpd[605]: IO: Listening on routing socket on fd #20 for interface updates
+Feb 18 00:59:10 sentryusb daemon.info ntpd[605]: INIT: MRU 10922 entries, 13 hash bits, 65536 bytes
+Feb 18 00:59:10 sentryusb daemon.info ntpd[605]: INIT: Built with OpenSSL 3.0.9 30 May 2023, 30000090
+Feb 18 00:59:10 sentryusb daemon.info ntpd[605]: INIT: Running with OpenSSL 3.0.17 1 Jul 2025, 30000110
+Feb 18 00:59:10 sentryusb daemon.info ntpd[605]: NTSc: Using system default root certificates.
+Feb 18 00:59:11 sentryusb daemon.err ntpd[605]: statistics directory /var/log/ntpsec/ does not exist or is unwriteable, error No such file or directory
+Feb 18 00:59:11 sentryusb daemon.info dbus-daemon[430]: [system] Activating via systemd: service name='org.freedesktop.nm_dispatcher' unit='dbus-org.freedesktop.nm-dispatcher.service' requested by ':1.8' (uid=0 pid=524 comm="/usr/sbin/NetworkManager --no-daemon")
+Feb 18 00:59:11 sentryusb auth.info sshd[621]: Server listening on 0.0.0.0 port 22.
+Feb 18 00:59:11 sentryusb auth.info sshd[621]: Server listening on :: port 22.
+Feb 18 00:59:11 sentryusb daemon.info dbus-daemon[430]: [system] Successfully activated service 'org.freedesktop.nm_dispatcher'
+Feb 18 00:59:11 sentryusb daemon.err wpa_supplicant[525]: nl80211: kernel reports: Registration to specific type not supported
+Feb 18 00:59:12 sentryusb daemon.info ntpd[605]: DNS: dns_probe: 0.debian.pool.ntp.org, cast_flags:8, flags:101
+Feb 18 00:59:12 sentryusb daemon.info ntpd[605]: DNS: dns_check: processing 0.debian.pool.ntp.org, 8, 101
+Feb 18 00:59:12 sentryusb daemon.info ntpd[605]: DNS: dns_check: DNS error: -3, Temporary failure in name resolution
+Feb 18 00:59:12 sentryusb daemon.info ntpd[605]: DNS: dns_take_status: 0.debian.pool.ntp.org=>temp, 3
+Feb 18 00:59:12 sentryusb daemon.notice wpa_supplicant[525]: wlan0: Trying to associate with 94:2a:6f:7c:a5:dc (SSID='Tax Office' freq=2412 MHz)
+Feb 18 00:59:12 sentryusb daemon.notice wpa_supplicant[525]: wlan0: Associated with 94:2a:6f:7c:a5:dc
+Feb 18 00:59:12 sentryusb daemon.notice wpa_supplicant[525]: wlan0: CTRL-EVENT-SUBNET-STATUS-UPDATE status=0
+Feb 18 00:59:12 sentryusb daemon.notice wpa_supplicant[525]: wlan0: CTRL-EVENT-REGDOM-CHANGE init=COUNTRY_IE type=COUNTRY alpha2=US
+Feb 18 00:59:12 sentryusb daemon.notice wpa_supplicant[525]: wlan0: WPA: Key negotiation completed with 94:2a:6f:7c:a5:dc [PTK=CCMP GTK=CCMP]
+Feb 18 00:59:12 sentryusb daemon.notice wpa_supplicant[525]: wlan0: CTRL-EVENT-CONNECTED - Connection to 94:2a:6f:7c:a5:dc completed [id=0 id_str=]
+Feb 18 00:59:12 sentryusb daemon.err wpa_supplicant[525]: bgscan simple: Failed to enable signal strength monitoring
+Feb 18 00:59:12 sentryusb daemon.notice sm-notify[736]: Version 2.6.2 starting
+Feb 18 00:59:13 sentryusb daemon.info ntpd[605]: DNS: dns_probe: 1.debian.pool.ntp.org, cast_flags:8, flags:101
+Feb 18 00:59:13 sentryusb daemon.info ntpd[605]: DNS: dns_check: processing 1.debian.pool.ntp.org, 8, 101
+Feb 18 00:59:13 sentryusb daemon.info ntpd[605]: DNS: Pool taking: 104.131.139.195
+Feb 18 00:59:13 sentryusb daemon.info ntpd[605]: DNS: Pool taking: 162.244.81.139
+Feb 18 00:59:13 sentryusb daemon.info ntpd[605]: DNS: Pool taking: 23.95.49.216
+Feb 18 00:59:13 sentryusb daemon.info ntpd[605]: DNS: Pool taking: 144.202.62.209
+Feb 18 00:59:13 sentryusb daemon.info ntpd[605]: DNS: dns_take_status: 1.debian.pool.ntp.org=>good, 8
+Feb 18 00:59:14 sentryusb daemon.info ModemManager[535]: <info>  [base-manager] couldn't check support for device '/sys/devices/platform/soc/3f300000.mmcnr/mmc_host/mmc1/mmc1:0001/mmc1:0001:1': not supported by any plugin
+Feb 18 00:59:14 sentryusb daemon.info ntpd[605]: DNS: dns_probe: 2.debian.pool.ntp.org, cast_flags:8, flags:101
+Feb 18 00:59:14 sentryusb daemon.info ntpd[605]: IO: Listen normally on 4 wlan0 192.168.1.87:123
+Feb 18 00:59:14 sentryusb daemon.err ntpd[605]: IO: bind(22) AF_INET6 fe80::6dd0:707c:8512:b0e0%3#123 flags 0x1 failed: Cannot assign requested address
+Feb 18 00:59:14 sentryusb daemon.err ntpd[605]: IO: unable to create socket on wlan0 (5) for fe80::6dd0:707c:8512:b0e0%3#123
+Feb 18 00:59:14 sentryusb daemon.info ntpd[605]: IO: failed to init interface for address fe80::6dd0:707c:8512:b0e0%3
+Feb 18 00:59:14 sentryusb daemon.debug ntpd[605]: IO: new interface(s) found: waking up resolver
+Feb 18 00:59:14 sentryusb daemon.info ntpd[605]: DNS: dns_check: processing 2.debian.pool.ntp.org, 8, 101
+Feb 18 00:59:14 sentryusb daemon.info ntpd[605]: DNS: Pool taking: 172.233.157.223
+Feb 18 00:59:14 sentryusb daemon.info ntpd[605]: DNS: Pool taking: 185.234.20.134
+Feb 18 00:59:14 sentryusb daemon.info ntpd[605]: DNS: Pool taking: 216.66.48.42
+Feb 18 00:59:14 sentryusb daemon.info ntpd[605]: DNS: Pool taking: 212.227.240.160
+Feb 18 00:59:14 sentryusb daemon.info ntpd[605]: DNS: Pool taking: 2a0a:79c0:e09::123
+Feb 18 00:59:14 sentryusb daemon.info ntpd[605]: DNS: Pool taking: 2607:7c80:54:3::56
+Feb 18 00:59:14 sentryusb daemon.info ntpd[605]: DNS: Pool taking: 2607:f710:35::29c:0:8
+Feb 18 00:59:14 sentryusb daemon.info ntpd[605]: DNS: Pool taking: 2001:470:1f2a:51::123
+Feb 18 00:59:14 sentryusb daemon.info ntpd[605]: DNS: dns_take_status: 2.debian.pool.ntp.org=>good, 8
+Feb 18 00:59:15 sentryusb daemon.info ntpd[605]: DNS: dns_probe: 3.debian.pool.ntp.org, cast_flags:8, flags:101
+Feb 18 00:59:15 sentryusb daemon.info ntpd[605]: DNS: dns_check: processing 3.debian.pool.ntp.org, 8, 101
+Feb 18 00:59:15 sentryusb daemon.info ntpd[605]: DNS: Pool taking: 66.118.228.14
+Feb 18 00:59:15 sentryusb daemon.info ntpd[605]: DNS: Pool taking: 69.10.208.170
+Feb 18 00:59:15 sentryusb daemon.info ntpd[605]: DNS: Pool taking: 23.186.168.132
+Feb 18 00:59:15 sentryusb daemon.info ntpd[605]: DNS: Pool taking: 23.150.41.123
+Feb 18 00:59:15 sentryusb daemon.info ntpd[605]: DNS: dns_take_status: 3.debian.pool.ntp.org=>good, 8
+Feb 18 00:59:16 sentryusb daemon.info ntpd[605]: DNS: dns_probe: 1.debian.pool.ntp.org, cast_flags:8, flags:101
+Feb 18 00:59:16 sentryusb daemon.info ntpd[605]: IO: Listen normally on 6 wlan0 [fe80::6dd0:707c:8512:b0e0%3]:123
+Feb 18 00:59:16 sentryusb daemon.debug ntpd[605]: IO: new interface(s) found: waking up resolver
+Feb 18 00:59:16 sentryusb daemon.info ntpd[605]: DNS: dns_check: processing 1.debian.pool.ntp.org, 8, 101
+Feb 18 00:59:16 sentryusb daemon.info ntpd[605]: DNS: Pool skipping: 104.131.139.195
+Feb 18 00:59:16 sentryusb daemon.info ntpd[605]: DNS: Pool skipping: 162.244.81.139
+Feb 18 00:59:16 sentryusb daemon.info ntpd[605]: DNS: Pool skipping: 23.95.49.216
+Feb 18 00:59:16 sentryusb daemon.info ntpd[605]: DNS: Pool skipping: 144.202.62.209
+Feb 18 00:59:16 sentryusb daemon.info ntpd[605]: DNS: dns_take_status: 1.debian.pool.ntp.org=>good, 8
+Feb 18 00:59:17 sentryusb daemon.info ntpd[605]: DNS: dns_probe: 3.debian.pool.ntp.org, cast_flags:8, flags:101
+Feb 18 00:59:17 sentryusb daemon.info ntpd[605]: DNS: dns_check: processing 3.debian.pool.ntp.org, 8, 101
+Feb 18 00:59:17 sentryusb daemon.info ntpd[605]: DNS: Pool skipping: 66.118.228.14
+Feb 18 00:59:17 sentryusb daemon.info ntpd[605]: DNS: Pool skipping: 69.10.208.170
+Feb 18 00:59:17 sentryusb daemon.info ntpd[605]: DNS: Pool skipping: 23.186.168.132
+Feb 18 00:59:17 sentryusb daemon.info ntpd[605]: DNS: Pool skipping: 23.150.41.123
+Feb 18 00:59:17 sentryusb daemon.info ntpd[605]: DNS: dns_take_status: 3.debian.pool.ntp.org=>good, 8
+Feb 18 00:59:18 sentryusb daemon.info ntpd[605]: DNS: dns_probe: 2.debian.pool.ntp.org, cast_flags:8, flags:101
+Feb 18 00:59:18 sentryusb daemon.info ntpd[605]: DNS: dns_check: processing 2.debian.pool.ntp.org, 8, 101
+Feb 18 00:59:18 sentryusb daemon.info ntpd[605]: DNS: Pool skipping: 172.233.157.223
+Feb 18 00:59:18 sentryusb daemon.info ntpd[605]: DNS: Pool skipping: 185.234.20.134
+Feb 18 00:59:18 sentryusb daemon.info ntpd[605]: DNS: Pool skipping: 216.66.48.42
+Feb 18 00:59:18 sentryusb daemon.info ntpd[605]: DNS: Pool skipping: 212.227.240.160
+Feb 18 00:59:18 sentryusb daemon.info ntpd[605]: DNS: Pool skipping: 2a0a:79c0:e09::123
+Feb 18 00:59:18 sentryusb daemon.info ntpd[605]: DNS: Pool skipping: 2607:7c80:54:3::56
+Feb 18 00:59:18 sentryusb daemon.info ntpd[605]: DNS: Pool skipping: 2607:f710:35::29c:0:8
+Feb 18 00:59:18 sentryusb daemon.info ntpd[605]: DNS: Pool skipping: 2001:470:1f2a:51::123
+Feb 18 00:59:18 sentryusb daemon.info ntpd[605]: DNS: dns_take_status: 2.debian.pool.ntp.org=>good, 8
+Feb 18 00:59:19 sentryusb daemon.info ntpd[605]: DNS: dns_probe: 0.debian.pool.ntp.org, cast_flags:8, flags:101
+Feb 18 00:59:19 sentryusb daemon.info ntpd[605]: DNS: dns_check: processing 0.debian.pool.ntp.org, 8, 101
+Feb 18 00:59:19 sentryusb daemon.info ntpd[605]: DNS: Pool taking: 69.64.225.2
+Feb 18 00:59:19 sentryusb daemon.info ntpd[605]: DNS: Pool taking: 172.111.26.123
+Feb 18 00:59:19 sentryusb daemon.info ntpd[605]: DNS: Pool taking: 23.150.40.242
+Feb 18 00:59:19 sentryusb daemon.info ntpd[605]: DNS: Pool taking: 45.33.53.84
+Feb 18 00:59:19 sentryusb daemon.info ntpd[605]: DNS: dns_take_status: 0.debian.pool.ntp.org=>good, 8
+Feb 18 00:59:41 sentryusb daemon.info nfsrahead[862]: setting /mnt/archive readahead to 128
+Feb 18 01:00:17 sentryusb daemon.info nfsrahead[1165]: setting /mnt/archive readahead to 128
+Feb 18 01:01:31 sentryusb authpriv.notice sudo:     root : PWD=/ ; USER=root ; COMMAND=/root/bin/setup-sentryusb diagnose
+Feb 18 01:01:32 sentryusb authpriv.info sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=0)
+====== dmesg ======
+[Wed Feb 18 00:59:15 2026] Booting Linux on physical CPU 0x0000000000 [0x410fd034]
+[Wed Feb 18 00:59:15 2026] Linux version 6.12.47+rpt-rpi-v8 (serge@raspberrypi.com) (aarch64-linux-gnu-gcc-12 (Debian 12.2.0-14+deb12u1) 12.2.0, GNU ld (GNU Binutils for Debian) 2.40) #1 SMP PREEMPT Debian 1:6.12.47-1+rpt1~bookworm (2025-09-16)
+[Wed Feb 18 00:59:15 2026] KASLR enabled
+[Wed Feb 18 00:59:15 2026] random: crng init done
+[Wed Feb 18 00:59:15 2026] Machine model: Raspberry Pi Zero 2 W Rev 1.0
+[Wed Feb 18 00:59:15 2026] efi: UEFI not found.
+[Wed Feb 18 00:59:15 2026] Reserved memory: created CMA memory pool at 0x000000000b800000, size 256 MiB
+[Wed Feb 18 00:59:15 2026] OF: reserved mem: initialized node linux,cma, compatible id shared-dma-pool
+[Wed Feb 18 00:59:15 2026] OF: reserved mem: 0x000000000b800000..0x000000001b7fffff (262144 KiB) map reusable linux,cma
+[Wed Feb 18 00:59:15 2026] NUMA: Faking a node at [mem 0x0000000000000000-0x000000001bffffff]
+[Wed Feb 18 00:59:15 2026] NODE_DATA(0) allocated [mem 0x1b8a35c0-0x1b8a62bf]
+[Wed Feb 18 00:59:15 2026] Zone ranges:
+[Wed Feb 18 00:59:15 2026]   DMA      [mem 0x0000000000000000-0x000000001bffffff]
+[Wed Feb 18 00:59:15 2026]   DMA32    empty
+[Wed Feb 18 00:59:15 2026]   Normal   empty
+[Wed Feb 18 00:59:15 2026] Movable zone start for each node
+[Wed Feb 18 00:59:15 2026] Early memory node ranges
+[Wed Feb 18 00:59:15 2026]   node   0: [mem 0x0000000000000000-0x000000001bffffff]
+[Wed Feb 18 00:59:15 2026] Initmem setup node 0 [mem 0x0000000000000000-0x000000001bffffff]
+[Wed Feb 18 00:59:15 2026] On node 0, zone DMA: 16384 pages in unavailable ranges
+[Wed Feb 18 00:59:15 2026] percpu: Embedded 33 pages/cpu s95192 r8192 d31784 u135168
+[Wed Feb 18 00:59:15 2026] pcpu-alloc: s95192 r8192 d31784 u135168 alloc=33*4096
+[Wed Feb 18 00:59:15 2026] pcpu-alloc: [0] 0 [0] 1 [0] 2 [0] 3 
+[Wed Feb 18 00:59:15 2026] Detected VIPT I-cache on CPU0
+[Wed Feb 18 00:59:15 2026] CPU features: kernel page table isolation forced ON by KASLR
+[Wed Feb 18 00:59:15 2026] CPU features: detected: Kernel page table isolation (KPTI)
+[Wed Feb 18 00:59:15 2026] CPU features: detected: ARM erratum 843419
+[Wed Feb 18 00:59:15 2026] CPU features: detected: ARM erratum 845719
+[Wed Feb 18 00:59:15 2026] alternatives: applying boot alternatives
+[Wed Feb 18 00:59:15 2026] Kernel command line: coherent_pool=1M 8250.nr_uarts=0 snd_bcm2835.enable_headphones=0 cgroup_disable=memory snd_bcm2835.enable_hdmi=1 snd_bcm2835.enable_hdmi=0  smsc95xx.macaddr=B8:27:EB:FC:FC:7E vc_mem.mem_base=0x1ec00000 vc_mem.mem_size=0x20000000  console=ttyS0,115200 console=tty1 root=PARTUUID=33504cfd-02 rootfstype=ext4 fsck.repair=yes rootwait cfg80211.ieee80211_regdom=US modules-load=dwc2,g_ether fsck.mode=auto noswap ro
+[Wed Feb 18 00:59:15 2026] cgroup: Disabling memory control group subsystem
+[Wed Feb 18 00:59:15 2026] Unknown kernel command line parameters "noswap modules-load=dwc2,g_ether", will be passed to user space.
+[Wed Feb 18 00:59:15 2026] Dentry cache hash table entries: 32768 (order: 6, 262144 bytes, linear)
+[Wed Feb 18 00:59:15 2026] Inode-cache hash table entries: 16384 (order: 5, 131072 bytes, linear)
+[Wed Feb 18 00:59:15 2026] Fallback order for Node 0: 0 
+[Wed Feb 18 00:59:15 2026] Built 1 zonelists, mobility grouping on.  Total pages: 114688
+[Wed Feb 18 00:59:15 2026] Policy zone: DMA
+[Wed Feb 18 00:59:15 2026] mem auto-init: stack:all(zero), heap alloc:off, heap free:off
+[Wed Feb 18 00:59:15 2026] SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=4, Nodes=1
+[Wed Feb 18 00:59:15 2026] ftrace: allocating 45290 entries in 177 pages
+[Wed Feb 18 00:59:15 2026] ftrace: allocated 177 pages with 4 groups
+[Wed Feb 18 00:59:15 2026] rcu: Preemptible hierarchical RCU implementation.
+[Wed Feb 18 00:59:15 2026] rcu: 	RCU event tracing is enabled.
+[Wed Feb 18 00:59:15 2026] 	Trampoline variant of Tasks RCU enabled.
+[Wed Feb 18 00:59:15 2026] 	Rude variant of Tasks RCU enabled.
+[Wed Feb 18 00:59:15 2026] 	Tracing variant of Tasks RCU enabled.
+[Wed Feb 18 00:59:15 2026] rcu: RCU calculated value of scheduler-enlistment delay is 25 jiffies.
+[Wed Feb 18 00:59:15 2026] RCU Tasks: Setting shift to 2 and lim to 1 rcu_task_cb_adjust=1 rcu_task_cpu_ids=4.
+[Wed Feb 18 00:59:15 2026] RCU Tasks Rude: Setting shift to 2 and lim to 1 rcu_task_cb_adjust=1 rcu_task_cpu_ids=4.
+[Wed Feb 18 00:59:15 2026] RCU Tasks Trace: Setting shift to 2 and lim to 1 rcu_task_cb_adjust=1 rcu_task_cpu_ids=4.
+[Wed Feb 18 00:59:15 2026] NR_IRQS: 64, nr_irqs: 64, preallocated irqs: 0
+[Wed Feb 18 00:59:15 2026] Root IRQ handler: bcm2836_arm_irqchip_handle_irq
+[Wed Feb 18 00:59:15 2026] rcu: srcu_init: Setting srcu_struct sizes based on contention.
+[Wed Feb 18 00:59:15 2026] arch_timer: cp15 timer(s) running at 19.20MHz (phys).
+[Wed Feb 18 00:59:15 2026] clocksource: arch_sys_counter: mask: 0xffffffffffffff max_cycles: 0x46d987e47, max_idle_ns: 440795202767 ns
+[Wed Feb 18 00:59:15 2026] sched_clock: 56 bits at 19MHz, resolution 52ns, wraps every 4398046511078ns
+[Wed Feb 18 00:59:15 2026] Console: colour dummy device 80x25
+[Wed Feb 18 00:59:15 2026] printk: legacy console [tty1] enabled
+[Wed Feb 18 00:59:15 2026] Calibrating delay loop (skipped), value calculated using timer frequency.. 38.40 BogoMIPS (lpj=76800)
+[Wed Feb 18 00:59:15 2026] pid_max: default: 32768 minimum: 301
+[Wed Feb 18 00:59:15 2026] LSM: initializing lsm=capability
+[Wed Feb 18 00:59:15 2026] Mount-cache hash table entries: 512 (order: 0, 4096 bytes, linear)
+[Wed Feb 18 00:59:15 2026] Mountpoint-cache hash table entries: 512 (order: 0, 4096 bytes, linear)
+[Wed Feb 18 00:59:15 2026] rcu: Hierarchical SRCU implementation.
+[Wed Feb 18 00:59:15 2026] rcu: 	Max phase no-delay instances is 1000.
+[Wed Feb 18 00:59:15 2026] Timer migration: 1 hierarchy levels; 8 children per group; 1 crossnode level
+[Wed Feb 18 00:59:15 2026] EFI services will not be available.
+[Wed Feb 18 00:59:15 2026] smp: Bringing up secondary CPUs ...
+[Wed Feb 18 00:59:15 2026] Detected VIPT I-cache on CPU1
+[Wed Feb 18 00:59:15 2026] CPU1: Booted secondary processor 0x0000000001 [0x410fd034]
+[Wed Feb 18 00:59:15 2026] Detected VIPT I-cache on CPU2
+[Wed Feb 18 00:59:15 2026] CPU2: Booted secondary processor 0x0000000002 [0x410fd034]
+[Wed Feb 18 00:59:15 2026] Detected VIPT I-cache on CPU3
+[Wed Feb 18 00:59:15 2026] CPU3: Booted secondary processor 0x0000000003 [0x410fd034]
+[Wed Feb 18 00:59:15 2026] smp: Brought up 1 node, 4 CPUs
+[Wed Feb 18 00:59:15 2026] SMP: Total of 4 processors activated.
+[Wed Feb 18 00:59:15 2026] CPU: All CPU(s) started at EL2
+[Wed Feb 18 00:59:15 2026] CPU features: detected: 32-bit EL0 Support
+[Wed Feb 18 00:59:15 2026] CPU features: detected: 32-bit EL1 Support
+[Wed Feb 18 00:59:15 2026] CPU features: detected: CRC32 instructions
+[Wed Feb 18 00:59:15 2026] alternatives: applying system-wide alternatives
+[Wed Feb 18 00:59:15 2026] Memory: 147596K/458752K available (14208K kernel code, 2406K rwdata, 4824K rodata, 5440K init, 577K bss, 44372K reserved, 262144K cma-reserved)
+[Wed Feb 18 00:59:15 2026] devtmpfs: initialized
+[Wed Feb 18 00:59:15 2026] Enabled cp15_barrier support
+[Wed Feb 18 00:59:15 2026] Enabled setend support
+[Wed Feb 18 00:59:15 2026] clocksource: jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 7645041785100000 ns
+[Wed Feb 18 00:59:15 2026] futex hash table entries: 1024 (order: 4, 65536 bytes, linear)
+[Wed Feb 18 00:59:15 2026] 2G module region forced by RANDOMIZE_MODULE_REGION_FULL
+[Wed Feb 18 00:59:15 2026] 0 pages in range for non-PLT usage
+[Wed Feb 18 00:59:15 2026] 517360 pages in range for PLT usage
+[Wed Feb 18 00:59:15 2026] pinctrl core: initialized pinctrl subsystem
+[Wed Feb 18 00:59:15 2026] DMI not present or invalid.
+[Wed Feb 18 00:59:15 2026] NET: Registered PF_NETLINK/PF_ROUTE protocol family
+[Wed Feb 18 00:59:15 2026] DMA: preallocated 1024 KiB GFP_KERNEL pool for atomic allocations
+[Wed Feb 18 00:59:15 2026] DMA: preallocated 1024 KiB GFP_KERNEL|GFP_DMA pool for atomic allocations
+[Wed Feb 18 00:59:15 2026] DMA: preallocated 1024 KiB GFP_KERNEL|GFP_DMA32 pool for atomic allocations
+[Wed Feb 18 00:59:15 2026] audit: initializing netlink subsys (disabled)
+[Wed Feb 18 00:59:15 2026] audit: type=2000 audit(0.036:1): state=initialized audit_enabled=0 res=1
+[Wed Feb 18 00:59:15 2026] thermal_sys: Registered thermal governor 'step_wise'
+[Wed Feb 18 00:59:15 2026] cpuidle: using governor menu
+[Wed Feb 18 00:59:15 2026] hw-breakpoint: found 6 breakpoint and 4 watchpoint registers.
+[Wed Feb 18 00:59:15 2026] ASID allocator initialised with 32768 entries
+[Wed Feb 18 00:59:15 2026] Serial: AMBA PL011 UART driver
+[Wed Feb 18 00:59:15 2026] bcm2835-mbox 3f00b880.mailbox: mailbox enabled
+[Wed Feb 18 00:59:15 2026] raspberrypi-firmware soc:firmware: Attached to firmware from 2025-08-20T17:04:09, variant start
+[Wed Feb 18 00:59:15 2026] raspberrypi-firmware soc:firmware: Firmware hash is cd866525580337c0aee4b25880e1f5f9f674fb24
+[Wed Feb 18 00:59:15 2026] bcm2835-dma 3f007000.dma-controller: DMA legacy API manager, dmachans=0x1
+[Wed Feb 18 00:59:15 2026] iommu: Default domain type: Translated
+[Wed Feb 18 00:59:15 2026] iommu: DMA domain TLB invalidation policy: strict mode
+[Wed Feb 18 00:59:15 2026] SCSI subsystem initialized
+[Wed Feb 18 00:59:15 2026] usbcore: registered new interface driver usbfs
+[Wed Feb 18 00:59:15 2026] usbcore: registered new interface driver hub
+[Wed Feb 18 00:59:15 2026] usbcore: registered new device driver usb
+[Wed Feb 18 00:59:15 2026] pps_core: LinuxPPS API ver. 1 registered
+[Wed Feb 18 00:59:15 2026] pps_core: Software ver. 5.3.6 - Copyright 2005-2007 Rodolfo Giometti <giometti@linux.it>
+[Wed Feb 18 00:59:15 2026] PTP clock support registered
+[Wed Feb 18 00:59:15 2026] vgaarb: loaded
+[Wed Feb 18 00:59:15 2026] clocksource: Switched to clocksource arch_sys_counter
+[Wed Feb 18 00:59:16 2026] VFS: Disk quotas dquot_6.6.0
+[Wed Feb 18 00:59:16 2026] VFS: Dquot-cache hash table entries: 512 (order 0, 4096 bytes)
+[Wed Feb 18 00:59:16 2026] NET: Registered PF_INET protocol family
+[Wed Feb 18 00:59:16 2026] IP idents hash table entries: 4096 (order: 3, 32768 bytes, linear)
+[Wed Feb 18 00:59:16 2026] tcp_listen_portaddr_hash hash table entries: 256 (order: 0, 4096 bytes, linear)
+[Wed Feb 18 00:59:16 2026] Table-perturb hash table entries: 65536 (order: 6, 262144 bytes, linear)
+[Wed Feb 18 00:59:16 2026] TCP established hash table entries: 2048 (order: 2, 16384 bytes, linear)
+[Wed Feb 18 00:59:16 2026] TCP bind hash table entries: 2048 (order: 4, 65536 bytes, linear)
+[Wed Feb 18 00:59:16 2026] TCP: Hash tables configured (established 2048 bind 2048)
+[Wed Feb 18 00:59:16 2026] MPTCP token hash table entries: 256 (order: 0, 6144 bytes, linear)
+[Wed Feb 18 00:59:16 2026] UDP hash table entries: 256 (order: 1, 8192 bytes, linear)
+[Wed Feb 18 00:59:16 2026] UDP-Lite hash table entries: 256 (order: 1, 8192 bytes, linear)
+[Wed Feb 18 00:59:16 2026] NET: Registered PF_UNIX/PF_LOCAL protocol family
+[Wed Feb 18 00:59:16 2026] RPC: Registered named UNIX socket transport module.
+[Wed Feb 18 00:59:16 2026] RPC: Registered udp transport module.
+[Wed Feb 18 00:59:16 2026] RPC: Registered tcp transport module.
+[Wed Feb 18 00:59:16 2026] RPC: Registered tcp-with-tls transport module.
+[Wed Feb 18 00:59:16 2026] RPC: Registered tcp NFSv4.1 backchannel transport module.
+[Wed Feb 18 00:59:16 2026] PCI: CLS 0 bytes, default 64
+[Wed Feb 18 00:59:16 2026] Trying to unpack rootfs image as initramfs...
+[Wed Feb 18 00:59:16 2026] kvm [1]: nv: 554 coarse grained trap handlers
+[Wed Feb 18 00:59:16 2026] kvm [1]: IPA Size Limit: 40 bits
+[Wed Feb 18 00:59:16 2026] kvm [1]: Hyp nVHE mode initialized successfully
+[Wed Feb 18 00:59:16 2026] Initialise system trusted keyrings
+[Wed Feb 18 00:59:16 2026] workingset: timestamp_bits=42 max_order=17 bucket_order=0
+[Wed Feb 18 00:59:16 2026] NFS: Registering the id_resolver key type
+[Wed Feb 18 00:59:16 2026] Key type id_resolver registered
+[Wed Feb 18 00:59:16 2026] Key type id_legacy registered
+[Wed Feb 18 00:59:16 2026] nfs4filelayout_init: NFSv4 File Layout Driver Registering...
+[Wed Feb 18 00:59:16 2026] nfs4flexfilelayout_init: NFSv4 Flexfile Layout Driver Registering...
+[Wed Feb 18 00:59:16 2026] Key type asymmetric registered
+[Wed Feb 18 00:59:16 2026] Asymmetric key parser 'x509' registered
+[Wed Feb 18 00:59:16 2026] Block layer SCSI generic (bsg) driver version 0.4 loaded (major 247)
+[Wed Feb 18 00:59:16 2026] io scheduler mq-deadline registered
+[Wed Feb 18 00:59:16 2026] io scheduler kyber registered
+[Wed Feb 18 00:59:16 2026] io scheduler bfq registered
+[Wed Feb 18 00:59:16 2026] pinctrl-bcm2835 3f200000.gpio: GPIO_OUT persistence: yes
+[Wed Feb 18 00:59:16 2026] Freeing initrd memory: 6444K
+[Wed Feb 18 00:59:16 2026] ledtrig-cpu: registered to indicate activity on CPUs
+[Wed Feb 18 00:59:16 2026] simple-framebuffer 1eaa9000.framebuffer: framebuffer at 0x1eaa9000, 0x151800 bytes
+[Wed Feb 18 00:59:16 2026] simple-framebuffer 1eaa9000.framebuffer: format=a8r8g8b8, mode=720x480x32, linelength=2880
+[Wed Feb 18 00:59:16 2026] Console: switching to colour frame buffer device 90x30
+[Wed Feb 18 00:59:16 2026] simple-framebuffer 1eaa9000.framebuffer: fb0: simplefb registered!
+[Wed Feb 18 00:59:16 2026] bcm2835-rng 3f104000.rng: hwrng registered
+[Wed Feb 18 00:59:16 2026] vc-mem: phys_addr:0x00000000 mem_base=0x1ec00000 mem_size:0x20000000(512 MiB)
+[Wed Feb 18 00:59:16 2026] brd: module loaded
+[Wed Feb 18 00:59:16 2026] loop: module loaded
+[Wed Feb 18 00:59:16 2026] Loading iSCSI transport class v2.0-870.
+[Wed Feb 18 00:59:16 2026] usbcore: registered new interface driver lan78xx
+[Wed Feb 18 00:59:16 2026] usbcore: registered new interface driver smsc95xx
+[Wed Feb 18 00:59:16 2026] dwc_otg: version 3.00a 10-AUG-2012 (platform bus)
+[Wed Feb 18 00:59:16 2026] dwc_otg: FIQ enabled
+[Wed Feb 18 00:59:16 2026] dwc_otg: NAK holdoff enabled
+[Wed Feb 18 00:59:16 2026] dwc_otg: FIQ split-transaction FSM enabled
+[Wed Feb 18 00:59:16 2026] Module dwc_common_port init
+[Wed Feb 18 00:59:17 2026] dwc2 3f980000.usb: supply vusb_d not found, using dummy regulator
+[Wed Feb 18 00:59:17 2026] dwc2 3f980000.usb: supply vusb_a not found, using dummy regulator
+[Wed Feb 18 00:59:17 2026] dwc2 3f980000.usb: EPs: 8, dedicated fifos, 4080 entries in SPRAM
+[Wed Feb 18 00:59:17 2026] dwc2 3f980000.usb: DWC OTG Controller
+[Wed Feb 18 00:59:17 2026] dwc2 3f980000.usb: new USB bus registered, assigned bus number 1
+[Wed Feb 18 00:59:17 2026] dwc2 3f980000.usb: irq 51, io mem 0x3f980000
+[Wed Feb 18 00:59:17 2026] usb usb1: New USB device found, idVendor=1d6b, idProduct=0002, bcdDevice= 6.12
+[Wed Feb 18 00:59:17 2026] usb usb1: New USB device strings: Mfr=3, Product=2, SerialNumber=1
+[Wed Feb 18 00:59:17 2026] usb usb1: Product: DWC OTG Controller
+[Wed Feb 18 00:59:17 2026] usb usb1: Manufacturer: Linux 6.12.47+rpt-rpi-v8 dwc2_hsotg
+[Wed Feb 18 00:59:17 2026] usb usb1: SerialNumber: 3f980000.usb
+[Wed Feb 18 00:59:17 2026] hub 1-0:1.0: USB hub found
+[Wed Feb 18 00:59:17 2026] hub 1-0:1.0: 1 port detected
+[Wed Feb 18 00:59:17 2026] usbcore: registered new interface driver uas
+[Wed Feb 18 00:59:17 2026] usbcore: registered new interface driver usb-storage
+[Wed Feb 18 00:59:17 2026] mousedev: PS/2 mouse device common for all mice
+[Wed Feb 18 00:59:17 2026] sdhci: Secure Digital Host Controller Interface driver
+[Wed Feb 18 00:59:17 2026] sdhci: Copyright(c) Pierre Ossman
+[Wed Feb 18 00:59:17 2026] sdhci-pltfm: SDHCI platform and OF driver helper
+[Wed Feb 18 00:59:17 2026] hid: raw HID events driver (C) Jiri Kosina
+[Wed Feb 18 00:59:17 2026] usbcore: registered new interface driver usbhid
+[Wed Feb 18 00:59:17 2026] usbhid: USB HID core driver
+[Wed Feb 18 00:59:17 2026] bcm2835_vchiq 3f00b840.mailbox: there is not valid maps for state default
+[Wed Feb 18 00:59:17 2026] hw perfevents: enabled with armv8_cortex_a53 PMU driver, 7 (0,8000003f) counters available
+[Wed Feb 18 00:59:17 2026] NET: Registered PF_PACKET protocol family
+[Wed Feb 18 00:59:17 2026] Key type dns_resolver registered
+[Wed Feb 18 00:59:17 2026] registered taskstats version 1
+[Wed Feb 18 00:59:17 2026] Loading compiled-in X.509 certificates
+[Wed Feb 18 00:59:17 2026] Demotion targets for Node 0: null
+[Wed Feb 18 00:59:17 2026] Key type .fscrypt registered
+[Wed Feb 18 00:59:17 2026] Key type fscrypt-provisioning registered
+[Wed Feb 18 00:59:17 2026] uart-pl011 3f201000.serial: cts_event_workaround enabled
+[Wed Feb 18 00:59:17 2026] 3f201000.serial: ttyAMA1 at MMIO 0x3f201000 (irq = 99, base_baud = 0) is a PL011 rev2
+[Wed Feb 18 00:59:17 2026] serial serial0: tty port ttyAMA1 registered
+[Wed Feb 18 00:59:17 2026] bcm2835-wdt bcm2835-wdt: Broadcom BCM2835 watchdog timer
+[Wed Feb 18 00:59:17 2026] bcm2835-power bcm2835-power: Broadcom BCM2835 power domains driver
+[Wed Feb 18 00:59:17 2026] mmc-bcm2835 3f300000.mmcnr: mmc_debug:0 mmc_debug2:0
+[Wed Feb 18 00:59:17 2026] mmc-bcm2835 3f300000.mmcnr: DMA channel allocated
+[Wed Feb 18 00:59:17 2026] of_cfs_init
+[Wed Feb 18 00:59:17 2026] of_cfs_init: OK
+[Wed Feb 18 00:59:17 2026] clk: Disabling unused clocks
+[Wed Feb 18 00:59:17 2026] PM: genpd: Disabling unused power domains
+[Wed Feb 18 00:59:17 2026] sdhost-bcm2835 3f202000.mmc: loaded - DMA enabled (>1)
+[Wed Feb 18 00:59:17 2026] Freeing unused kernel memory: 5440K
+[Wed Feb 18 00:59:17 2026] Run /init as init process
+[Wed Feb 18 00:59:17 2026]   with arguments:
+[Wed Feb 18 00:59:17 2026]     /init
+[Wed Feb 18 00:59:17 2026]     noswap
+[Wed Feb 18 00:59:17 2026]   with environment:
+[Wed Feb 18 00:59:17 2026]     HOME=/
+[Wed Feb 18 00:59:17 2026]     TERM=linux
+[Wed Feb 18 00:59:17 2026]     modules-load=dwc2,g_ether
+[Wed Feb 18 00:59:17 2026] mmc1: new high speed SDIO card at address 0001
+[Wed Feb 18 00:59:17 2026] mmc0: host does not support reading read-only switch, assuming write-enable
+[Wed Feb 18 00:59:17 2026] mmc0: new high speed SDXC card at address aaaa
+[Wed Feb 18 00:59:17 2026] mmcblk0: mmc0:aaaa SN256 238 GiB
+[Wed Feb 18 00:59:17 2026]  mmcblk0: p1 p2 p3 p4
+[Wed Feb 18 00:59:17 2026] mmcblk0: mmc0:aaaa SN256 238 GiB (quirks 0x00004000)
+[Wed Feb 18 00:59:21 2026] EXT4-fs (mmcblk0p2): orphan cleanup on readonly fs
+[Wed Feb 18 00:59:21 2026] EXT4-fs (mmcblk0p2): mounted filesystem 0b68493e-4b4c-43aa-b88d-df23601fa0e0 ro with ordered data mode. Quota mode: none.
+[Wed Feb 18 00:59:22 2026] systemd[1]: System time before build time, advancing clock.
+[Wed Feb 18 00:59:22 2026] NET: Registered PF_INET6 protocol family
+[Wed Feb 18 00:59:22 2026] Segment Routing with IPv6
+[Wed Feb 18 00:59:22 2026] In-situ OAM (IOAM) with IPv6
+[Wed Feb 18 00:59:22 2026] systemd[1]: systemd 252.39-1~deb12u1 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR +IMA +SMACK +SECCOMP +GCRYPT -GNUTLS +OPENSSL +ACL +BLKID +CURL +ELFUTILS +FIDO2 +IDN2 -IDN +IPTC +KMOD +LIBCRYPTSETUP +LIBFDISK +PCRE2 -PWQUALITY +P11KIT +QRENCODE +TPM2 +BZIP2 +LZ4 +XZ +ZLIB +ZSTD -BPF_FRAMEWORK -XKBCOMMON +UTMP +SYSVINIT default-hierarchy=unified)
+[Wed Feb 18 00:59:22 2026] systemd[1]: Detected architecture arm64.
+[Wed Feb 18 00:59:22 2026] systemd[1]: Hostname set to <sentryusb>.
+[Wed Feb 18 00:59:23 2026] systemd[1]: Queued start job for default target multi-user.target.
+[Wed Feb 18 00:59:23 2026] systemd[1]: Created slice system-getty.slice - Slice /system/getty.
+[Wed Feb 18 00:59:23 2026] systemd[1]: Created slice system-modprobe.slice - Slice /system/modprobe.
+[Wed Feb 18 00:59:23 2026] systemd[1]: Created slice system-systemd\x2dfsck.slice - Slice /system/systemd-fsck.
+[Wed Feb 18 00:59:23 2026] systemd[1]: Created slice user.slice - User and Session Slice.
+[Wed Feb 18 00:59:23 2026] systemd[1]: Started systemd-ask-password-console.path - Dispatch Password Requests to Console Directory Watch.
+[Wed Feb 18 00:59:23 2026] systemd[1]: Started systemd-ask-password-wall.path - Forward Password Requests to Wall Directory Watch.
+[Wed Feb 18 00:59:23 2026] systemd[1]: Set up automount proc-sys-fs-binfmt_misc.automount - Arbitrary Executable File Formats File System Automount Point.
+[Wed Feb 18 00:59:23 2026] systemd[1]: Expecting device dev-disk-by\x2dlabel-backingfiles.device - /dev/disk/by-label/backingfiles...
+[Wed Feb 18 00:59:23 2026] systemd[1]: Expecting device dev-disk-by\x2dlabel-mutable.device - /dev/disk/by-label/mutable...
+[Wed Feb 18 00:59:23 2026] systemd[1]: Expecting device dev-disk-by\x2dpartuuid-33504cfd\x2d01.device - /dev/disk/by-partuuid/33504cfd-01...
+[Wed Feb 18 00:59:23 2026] systemd[1]: Reached target cryptsetup.target - Local Encrypted Volumes.
+[Wed Feb 18 00:59:23 2026] systemd[1]: Reached target integritysetup.target - Local Integrity Protected Volumes.
+[Wed Feb 18 00:59:23 2026] systemd[1]: Reached target paths.target - Path Units.
+[Wed Feb 18 00:59:23 2026] systemd[1]: Reached target slices.target - Slice Units.
+[Wed Feb 18 00:59:23 2026] systemd[1]: Reached target swap.target - Swaps.
+[Wed Feb 18 00:59:23 2026] systemd[1]: Reached target veritysetup.target - Local Verity Protected Volumes.
+[Wed Feb 18 00:59:23 2026] systemd[1]: Listening on systemd-fsckd.socket - fsck to fsckd communication Socket.
+[Wed Feb 18 00:59:23 2026] systemd[1]: Listening on systemd-initctl.socket - initctl Compatibility Named Pipe.
+[Wed Feb 18 00:59:23 2026] systemd[1]: Listening on systemd-journald-audit.socket - Journal Audit Socket.
+[Wed Feb 18 00:59:23 2026] systemd[1]: Listening on systemd-journald-dev-log.socket - Journal Socket (/dev/log).
+[Wed Feb 18 00:59:23 2026] systemd[1]: Listening on systemd-journald.socket - Journal Socket.
+[Wed Feb 18 00:59:23 2026] systemd[1]: Listening on systemd-udevd-control.socket - udev Control Socket.
+[Wed Feb 18 00:59:23 2026] systemd[1]: Listening on systemd-udevd-kernel.socket - udev Kernel Socket.
+[Wed Feb 18 00:59:23 2026] systemd[1]: dev-hugepages.mount - Huge Pages File System was skipped because of an unmet condition check (ConditionPathExists=/sys/kernel/mm/hugepages).
+[Wed Feb 18 00:59:23 2026] systemd[1]: Mounting dev-mqueue.mount - POSIX Message Queue File System...
+[Wed Feb 18 00:59:23 2026] systemd[1]: Mounting sys-kernel-debug.mount - Kernel Debug File System...
+[Wed Feb 18 00:59:23 2026] systemd[1]: Mounting sys-kernel-tracing.mount - Kernel Trace File System...
+[Wed Feb 18 00:59:23 2026] systemd[1]: auth-rpcgss-module.service - Kernel Module supporting RPCSEC_GSS was skipped because of an unmet condition check (ConditionPathExists=/etc/krb5.keytab).
+[Wed Feb 18 00:59:23 2026] systemd[1]: Starting keyboard-setup.service - Set the console keyboard layout...
+[Wed Feb 18 00:59:23 2026] systemd[1]: Starting kmod-static-nodes.service - Create List of Static Device Nodes...
+[Wed Feb 18 00:59:23 2026] systemd[1]: Starting modprobe@configfs.service - Load Kernel Module configfs...
+[Wed Feb 18 00:59:23 2026] systemd[1]: Starting modprobe@dm_mod.service - Load Kernel Module dm_mod...
+[Wed Feb 18 00:59:23 2026] systemd[1]: Starting modprobe@drm.service - Load Kernel Module drm...
+[Wed Feb 18 00:59:23 2026] systemd[1]: Starting modprobe@efi_pstore.service - Load Kernel Module efi_pstore...
+[Wed Feb 18 00:59:23 2026] systemd[1]: Starting modprobe@fuse.service - Load Kernel Module fuse...
+[Wed Feb 18 00:59:23 2026] systemd[1]: Starting modprobe@loop.service - Load Kernel Module loop...
+[Wed Feb 18 00:59:23 2026] systemd[1]: systemd-fsck-root.service - File System Check on Root Device was skipped because of an unmet condition check (ConditionPathExists=!/run/initramfs/fsck-root).
+[Wed Feb 18 00:59:23 2026] systemd[1]: Starting systemd-journald.service - Journal Service...
+[Wed Feb 18 00:59:23 2026] device-mapper: ioctl: 4.48.0-ioctl (2023-03-01) initialised: dm-devel@lists.linux.dev
+[Wed Feb 18 00:59:23 2026] systemd[1]: Starting systemd-modules-load.service - Load Kernel Modules...
+[Wed Feb 18 00:59:23 2026] systemd[1]: Starting systemd-remount-fs.service - Remount Root and Kernel File Systems...
+[Wed Feb 18 00:59:23 2026] systemd[1]: Starting systemd-udev-trigger.service - Coldplug All udev Devices...
+[Wed Feb 18 00:59:23 2026] fuse: init (API version 7.41)
+[Wed Feb 18 00:59:23 2026] systemd[1]: Mounted dev-mqueue.mount - POSIX Message Queue File System.
+[Wed Feb 18 00:59:23 2026] systemd[1]: Mounted sys-kernel-debug.mount - Kernel Debug File System.
+[Wed Feb 18 00:59:23 2026] systemd[1]: Mounted sys-kernel-tracing.mount - Kernel Trace File System.
+[Wed Feb 18 00:59:23 2026] systemd[1]: Finished kmod-static-nodes.service - Create List of Static Device Nodes.
+[Wed Feb 18 00:59:23 2026] systemd[1]: modprobe@configfs.service: Deactivated successfully.
+[Wed Feb 18 00:59:23 2026] systemd[1]: Finished modprobe@configfs.service - Load Kernel Module configfs.
+[Wed Feb 18 00:59:23 2026] systemd[1]: modprobe@dm_mod.service: Deactivated successfully.
+[Wed Feb 18 00:59:23 2026] systemd[1]: Finished modprobe@dm_mod.service - Load Kernel Module dm_mod.
+[Wed Feb 18 00:59:23 2026] systemd[1]: modprobe@drm.service: Deactivated successfully.
+[Wed Feb 18 00:59:23 2026] systemd[1]: Finished modprobe@drm.service - Load Kernel Module drm.
+[Wed Feb 18 00:59:23 2026] systemd[1]: modprobe@efi_pstore.service: Deactivated successfully.
+[Wed Feb 18 00:59:23 2026] systemd[1]: Finished modprobe@efi_pstore.service - Load Kernel Module efi_pstore.
+[Wed Feb 18 00:59:23 2026] EXT4-fs (mmcblk0p2): re-mounted 0b68493e-4b4c-43aa-b88d-df23601fa0e0.
+[Wed Feb 18 00:59:23 2026] systemd[1]: modprobe@fuse.service: Deactivated successfully.
+[Wed Feb 18 00:59:23 2026] systemd[1]: Finished modprobe@fuse.service - Load Kernel Module fuse.
+[Wed Feb 18 00:59:23 2026] systemd[1]: modprobe@loop.service: Deactivated successfully.
+[Wed Feb 18 00:59:23 2026] systemd[1]: Finished modprobe@loop.service - Load Kernel Module loop.
+[Wed Feb 18 00:59:23 2026] systemd[1]: Finished systemd-remount-fs.service - Remount Root and Kernel File Systems.
+[Wed Feb 18 00:59:23 2026] g_ether gadget.0: HOST MAC 3e:3b:0c:01:3a:9f
+[Wed Feb 18 00:59:23 2026] g_ether gadget.0: MAC 06:94:8e:1a:e5:7d
+[Wed Feb 18 00:59:23 2026] g_ether gadget.0: Ethernet Gadget, version: Memorial Day 2008
+[Wed Feb 18 00:59:23 2026] g_ether gadget.0: g_ether ready
+[Wed Feb 18 00:59:23 2026] dwc2 3f980000.usb: bound driver g_ether
+[Wed Feb 18 00:59:23 2026] systemd[1]: Mounting sys-fs-fuse-connections.mount - FUSE Control File System...
+[Wed Feb 18 00:59:23 2026] systemd[1]: Mounting sys-kernel-config.mount - Kernel Configuration File System...
+[Wed Feb 18 00:59:23 2026] systemd[1]: systemd-firstboot.service - First Boot Wizard was skipped because of an unmet condition check (ConditionFirstBoot=yes).
+[Wed Feb 18 00:59:23 2026] systemd[1]: systemd-pstore.service - Platform Persistent Storage Archival was skipped because of an unmet condition check (ConditionDirectoryNotEmpty=/sys/fs/pstore).
+[Wed Feb 18 00:59:23 2026] systemd[1]: Starting systemd-random-seed.service - Load/Save Random Seed...
+[Wed Feb 18 00:59:23 2026] systemd[1]: systemd-repart.service - Repartition Root Disk was skipped because no trigger condition checks were met.
+[Wed Feb 18 00:59:24 2026] systemd[1]: systemd-sysusers.service - Create System Users was skipped because no trigger condition checks were met.
+[Wed Feb 18 00:59:24 2026] systemd[1]: Starting systemd-tmpfiles-setup-dev.service - Create Static Device Nodes in /dev...
+[Wed Feb 18 00:59:24 2026] systemd[1]: Started systemd-journald.service - Journal Service.
+[Wed Feb 18 00:59:25 2026] rpi-gpiomem 3f200000.gpiomem: window base 0x3f200000 size 0x00001000
+[Wed Feb 18 00:59:25 2026] rpi-gpiomem 3f200000.gpiomem: initialised 1 regions as /dev/gpiomem
+[Wed Feb 18 00:59:25 2026] mc: Linux media interface: v0.10
+[Wed Feb 18 00:59:25 2026] snd_bcm2835: module is from the staging directory, the quality is unknown, you have been warned.
+[Wed Feb 18 00:59:25 2026] videodev: Linux video capture interface: v2.00
+[Wed Feb 18 00:59:25 2026] vc_sm_cma: module is from the staging directory, the quality is unknown, you have been warned.
+[Wed Feb 18 00:59:25 2026] bcm2835_vc_sm_cma_probe: Videocore shared memory driver
+[Wed Feb 18 00:59:25 2026] [vc_sm_connected_init]: start
+[Wed Feb 18 00:59:25 2026] [vc_sm_connected_init]: installed successfully
+[Wed Feb 18 00:59:25 2026] bcm2835_mmal_vchiq: module is from the staging directory, the quality is unknown, you have been warned.
+[Wed Feb 18 00:59:25 2026] systemd-journald[222]: Received client request to flush runtime journal.
+[Wed Feb 18 00:59:25 2026] bcm2835_isp: module is from the staging directory, the quality is unknown, you have been warned.
+[Wed Feb 18 00:59:25 2026] bcm2835-isp bcm2835-isp: Device node output[0] registered as /dev/video13
+[Wed Feb 18 00:59:25 2026] bcm2835-isp bcm2835-isp: Device node capture[0] registered as /dev/video14
+[Wed Feb 18 00:59:25 2026] bcm2835-isp bcm2835-isp: Device node capture[1] registered as /dev/video15
+[Wed Feb 18 00:59:25 2026] bcm2835_v4l2: module is from the staging directory, the quality is unknown, you have been warned.
+[Wed Feb 18 00:59:25 2026] bcm2835-isp bcm2835-isp: Device node stats[2] registered as /dev/video16
+[Wed Feb 18 00:59:25 2026] bcm2835-isp bcm2835-isp: Register output node 0 with media controller
+[Wed Feb 18 00:59:25 2026] bcm2835-isp bcm2835-isp: Register capture node 1 with media controller
+[Wed Feb 18 00:59:25 2026] bcm2835-isp bcm2835-isp: Register capture node 2 with media controller
+[Wed Feb 18 00:59:25 2026] bcm2835-isp bcm2835-isp: Register capture node 3 with media controller
+[Wed Feb 18 00:59:25 2026] bcm2835-isp bcm2835-isp: Device node output[0] registered as /dev/video20
+[Wed Feb 18 00:59:25 2026] bcm2835-isp bcm2835-isp: Device node capture[0] registered as /dev/video21
+[Wed Feb 18 00:59:25 2026] bcm2835_codec: module is from the staging directory, the quality is unknown, you have been warned.
+[Wed Feb 18 00:59:25 2026] bcm2835-isp bcm2835-isp: Device node capture[1] registered as /dev/video22
+[Wed Feb 18 00:59:25 2026] bcm2835-isp bcm2835-isp: Device node stats[2] registered as /dev/video23
+[Wed Feb 18 00:59:25 2026] bcm2835-isp bcm2835-isp: Register output node 0 with media controller
+[Wed Feb 18 00:59:25 2026] bcm2835-isp bcm2835-isp: Register capture node 1 with media controller
+[Wed Feb 18 00:59:25 2026] bcm2835-isp bcm2835-isp: Register capture node 2 with media controller
+[Wed Feb 18 00:59:25 2026] bcm2835-isp bcm2835-isp: Register capture node 3 with media controller
+[Wed Feb 18 00:59:25 2026] bcm2835-isp bcm2835-isp: Loaded V4L2 bcm2835-isp
+[Wed Feb 18 00:59:25 2026] bcm2835-codec bcm2835-codec: Device registered as /dev/video10
+[Wed Feb 18 00:59:25 2026] bcm2835-codec bcm2835-codec: Loaded V4L2 decode
+[Wed Feb 18 00:59:25 2026] bcm2835-codec bcm2835-codec: Device registered as /dev/video11
+[Wed Feb 18 00:59:25 2026] bcm2835-codec bcm2835-codec: Loaded V4L2 encode
+[Wed Feb 18 00:59:25 2026] bcm2835-codec bcm2835-codec: Device registered as /dev/video12
+[Wed Feb 18 00:59:25 2026] bcm2835-codec bcm2835-codec: Loaded V4L2 isp
+[Wed Feb 18 00:59:25 2026] bcm2835-codec bcm2835-codec: Device registered as /dev/video18
+[Wed Feb 18 00:59:25 2026] bcm2835-codec bcm2835-codec: Loaded V4L2 image_fx
+[Wed Feb 18 00:59:25 2026] bcm2835-codec bcm2835-codec: Device registered as /dev/video31
+[Wed Feb 18 00:59:25 2026] bcm2835-codec bcm2835-codec: Loaded V4L2 encode_image
+[Wed Feb 18 00:59:25 2026] Bluetooth: Core ver 2.22
+[Wed Feb 18 00:59:25 2026] NET: Registered PF_BLUETOOTH protocol family
+[Wed Feb 18 00:59:25 2026] Bluetooth: HCI device and connection manager initialized
+[Wed Feb 18 00:59:25 2026] Bluetooth: HCI socket layer initialized
+[Wed Feb 18 00:59:25 2026] Bluetooth: L2CAP socket layer initialized
+[Wed Feb 18 00:59:25 2026] Bluetooth: SCO socket layer initialized
+[Wed Feb 18 00:59:25 2026] cfg80211: Loading compiled-in X.509 certificates for regulatory database
+[Wed Feb 18 00:59:25 2026] Loaded X.509 cert 'benh@debian.org: 577e021cb980e0e820821ba7b54b4961b8b4fadf'
+[Wed Feb 18 00:59:25 2026] Loaded X.509 cert 'romain.perier@gmail.com: 3abbc6ec146e09d1b6016ab9d6cf71dd233f0328'
+[Wed Feb 18 00:59:25 2026] Loaded X.509 cert 'sforshee: 00b28ddf47aef9cea7'
+[Wed Feb 18 00:59:25 2026] Loaded X.509 cert 'wens: 61c038651aabdcf94bd0ac7ff06c7248db18c600'
+[Wed Feb 18 00:59:25 2026] Bluetooth: HCI UART driver ver 2.3
+[Wed Feb 18 00:59:25 2026] Bluetooth: HCI UART protocol H4 registered
+[Wed Feb 18 00:59:25 2026] Bluetooth: HCI UART protocol Three-wire (H5) registered
+[Wed Feb 18 00:59:25 2026] hci_uart_bcm serial0-0: supply vbat not found, using dummy regulator
+[Wed Feb 18 00:59:25 2026] hci_uart_bcm serial0-0: supply vddio not found, using dummy regulator
+[Wed Feb 18 00:59:25 2026] Bluetooth: HCI UART protocol Broadcom registered
+[Wed Feb 18 00:59:26 2026] brcmfmac: F1 signature read @0x18000000=0x1541a9a6
+[Wed Feb 18 00:59:26 2026] Bluetooth: hci0: BCM: chip id 94
+[Wed Feb 18 00:59:26 2026] Bluetooth: hci0: BCM: features 0x2e
+[Wed Feb 18 00:59:26 2026] Bluetooth: hci0: BCM43430A1
+[Wed Feb 18 00:59:26 2026] Bluetooth: hci0: BCM43430A1 (001.002.009) build 0000
+[Wed Feb 18 00:59:26 2026] brcmfmac: brcmf_fw_alloc_request: using brcm/brcmfmac43430-sdio for chip BCM43430/1
+[Wed Feb 18 00:59:26 2026] usbcore: registered new interface driver brcmfmac
+[Wed Feb 18 00:59:26 2026] Bluetooth: hci0: BCM43430A1 'brcm/BCM43430A1.raspberrypi,model-zero-2-w.hcd' Patch
+[Wed Feb 18 00:59:26 2026] EXT4-fs (mmcblk0p4): mounted filesystem f2fac253-d9b2-47f1-81e3-045541d1ef93 r/w with ordered data mode. Quota mode: none.
+[Wed Feb 18 00:59:26 2026] SGI XFS with ACLs, security attributes, realtime, quota, no debug enabled
+[Wed Feb 18 00:59:26 2026] XFS (mmcblk0p3): Mounting V5 Filesystem 4644d890-79d9-465c-97e0-51aa353559a9
+[Wed Feb 18 00:59:26 2026] Console: switching to colour dummy device 80x25
+[Wed Feb 18 00:59:26 2026] brcmfmac: brcmf_c_process_txcap_blob: no txcap_blob available (err=-2)
+[Wed Feb 18 00:59:26 2026] brcmfmac: brcmf_c_preinit_dcmds: Firmware: BCM43430/1 wl0: Jun 14 2023 07:27:45 version 7.45.96.s1 (gf031a129) FWID 01-70bd2af7 es7
+[Wed Feb 18 00:59:26 2026] vc4-drm soc:gpu: bound 3f400000.hvs (ops vc4_hvs_ops [vc4])
+[Wed Feb 18 00:59:26 2026] Registered IR keymap rc-cec
+[Wed Feb 18 00:59:26 2026] rc rc0: vc4-hdmi as /devices/platform/soc/3f902000.hdmi/rc/rc0
+[Wed Feb 18 00:59:26 2026] input: vc4-hdmi as /devices/platform/soc/3f902000.hdmi/rc/rc0/input0
+[Wed Feb 18 00:59:26 2026] input: vc4-hdmi HDMI Jack as /devices/platform/soc/3f902000.hdmi/sound/card0/input1
+[Wed Feb 18 00:59:26 2026] vc4-drm soc:gpu: bound 3f902000.hdmi (ops vc4_hdmi_ops [vc4])
+[Wed Feb 18 00:59:26 2026] vc4-drm soc:gpu: bound 3f004000.txp (ops vc4_txp_ops [vc4])
+[Wed Feb 18 00:59:26 2026] vc4-drm soc:gpu: bound 3f206000.pixelvalve (ops vc4_crtc_ops [vc4])
+[Wed Feb 18 00:59:26 2026] vc4-drm soc:gpu: bound 3f207000.pixelvalve (ops vc4_crtc_ops [vc4])
+[Wed Feb 18 00:59:26 2026] vc4-drm soc:gpu: bound 3f807000.pixelvalve (ops vc4_crtc_ops [vc4])
+[Wed Feb 18 00:59:26 2026] vc4-drm soc:gpu: bound 3fc00000.v3d (ops vc4_v3d_ops [vc4])
+[Wed Feb 18 00:59:26 2026] [drm] Initialized vc4 0.0.0 for soc:gpu on minor 0
+[Wed Feb 18 00:59:26 2026] vc4-drm soc:gpu: [drm] Cannot find any crtc or sizes
+[Wed Feb 18 00:59:26 2026] vc4-drm soc:gpu: [drm] Cannot find any crtc or sizes
+[Wed Feb 18 00:59:26 2026] Bluetooth: hci0: BCM: features 0x2e
+[Wed Feb 18 00:59:26 2026] Bluetooth: hci0: BCM43436 37.4MHz Class 1.5 RaspBerry Pi Zero2 [Version: 1017.1042]
+[Wed Feb 18 00:59:26 2026] Bluetooth: hci0: BCM43430A1 (001.002.009) build 1042
+[Wed Feb 18 00:59:26 2026] Bluetooth: hci0: BCM: Using default device address (43:43:a1:12:1f:ac)
+[Wed Feb 18 00:59:26 2026] XFS (mmcblk0p3): Starting recovery (logdev: internal)
+[Wed Feb 18 00:59:27 2026] XFS (mmcblk0p3): Ending recovery (logdev: internal)
+[Wed Feb 18 00:59:28 2026] loop0: detected capacity change from 0 to 134217728
+[Wed Feb 18 00:59:28 2026]  loop0: p1
+[Wed Feb 18 00:59:29 2026] Bluetooth: BNEP (Ethernet Emulation) ver 1.3
+[Wed Feb 18 00:59:29 2026] Bluetooth: BNEP filters: protocol multicast
+[Wed Feb 18 00:59:29 2026] Bluetooth: BNEP socket layer initialized
+[Wed Feb 18 00:59:29 2026] Bluetooth: MGMT ver 1.23
+[Wed Feb 18 00:59:29 2026] NET: Registered PF_ALG protocol family
+[Wed Feb 18 00:59:30 2026] loop0: detected capacity change from 0 to 2097152
+[Wed Feb 18 00:59:30 2026]  loop0: p1
+[Wed Feb 18 00:59:31 2026] loop0: detected capacity change from 0 to 134215680
+[Wed Feb 18 00:59:31 2026] brcmfmac: brcmf_cfg80211_set_power_mgmt: power save enabled
+[Wed Feb 18 00:59:32 2026] loop0: detected capacity change from 0 to 134217728
+[Wed Feb 18 00:59:32 2026]  loop0: p1
+[Wed Feb 18 00:59:32 2026] loop0: detected capacity change from 0 to 134215680
+[Wed Feb 18 00:59:33 2026] Mass Storage Function, version: 2009/09/11
+[Wed Feb 18 00:59:33 2026] LUN: removable file: (no medium)
+[Wed Feb 18 00:59:33 2026] LUN: removable file: (no medium)
+[Wed Feb 18 00:59:33 2026] dwc2 3f980000.usb: bound driver configfs-gadget.sentryusb
+[Wed Feb 18 00:59:41 2026] loop0: detected capacity change from 0 to 134215680
+[Wed Feb 18 00:59:41 2026] loop1: detected capacity change from 0 to 134215680
+[Wed Feb 18 00:59:41 2026] loop2: detected capacity change from 0 to 134215680
+[Wed Feb 18 00:59:41 2026] loop3: detected capacity change from 0 to 134215680
+[Wed Feb 18 01:00:14 2026] loop4: detected capacity change from 0 to 134217728
+[Wed Feb 18 01:00:14 2026]  loop4: p1
+[Wed Feb 18 01:00:16 2026] loop4: detected capacity change from 0 to 134215680
+[Wed Feb 18 01:01:33 2026] warning: `iwconfig' uses wireless extensions which will stop working for Wi-Fi 7 hardware; use nl80211
+====== process list and uptime ======
+UID          PID    PPID  C STIME TTY          TIME CMD
+root           1       0  2 00:59 ?        00:00:03 /sbin/init noswap
+root           2       0  0 00:59 ?        00:00:00 [kthreadd]
+root           3       2  0 00:59 ?        00:00:00 [pool_workqueue_release]
+root           4       2  0 00:59 ?        00:00:00 [kworker/R-kvfree_rcu_reclaim]
+root           5       2  0 00:59 ?        00:00:00 [kworker/R-rcu_gp]
+root           6       2  0 00:59 ?        00:00:00 [kworker/R-sync_wq]
+root           7       2  0 00:59 ?        00:00:00 [kworker/R-slub_flushwq]
+root           8       2  0 00:59 ?        00:00:00 [kworker/R-netns]
+root           9       2  0 00:59 ?        00:00:00 [kworker/0:0-events]
+root          10       2  0 00:59 ?        00:00:00 [kworker/0:0H-events_highpri]
+root          11       2  0 00:59 ?        00:00:00 [kworker/0:1-events]
+root          12       2  0 00:59 ?        00:00:00 [kworker/u16:0-netns]
+root          13       2  0 00:59 ?        00:00:00 [kworker/R-mm_percpu_wq]
+root          14       2  0 00:59 ?        00:00:00 [rcu_tasks_kthread]
+root          15       2  0 00:59 ?        00:00:00 [rcu_tasks_rude_kthread]
+root          16       2  0 00:59 ?        00:00:00 [rcu_tasks_trace_kthread]
+root          17       2  0 00:59 ?        00:00:00 [ksoftirqd/0]
+root          18       2  0 00:59 ?        00:00:00 [rcu_preempt]
+root          19       2  0 00:59 ?        00:00:00 [rcu_exp_par_gp_kthread_worker/0]
+root          20       2  0 00:59 ?        00:00:00 [rcu_exp_gp_kthread_worker]
+root          21       2  0 00:59 ?        00:00:00 [migration/0]
+root          22       2  0 00:59 ?        00:00:00 [cpuhp/0]
+root          23       2  0 00:59 ?        00:00:00 [cpuhp/1]
+root          24       2  0 00:59 ?        00:00:00 [migration/1]
+root          25       2  0 00:59 ?        00:00:00 [ksoftirqd/1]
+root          26       2  0 00:59 ?        00:00:00 [kworker/1:0-events]
+root          27       2  0 00:59 ?        00:00:00 [kworker/1:0H-mmc_complete]
+root          28       2  0 00:59 ?        00:00:00 [cpuhp/2]
+root          29       2  0 00:59 ?        00:00:00 [migration/2]
+root          30       2  0 00:59 ?        00:00:00 [ksoftirqd/2]
+root          31       2  0 00:59 ?        00:00:00 [kworker/2:0-events]
+root          32       2  0 00:59 ?        00:00:00 [kworker/2:0H-events_highpri]
+root          33       2  0 00:59 ?        00:00:00 [cpuhp/3]
+root          34       2  0 00:59 ?        00:00:00 [migration/3]
+root          35       2  0 00:59 ?        00:00:00 [ksoftirqd/3]
+root          36       2  0 00:59 ?        00:00:00 [kworker/3:0-events]
+root          37       2  0 00:59 ?        00:00:00 [kworker/3:0H-events_highpri]
+root          38       2  0 00:59 ?        00:00:01 [kworker/u17:0-events_unbound]
+root          39       2  0 00:59 ?        00:00:00 [kworker/u18:0-events_unbound]
+root          40       2  0 00:59 ?        00:00:00 [kworker/u19:0-events_unbound]
+root          41       2  0 00:59 ?        00:00:00 [kworker/u20:0-events_unbound]
+root          42       2  0 00:59 ?        00:00:00 [kdevtmpfs]
+root          43       2  0 00:59 ?        00:00:00 [kworker/R-inet_frag_wq]
+root          44       2  0 00:59 ?        00:00:00 [kauditd]
+root          45       2  0 00:59 ?        00:00:00 [khungtaskd]
+root          46       2  0 00:59 ?        00:00:00 [oom_reaper]
+root          47       2  0 00:59 ?        00:00:00 [kworker/u17:1-kvfree_rcu_reclaim]
+root          48       2  0 00:59 ?        00:00:00 [kworker/R-writeback]
+root          49       2  0 00:59 ?        00:00:00 [kcompactd0]
+root          50       2  0 00:59 ?        00:00:00 [kworker/R-kintegrityd]
+root          51       2  0 00:59 ?        00:00:00 [kworker/R-kblockd]
+root          52       2  0 00:59 ?        00:00:00 [kworker/R-blkcg_punt_bio]
+root          53       2  0 00:59 ?        00:00:00 [kworker/u20:1-events_unbound]
+root          54       2  0 00:59 ?        00:00:00 [kworker/u20:2-events_unbound]
+root          55       2  0 00:59 ?        00:00:00 [watchdogd]
+root          56       2  0 00:59 ?        00:00:00 [kworker/1:1-mm_percpu_wq]
+root          57       2  0 00:59 ?        00:00:00 [kworker/3:1-cgroup_destroy]
+root          58       2  0 00:59 ?        00:00:00 [kworker/2:1-events]
+root          59       2  0 00:59 ?        00:00:00 [kworker/u17:2]
+root          60       2  0 00:59 ?        00:00:00 [kworker/3:1H-mmc_complete]
+root          61       2  0 00:59 ?        00:00:00 [kworker/R-rpciod]
+root          62       2  0 00:59 ?        00:00:00 [kworker/R-xprtiod]
+root          63       2  0 00:59 ?        00:00:00 [kswapd0]
+root          64       2  0 00:59 ?        00:00:00 [kworker/R-nfsiod]
+root          65       2  0 00:59 ?        00:00:00 [kworker/R-kthrotld]
+root          66       2  0 00:59 ?        00:00:00 [kworker/u18:1-events_unbound]
+root          68       2  0 00:59 ?        00:00:00 [kworker/1:2-events]
+root          70       2  0 00:59 ?        00:00:00 [hwrng]
+root          71       2  0 00:59 ?        00:00:00 [kworker/R-iscsi_conn_cleanup]
+root          72       2  0 00:59 ?        00:00:00 [kworker/R-nvme-wq]
+root          73       2  0 00:59 ?        00:00:00 [kworker/R-nvme-reset-wq]
+root          74       2  0 00:59 ?        00:00:00 [kworker/R-nvme-delete-wq]
+root          75       2  0 00:59 ?        00:00:00 [kworker/R-DWC Notification WorkQ]
+root          76       2  0 00:59 ?        00:00:00 [kworker/R-uas]
+root          77       2  0 00:59 ?        00:00:00 [kworker/u19:1-events_unbound]
+root          78       2  0 00:59 ?        00:00:00 [vchiq-slot/0]
+root          79       2  0 00:59 ?        00:00:00 [vchiq-recy/0]
+root          80       2  0 00:59 ?        00:00:00 [vchiq-sync/0]
+root          81       2  0 00:59 ?        00:00:00 [kworker/u21:0-hci0]
+root          82       2  0 00:59 ?        00:00:00 [kworker/u22:0]
+root          83       2  0 00:59 ?        00:00:00 [kworker/u23:0]
+root          84       2  0 00:59 ?        00:00:00 [kworker/u24:0]
+root          85       2  0 00:59 ?        00:00:00 [kworker/u25:0]
+root          86       2  0 00:59 ?        00:00:00 [kworker/0:1H-mmc_complete]
+root          87       2  0 00:59 ?        00:00:00 [irq/98-mmc0]
+root          88       2  0 00:59 ?        00:00:00 [kworker/3:2-mm_percpu_wq]
+root         111       2  0 00:59 ?        00:00:00 [kworker/2:1H-mmc_complete]
+root         125       2  0 00:59 ?        00:00:00 [kworker/R-mmc_complete]
+root         127       2  0 00:59 ?        00:00:00 [kworker/1:1H-events_highpri]
+root         128       2  0 00:59 ?        00:00:00 [kworker/2:2H-kblockd]
+root         129       2  0 00:59 ?        00:00:00 [kworker/2:2-events]
+root         142       2  0 00:59 ?        00:00:00 [kworker/3:2H-kblockd]
+root         149       2  0 00:59 ?        00:00:00 [kworker/u19:2-async]
+root         160       2  0 00:59 ?        00:00:00 [jbd2/mmcblk0p2-8]
+root         161       2  0 00:59 ?        00:00:00 [kworker/R-ext4-rsv-conversion]
+root         169       2  0 00:59 ?        00:00:00 [kworker/u18:2-events_unbound]
+root         177       2  0 00:59 ?        00:00:00 [kworker/R-mld]
+root         178       2  0 00:59 ?        00:00:00 [kworker/R-ipv6_addrconf]
+root         179       2  0 00:59 ?        00:00:00 [kworker/u16:1]
+root         180       2  0 00:59 ?        00:00:00 [kworker/0:2-events_power_efficient]
+root         199       2  0 00:59 ?        00:00:00 [kworker/1:2H]
+root         222       1  0 00:59 ?        00:00:00 /lib/systemd/systemd-journald
+root         232       2  0 00:59 ?        00:00:00 [kworker/3:3]
+root         233       2  0 00:59 ?        00:00:00 [kworker/3:4-events]
+root         240       1  0 00:59 ?        00:00:00 /lib/systemd/systemd-udevd
+root         241       2  0 00:59 ?        00:00:00 [kworker/2:3-events]
+root         276       2  0 00:59 ?        00:00:00 [vchiq-keep/0]
+root         284       2  0 00:59 ?        00:00:00 [kworker/0:2H]
+root         285       2  0 00:59 ?        00:00:00 [SMIO]
+root         288       2  0 00:59 ?        00:00:00 [kworker/R-mmal-vchiq]
+root         290       2  0 00:59 ?        00:00:00 [kworker/R-mmal-vchiq]
+root         292       2  0 00:59 ?        00:00:00 [kworker/R-mmal-vchiq]
+root         293       2  0 00:59 ?        00:00:00 [kworker/R-mmal-vchiq]
+root         296       2  0 00:59 ?        00:00:00 [kworker/R-mmal-vchiq]
+root         297       2  0 00:59 ?        00:00:00 [kworker/R-mmal-vchiq]
+root         298       2  0 00:59 ?        00:00:00 [kworker/R-mmal-vchiq]
+root         314       2  0 00:59 ?        00:00:00 [kworker/R-cfg80211]
+root         315       2  0 00:59 ?        00:00:00 [kworker/0:3-events]
+root         322       2  0 00:59 ?        00:00:00 [kworker/u21:1-brcmf_wq/mmc1:0001:1]
+root         323       2  0 00:59 ?        00:00:00 [kworker/u21:2-brcmf_wq/mmc1:0001:1]
+root         331       2  0 00:59 ?        00:00:00 [kworker/R-brcmf_wq/mmc1:0001:1]
+root         332       2  0 00:59 ?        00:00:00 [kworker/2:4-events]
+root         333       2  0 00:59 ?        00:00:00 [brcmf_wdog/mmc1:0001:1]
+root         335       2  0 00:59 ?        00:00:00 [jbd2/mmcblk0p4-8]
+root         336       2  0 00:59 ?        00:00:00 [kworker/R-ext4-rsv-conversion]
+root         345       2  0 00:59 ?        00:00:00 [kworker/R-xfsalloc]
+root         346       2  0 00:59 ?        00:00:00 [kworker/R-xfs_mru_cache]
+root         348       2  0 00:59 ?        00:00:00 [kworker/u21:3]
+root         349       2  0 00:59 ?        00:00:00 [kworker/R-xfs-buf/mmcblk0p3]
+root         350       2  0 00:59 ?        00:00:00 [kworker/R-xfs-conv/mmcblk0p3]
+root         351       2  0 00:59 ?        00:00:00 [kworker/R-xfs-reclaim/mmcblk0p3]
+root         352       2  0 00:59 ?        00:00:00 [kworker/R-xfs-blockgc/mmcblk0p3]
+root         353       2  0 00:59 ?        00:00:00 [kworker/R-xfs-inodegc/mmcblk0p3]
+root         356       2  0 00:59 ?        00:00:00 [kworker/R-xfs-log/mmcblk0p3]
+root         357       2  0 00:59 ?        00:00:00 [kworker/R-xfs-cil/mmcblk0p3]
+root         358       2  0 00:59 ?        00:00:00 [xfsaild/mmcblk0p3]
+root         360       2  0 00:59 ?        00:00:00 [cec-vc4-hdmi]
+root         361       2  0 00:59 ?        00:00:00 [irq/82-vc4 hdmi cec]
+root         364       2  0 00:59 ?        00:00:00 [card0-crtc0]
+root         365       2  0 00:59 ?        00:00:00 [card0-crtc1]
+root         366       2  0 00:59 ?        00:00:00 [card0-crtc2]
+root         367       2  0 00:59 ?        00:00:00 [card0-crtc3]
+root         392       1  0 00:59 ?        00:00:00 /root/cttseraser /mutable/TeslaCam /var/www/html/TeslaCam -o rw,dev,suid -o allow_other
+root         403       1  0 00:59 ?        00:00:00 /bin/bash /root/bin/archiveloop
+root         415     403  0 00:59 ?        00:00:00 flock -en -E 99 /root/bin/archiveloop /root/bin/archiveloop
+root         417     415  0 00:59 ?        00:00:00 /bin/bash -eu /root/bin/archiveloop
+root         419       2  0 00:59 ?        00:00:00 [kworker/1:3-events]
+root         420       2  0 00:59 ?        00:00:00 [kworker/1:4-cgroup_destroy]
+avahi        425       1  0 00:59 ?        00:00:00 avahi-daemon: running [sentryusb.local]
+root         426       1  0 00:59 ?        00:00:00 /usr/libexec/bluetooth/bluetoothd
+root         428       1  0 00:59 ?        00:00:00 /usr/sbin/cron -f
+message+     430       1  0 00:59 ?        00:00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+polkitd      433       1  0 00:59 ?        00:00:00 /usr/lib/polkit-1/polkitd --no-debug
+root         436       1  0 00:59 ?        00:00:00 /lib/systemd/systemd-logind
+root         456     417  0 00:59 ?        00:00:00 /bin/bash -eu /root/bin/temperature_monitor
+root         457     417  0 00:59 ?        00:00:00 /bin/bash -eu /root/bin/archiveloop
+root         458     417  0 00:59 ?        00:00:00 /bin/bash -eu /root/bin/archiveloop
+root         459     417  0 00:59 ?        00:00:00 /bin/bash -eu /root/bin/archiveloop
+root         460     457  0 00:59 ?        00:00:00 sleep 3480
+root         461     417  0 00:59 ?        00:00:00 /bin/bash -eu /root/bin/archiveloop
+root         463     459  0 00:59 ?        00:00:00 sleep 1800
+root         465     461  0 00:59 ?        00:00:00 dmesg -w
+root         466     461  0 00:59 ?        00:00:00 /bin/bash -eu /root/bin/archiveloop
+avahi        475     425  0 00:59 ?        00:00:00 avahi-daemon: chroot helper
+root         512       1  0 00:59 ?        00:00:00 /sbin/syslogd -C128
+root         516       1  0 00:59 ?        00:00:00 /usr/sbin/automount --pid-file /var/run/autofs.pid
+root         524       1  0 00:59 ?        00:00:00 /usr/sbin/NetworkManager --no-daemon
+root         525       1  0 00:59 ?        00:00:00 /sbin/wpa_supplicant -u -s -O DIR=/run/wpa_supplicant GROUP=netdev
+root         535       1  0 00:59 ?        00:00:00 /usr/sbin/ModemManager
+ntpsec       605       1  0 00:59 ?        00:00:00 /usr/sbin/ntpd -p /run/ntpd.pid -c /etc/ntpsec/ntp.conf -g -N -u ntpsec:ntpsec
+root         621       1  0 00:59 ?        00:00:00 sshd: /usr/sbin/sshd -D [listener] 0 of 10-100 startups
+root         765       1  0 00:59 tty1     00:00:00 /sbin/agetty -o -p -- \u --noclear - linux
+root         772       1  0 00:59 ?        00:00:00 /opt/sentryusb/sentryusb -port 80
+root         817       2  0 00:59 ?        00:00:00 [file-storage]
+root         902       2  0 00:59 ?        00:00:00 [kworker/u20:3-kvfree_rcu_reclaim]
+root         951       1  0 00:59 ?        00:00:00 /bin/bash -eu /root/bin/archive-clips.sh /tmp/cam/merged /tmp/sentry_files /tmp/triggers /tmp/triggers.txt
+root        1085       1  0 00:59 ?        00:00:00 sleep 300
+root        1240       1  0 01:00 ?        00:00:00 /bin/bash -eu /root/bin/archive-clips.sh /tmp/cam/merged /tmp/sentry_files /tmp/triggers /tmp/triggers.txt
+root        1586     458  0 01:01 ?        00:00:00 sleep 30
+root        1590     951  0 01:01 ?        00:00:00 sleep 5
+root        1593     456  0 01:01 ?        00:00:00 sleep 60
+root        1600    1240  0 01:01 ?        00:00:00 sleep 5
+root        1607     772  0 01:01 ?        00:00:00 bash -c (sudo /root/bin/setup-sentryusb diagnose) &> /tmp/diagnostics.txt
+root        1608    1607  2 01:01 ?        00:00:00 sudo /root/bin/setup-sentryusb diagnose
+root        1609    1608  0 01:01 ?        00:00:00 /bin/bash -eu /root/bin/setup-sentryusb diagnose
+root        1612    1609  0 01:01 ?        00:00:00 flock -en -E 99 /root/bin/setup-sentryusb /root/bin/setup-sentryusb diagnose
+root        1614    1612  5 01:01 ?        00:00:00 /bin/bash -eu /root/bin/setup-sentryusb diagnose
+root        1633    1614  7 01:01 ?        00:00:00 /bin/bash -eu /root/bin/setup-sentryusb diagnose
+root        1634    1614  0 01:01 ?        00:00:00 tr \r \n
+root        1635    1614  0 01:01 ?        00:00:00 sed /^ *$/d
+root        1636    1614  0 01:01 ?        00:00:00 grep -a -v ^Reading package lists
+root        1639    1614  0 01:01 ?        00:00:00 grep -a -v ^(Reading database
+root        1640    1614  0 01:01 ?        00:00:00 grep -a -v ^Adding 'diversion of
+root        1641    1614  0 01:01 ?        00:00:00 grep -a -v ^Removing 'diversion of
+root        1642    1614  0 01:01 ?        00:00:00 sed -E s/\o033\[0;32m//
+root        1644    1614  0 01:01 ?        00:00:00 sed -E s/\o033\[0m//
+root        1691     240  6 01:01 ?        00:00:00 (udev-worker)
+root        1696     240  4 01:01 ?        00:00:00 (udev-worker)
+root        1697     240  4 01:01 ?        00:00:00 (udev-worker)
+root        1698     240  2 01:01 ?        00:00:00 (udev-worker)
+root        1703     417  0 01:01 ?        00:00:00 sleep 1
+root        1717    1633 99 01:01 ?        00:00:00 ps -eaf
+sentryusb has been up 2 minutes. System time is Wed 18 Feb 01:01:33 PST 2026
+====== end of diagnostics ======

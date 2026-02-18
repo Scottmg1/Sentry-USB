@@ -360,7 +360,7 @@ export default function Drives() {
         {/* Mobile drive list toggle */}
         <button
           onClick={() => setMobileListOpen(!mobileListOpen)}
-          className="absolute left-3 bottom-3 z-10 flex items-center gap-1.5 rounded-lg border border-white/10 bg-slate-950/90 px-3 py-1.5 text-xs font-medium text-slate-300 backdrop-blur-sm transition-colors hover:bg-slate-900 md:hidden"
+          className="absolute left-3 bottom-3 z-[1000] flex items-center gap-1.5 rounded-lg border border-white/10 bg-slate-950/90 px-3 py-1.5 text-xs font-medium text-slate-300 backdrop-blur-sm transition-colors hover:bg-slate-900 md:hidden"
         >
           {mobileListOpen ? <X className="h-3.5 w-3.5" /> : <List className="h-3.5 w-3.5" />}
           {mobileListOpen ? "Hide Drives" : `Drives (${drives.length})`}
@@ -368,7 +368,7 @@ export default function Drives() {
 
         {/* Mobile drive list overlay */}
         {mobileListOpen && (
-          <div className="absolute inset-0 z-10 flex flex-col overflow-hidden bg-slate-950/95 backdrop-blur-sm md:hidden">
+          <div className="absolute inset-0 z-[1000] flex flex-col overflow-hidden bg-slate-950/95 backdrop-blur-sm md:hidden">
             <div className="border-b border-white/5 p-3">
               <div className="relative">
                 <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-600" />
@@ -477,7 +477,7 @@ export default function Drives() {
           <div ref={mapRef} className="h-full w-full" />
 
           {loading && (
-            <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/70">
+            <div className="absolute inset-0 z-[1000] flex items-center justify-center bg-black/70">
               <p className="text-sm text-slate-400">Loading drives...</p>
             </div>
           )}
@@ -486,7 +486,7 @@ export default function Drives() {
           {selectedId !== null && (
             <button
               onClick={goBack}
-              className="absolute left-3 top-3 z-10 flex items-center gap-1.5 rounded-lg border border-white/10 bg-slate-950/90 px-3 py-1.5 text-xs font-medium text-slate-300 backdrop-blur-sm transition-colors hover:bg-slate-900"
+              className="absolute left-3 top-3 z-[1000] flex items-center gap-1.5 rounded-lg border border-white/10 bg-slate-950/90 px-3 py-1.5 text-xs font-medium text-slate-300 backdrop-blur-sm transition-colors hover:bg-slate-900"
             >
               <ChevronLeft className="h-3.5 w-3.5" /> All Drives
             </button>
@@ -494,7 +494,7 @@ export default function Drives() {
 
           {/* Detail panel */}
           {selectedDrive && (
-            <div className="absolute inset-x-0 bottom-0 z-10 border-t border-white/10 bg-slate-950/90 px-4 py-3 backdrop-blur-md">
+            <div className="absolute inset-x-0 bottom-0 z-[1000] border-t border-white/10 bg-slate-950/90 px-4 py-3 backdrop-blur-md">
               <div className="mb-2 flex flex-wrap gap-x-6 gap-y-1">
                 <Stat icon={<Navigation className="h-3 w-3" />} label="Distance" value={dist(selectedDrive)} highlight />
                 <Stat icon={<Clock className="h-3 w-3" />} label="Duration" value={formatDuration(selectedDrive.durationMs)} />

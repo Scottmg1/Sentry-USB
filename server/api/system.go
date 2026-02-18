@@ -6,12 +6,16 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Scottmg1/Sentry-USB/server/shell"
 )
+
+var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
 
 func (h *handlers) reboot(w http.ResponseWriter, r *http.Request) {
 	go func() {
@@ -107,8 +111,40 @@ func (h *handlers) getDiagnostics(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Diagnostics have not been generated yet.\nClick the Refresh button above to generate a diagnostics report."))
 		return
 	}
+	// Sanitize: ensure valid UTF-8, strip ANSI escape codes and control chars
+	// to prevent issues when diagnostics are forwarded to PostgreSQL JSONB
+	cleaned := sanitizeDiagnostics(data)
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.Write(data)
+	w.Write([]byte(cleaned))
+}
+
+// sanitizeDiagnostics cleans raw shell output for safe JSON/JSONB transport
+func sanitizeDiagnostics(raw []byte) string {
+	// Ensure valid UTF-8 — replace invalid sequences
+	s := string(raw)
+	if !utf8.ValidString(s) {
+		var b strings.Builder
+		for i := 0; i < len(s); {
+			r, size := utf8.DecodeRuneInString(s[i:])
+			if r == utf8.RuneError && size == 1 {
+				i++
+				continue
+			}
+			b.WriteRune(r)
+			i += size
+		}
+		s = b.String()
+	}
+	// Strip ANSI escape codes
+	s = ansiRegex.ReplaceAllString(s, "")
+	// Remove control chars except \t \n \r
+	var out strings.Builder
+	for _, r := range s {
+		if r == '\t' || r == '\n' || r == '\r' || r >= 0x20 {
+			out.WriteRune(r)
+		}
+	}
+	return out.String()
 }
 
 func (h *handlers) speedtest(w http.ResponseWriter, r *http.Request) {

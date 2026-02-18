@@ -246,6 +246,9 @@ func (h *handlers) uploadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Ensure parent directory exists (e.g. user uploading to Wraps/LicensePlate for first time)
+	os.MkdirAll(filepath.Dir(cleanPath), 0755)
+
 	dst, err := os.Create(cleanPath)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to create file: "+err.Error())

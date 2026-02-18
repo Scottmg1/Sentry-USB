@@ -1,6 +1,9 @@
 package api
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -8,10 +11,64 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Scottmg1/Sentry-USB/server/shell"
 )
+
+const telemetrySalt = "SENTRYUSB_2026_PROD"
+const telemetryURL = "https://api.sentry-six.com/sentryusb/telemetry"
+
+var (
+	cachedFingerprint string
+	fingerprintOnce   sync.Once
+)
+
+// getFingerprint generates a SHA-256 hash of /etc/machine-id + salt.
+// Cached after first call.
+func getFingerprint() string {
+	fingerprintOnce.Do(func() {
+		raw, err := os.ReadFile("/etc/machine-id")
+		if err != nil {
+			// Fallback: try /var/lib/dbus/machine-id
+			raw, err = os.ReadFile("/var/lib/dbus/machine-id")
+			if err != nil {
+				log.Printf("[telemetry] Cannot read machine-id: %v", err)
+				return
+			}
+		}
+		id := strings.TrimSpace(string(raw))
+		hash := sha256.Sum256([]byte(id + telemetrySalt))
+		cachedFingerprint = hex.EncodeToString(hash[:])
+	})
+	return cachedFingerprint
+}
+
+// sendTelemetry fires and forgets a telemetry POST to the support server.
+func sendTelemetry(currentVersion string, updateAvailable bool, newVersion string) {
+	fp := getFingerprint()
+	if fp == "" {
+		return
+	}
+	go func() {
+		payload, _ := json.Marshal(map[string]interface{}{
+			"fingerprint":      fp,
+			"current_version":  currentVersion,
+			"update_available": updateAvailable,
+			"new_version":      newVersion,
+			"arch":             runtime.GOARCH,
+		})
+		client := &http.Client{Timeout: 10 * time.Second}
+		resp, err := client.Post(telemetryURL, "application/json", bytes.NewReader(payload))
+		if err != nil {
+			log.Printf("[telemetry] Failed to send: %v", err)
+			return
+		}
+		resp.Body.Close()
+		log.Printf("[telemetry] Sent (status %d)", resp.StatusCode)
+	}()
+}
 
 const updateRepo = "Scottmg1/Sentry-USB"
 
@@ -233,6 +290,13 @@ func (h *handlers) checkForUpdate(w http.ResponseWriter, r *http.Request) {
 	if data, err := json.Marshal(updateInfo); err == nil {
 		os.WriteFile("/tmp/sentryusb-update-check.json", data, 0644)
 	}
+
+	// Send telemetry to support server (fire-and-forget)
+	newVer := ""
+	if updateAvailable {
+		newVer = release.TagName
+	}
+	sendTelemetry(currentVersion, updateAvailable, newVer)
 
 	writeJSON(w, http.StatusOK, updateInfo)
 }

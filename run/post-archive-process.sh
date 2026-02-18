@@ -101,21 +101,34 @@ if [ -x /root/bin/send-push-message ]; then
     ROUTES_AFTER=$(echo "$STATS" | grep -o '"routes_count":[0-9]*' | cut -d: -f2)
     ROUTES_AFTER=${ROUTES_AFTER:-0}
     if [ "$ROUTES_AFTER" -gt "$ROUTES_BEFORE" ]; then
-      DRIVE_COUNT=$(echo "$STATS" | grep -o '"drives_count":[0-9]*' | cut -d: -f2)
       NEW_ROUTES=$((ROUTES_AFTER - ROUTES_BEFORE))
 
       # Check user unit preference (mi or km)
       UNIT_PREF=$(curl -sf "${API_URL}/api/config/preference?key=unit" 2>/dev/null | grep -o '"value":"[^"]*"' | cut -d'"' -f4)
+
+      # Calculate NEW distance by subtracting before from after
       if [ "$UNIT_PREF" = "km" ]; then
-        TOTAL_DIST=$(echo "$STATS" | grep -o '"total_distance_km":[0-9.]*' | cut -d: -f2)
+        DIST_AFTER=$(echo "$STATS" | grep -o '"total_distance_km":[0-9.]*' | cut -d: -f2)
+        DIST_BEFORE=$(echo "$BEFORE_STATS" | grep -o '"total_distance_km":[0-9.]*' | cut -d: -f2)
         DIST_LABEL="km"
       else
-        TOTAL_DIST=$(echo "$STATS" | grep -o '"total_distance_mi":[0-9.]*' | cut -d: -f2)
+        DIST_AFTER=$(echo "$STATS" | grep -o '"total_distance_mi":[0-9.]*' | cut -d: -f2)
+        DIST_BEFORE=$(echo "$BEFORE_STATS" | grep -o '"total_distance_mi":[0-9.]*' | cut -d: -f2)
         DIST_LABEL="miles"
+      fi
+      DIST_BEFORE=${DIST_BEFORE:-0}
+      DIST_AFTER=${DIST_AFTER:-0}
+      # Calculate new distance (using awk for float subtraction)
+      NEW_DIST=$(awk "BEGIN { printf \"%.2f\", ${DIST_AFTER} - ${DIST_BEFORE} }")
+
+      if [ "$NEW_ROUTES" -eq 1 ]; then
+        DRIVE_WORD="drive"
+      else
+        DRIVE_WORD="drives"
       fi
 
       /root/bin/send-push-message "${NOTIFICATION_TITLE:-SentryUSB}:" \
-        "Drive processing complete. ${DRIVE_COUNT:-0} total drives, ${TOTAL_DIST:-0} ${DIST_LABEL} mapped." \
+        "${NEW_ROUTES} new ${DRIVE_WORD} mapped (${NEW_DIST} ${DIST_LABEL})." \
         info || log "Failed to send notification"
     else
       log "No new routes found, skipping drive stats notification."
