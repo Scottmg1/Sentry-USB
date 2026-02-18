@@ -194,7 +194,7 @@ export default function Drives() {
       if (!pts || pts.length < 2) return
       const latlngs = pts.map((p) => [p[0], p[1]] as L.LatLngExpression)
 
-      const route = L.polyline(latlngs, { color: "#3b82f6", weight: 4, opacity: 1, smoothFactor: 0 }).addTo(map)
+      const route = L.polyline(latlngs, { color: "#3b82f6", weight: 4, opacity: 1, smoothFactor: 0, noClip: true }).addTo(map)
       selectionLayers.current.push(route)
 
       const startM = L.marker(latlngs[0], {

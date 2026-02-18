@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -86,13 +87,18 @@ func (s *Store) Save() error {
 }
 
 // ProcessedSet returns a set of already-processed file paths.
+// Paths are stored with both original and normalized (forward-slash) forms
+// so lookups work regardless of OS path separator.
 func (s *Store) ProcessedSet() map[string]bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	set := make(map[string]bool, len(s.data.ProcessedFiles))
+	set := make(map[string]bool, len(s.data.ProcessedFiles)*2)
 	for _, f := range s.data.ProcessedFiles {
 		set[f] = true
+		// Also index the normalized form so Windows \ paths match Linux / paths
+		norm := strings.ReplaceAll(f, "\\", "/")
+		set[norm] = true
 	}
 	return set
 }

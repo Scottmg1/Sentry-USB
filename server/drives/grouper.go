@@ -4,6 +4,7 @@ import (
 	"math"
 	"regexp"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -56,9 +57,20 @@ type timedRoute struct {
 
 // GroupIntoDrives groups routes into logical drives based on time gaps.
 func GroupIntoDrives(routes []Route) []Drive {
+	// Deduplicate routes by normalized file path (handles mixed \ and / from imports)
+	seen := make(map[string]bool, len(routes))
+	var unique []Route
+	for _, r := range routes {
+		norm := strings.ReplaceAll(r.File, "\\", "/")
+		if !seen[norm] {
+			seen[norm] = true
+			unique = append(unique, r)
+		}
+	}
+
 	// Parse timestamps and sort
 	var timed []timedRoute
-	for _, r := range routes {
+	for _, r := range unique {
 		if t := parseFileTimestamp(r.File); !t.IsZero() {
 			timed = append(timed, timedRoute{Route: r, timestamp: t})
 		}
