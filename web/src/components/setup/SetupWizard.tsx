@@ -132,8 +132,22 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
     setSaveError(null)
     try {
       // Strip internal UI-only fields (prefixed with _) before saving
+      const sizeFields = new Set(["CAM_SIZE", "MUSIC_SIZE", "LIGHTSHOW_SIZE", "BOOMBOX_SIZE"])
       const configData = Object.fromEntries(
-        Object.entries(formData).filter(([k, v]) => !k.startsWith("_") && v !== "")
+        Object.entries(formData)
+          .filter(([k, v]) => !k.startsWith("_") && v !== "")
+          .map(([k, v]) => {
+            // Append G suffix to size fields if it's a plain number
+            if (sizeFields.has(k) && /^\d+$/.test(v)) {
+              return [k, v + "G"]
+            }
+            // Convert temperature fields from °C to milli-°C for the config
+            if ((k === "TEMPERATURE_WARNING" || k === "TEMPERATURE_CAUTION") && v && !v.includes("000")) {
+              const num = parseFloat(v)
+              if (!isNaN(num)) return [k, String(Math.round(num * 1000))]
+            }
+            return [k, v]
+          })
       )
       const res = await fetch("/api/setup/config", {
         method: "PUT",

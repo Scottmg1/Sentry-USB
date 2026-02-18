@@ -257,8 +257,8 @@ func (dh *DriveHandlers) driveStats(w http.ResponseWriter, r *http.Request) {
 		"drives_count":     len(allDrives),
 		"routes_count":     len(routes),
 		"processed_count":  dh.store.ProcessedCount(),
-		"total_distance_km": totalDistKm,
-		"total_distance_mi": totalDistMi,
+		"total_distance_km": math.Round(totalDistKm*100) / 100,
+		"total_distance_mi": math.Round(totalDistMi*100) / 100,
 		"total_duration_ms": totalDurationMs,
 	})
 }

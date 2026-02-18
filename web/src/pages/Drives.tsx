@@ -3,7 +3,7 @@ import L from "leaflet"
 import "leaflet/dist/leaflet.css"
 import {
   MapPin, Navigation, Clock, Gauge, Play,
-  Download, Upload, Loader2, ChevronLeft, Search,
+  Download, Upload, Loader2, ChevronLeft, Search, List, X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -91,11 +91,14 @@ export default function Drives() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [selectedDrive, setSelectedDrive] = useState<DriveDetail | null>(null)
   const [search, setSearch] = useState("")
-  const [metric, setMetric] = useState(false)
+  const [metric, setMetric] = useState(() => {
+    try { return localStorage.getItem("sentryusb_metric") === "true" } catch { return false }
+  })
   const [sliderIdx, setSliderIdx] = useState(0)
   const [loading, setLoading] = useState(true)
   const [processing, setProcessing] = useState(false)
   const [processMsg, setProcessMsg] = useState("")
+  const [mobileListOpen, setMobileListOpen] = useState(false)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -330,8 +333,8 @@ export default function Drives() {
         <div className="flex items-center gap-2">
           {/* Unit toggle */}
           <div className="flex overflow-hidden rounded-lg border border-white/10">
-            <button onClick={() => setMetric(false)} className={cn("px-2.5 py-1 text-xs font-medium transition-colors", !metric ? "bg-blue-500 text-white" : "text-slate-500 hover:text-slate-300")}>MI</button>
-            <button onClick={() => setMetric(true)} className={cn("px-2.5 py-1 text-xs font-medium transition-colors", metric ? "bg-blue-500 text-white" : "text-slate-500 hover:text-slate-300")}>KM</button>
+            <button onClick={() => { setMetric(false); try { localStorage.setItem("sentryusb_metric", "false") } catch {} fetch("/api/config/preference", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "unit", value: "mi" }) }).catch(() => {}) }} className={cn("px-2.5 py-1 text-xs font-medium transition-colors", !metric ? "bg-blue-500 text-white" : "text-slate-500 hover:text-slate-300")}>MI</button>
+            <button onClick={() => { setMetric(true); try { localStorage.setItem("sentryusb_metric", "true") } catch {} fetch("/api/config/preference", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "unit", value: "km" }) }).catch(() => {}) }} className={cn("px-2.5 py-1 text-xs font-medium transition-colors", metric ? "bg-blue-500 text-white" : "text-slate-500 hover:text-slate-300")}>KM</button>
           </div>
           {/* Process */}
           <button onClick={triggerProcess} disabled={processing} className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-white/10 disabled:opacity-50">
@@ -353,8 +356,71 @@ export default function Drives() {
       {processMsg && <p className="text-xs text-amber-400">{processMsg}</p>}
 
       {/* Main content: sidebar + map */}
-      <div className="flex flex-1 gap-4 overflow-hidden rounded-xl border border-white/5">
-        {/* Sidebar */}
+      <div className="relative flex flex-1 gap-4 overflow-hidden rounded-xl border border-white/5">
+        {/* Mobile drive list toggle */}
+        <button
+          onClick={() => setMobileListOpen(!mobileListOpen)}
+          className="absolute left-3 bottom-3 z-10 flex items-center gap-1.5 rounded-lg border border-white/10 bg-slate-950/90 px-3 py-1.5 text-xs font-medium text-slate-300 backdrop-blur-sm transition-colors hover:bg-slate-900 md:hidden"
+        >
+          {mobileListOpen ? <X className="h-3.5 w-3.5" /> : <List className="h-3.5 w-3.5" />}
+          {mobileListOpen ? "Hide Drives" : `Drives (${drives.length})`}
+        </button>
+
+        {/* Mobile drive list overlay */}
+        {mobileListOpen && (
+          <div className="absolute inset-0 z-10 flex flex-col overflow-hidden bg-slate-950/95 backdrop-blur-sm md:hidden">
+            <div className="border-b border-white/5 p-3">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-600" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Filter by date..."
+                  className="w-full rounded-lg border border-white/10 bg-white/5 py-1.5 pl-8 pr-3 text-xs text-slate-200 placeholder-slate-600 outline-none focus:border-blue-500/50"
+                />
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {loading && <p className="p-4 text-center text-xs text-slate-600">Loading drives...</p>}
+              {!loading && filtered.length === 0 && <p className="p-4 text-center text-xs text-slate-600">No drives found</p>}
+              {(() => {
+                let cd = ""
+                return filtered.map((d) => {
+                  const sh = d.date !== cd
+                  cd = d.date
+                  return (
+                    <div key={d.id}>
+                      {sh && (
+                        <div className="sticky top-0 z-10 bg-slate-950/90 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-600">
+                          {formatDate(d.date)}
+                        </div>
+                      )}
+                      <button
+                        onClick={() => { selectDrive(d.id); setMobileListOpen(false) }}
+                        className={cn(
+                          "w-full border-b border-white/[0.03] px-3 py-2.5 text-left transition-colors hover:bg-white/[0.04]",
+                          selectedId === d.id && "border-l-2 border-l-blue-500 bg-blue-500/10"
+                        )}
+                      >
+                        <p className="text-sm font-medium text-slate-200">
+                          {formatTime(d.startTime)} — {formatTime(d.endTime)}
+                        </p>
+                        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-500">
+                          <span>{dist(d)}</span>
+                          <span>{formatDuration(d.durationMs)}</span>
+                          <span>{avgSpd(d)}</span>
+                        </div>
+                      </button>
+                    </div>
+                  )
+                })
+              })()}
+            </div>
+          </div>
+        )}
+
+        {/* Desktop Sidebar */}
         <div className="hidden w-72 shrink-0 flex-col overflow-hidden border-r border-white/5 bg-white/[0.02] md:flex">
           <div className="border-b border-white/5 p-3">
             <div className="relative">
@@ -411,7 +477,7 @@ export default function Drives() {
           <div ref={mapRef} className="h-full w-full" />
 
           {loading && (
-            <div className="absolute inset-0 z-[1000] flex items-center justify-center bg-black/70">
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/70">
               <p className="text-sm text-slate-400">Loading drives...</p>
             </div>
           )}
@@ -420,7 +486,7 @@ export default function Drives() {
           {selectedId !== null && (
             <button
               onClick={goBack}
-              className="absolute left-3 top-3 z-[1000] flex items-center gap-1.5 rounded-lg border border-white/10 bg-slate-950/90 px-3 py-1.5 text-xs font-medium text-slate-300 backdrop-blur-sm transition-colors hover:bg-slate-900"
+              className="absolute left-3 top-3 z-10 flex items-center gap-1.5 rounded-lg border border-white/10 bg-slate-950/90 px-3 py-1.5 text-xs font-medium text-slate-300 backdrop-blur-sm transition-colors hover:bg-slate-900"
             >
               <ChevronLeft className="h-3.5 w-3.5" /> All Drives
             </button>
@@ -428,7 +494,7 @@ export default function Drives() {
 
           {/* Detail panel */}
           {selectedDrive && (
-            <div className="absolute inset-x-0 bottom-0 z-[1000] border-t border-white/10 bg-slate-950/90 px-4 py-3 backdrop-blur-md">
+            <div className="absolute inset-x-0 bottom-0 z-10 border-t border-white/10 bg-slate-950/90 px-4 py-3 backdrop-blur-md">
               <div className="mb-2 flex flex-wrap gap-x-6 gap-y-1">
                 <Stat icon={<Navigation className="h-3 w-3" />} label="Distance" value={dist(selectedDrive)} highlight />
                 <Stat icon={<Clock className="h-3 w-3" />} label="Duration" value={formatDuration(selectedDrive.durationMs)} />

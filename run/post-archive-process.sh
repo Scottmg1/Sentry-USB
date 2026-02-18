@@ -84,20 +84,68 @@ if [ ! -d "$CLIPS_DIR" ]; then
   exit 0
 fi
 
+# Capture route count before processing so we can detect new data
+BEFORE_STATS=$(curl -sf "${API_URL}/api/drives/stats" 2>/dev/null)
+ROUTES_BEFORE=$(echo "$BEFORE_STATS" | grep -o '"routes_count":[0-9]*' | cut -d: -f2)
+ROUTES_BEFORE=${ROUTES_BEFORE:-0}
+
 process_clips_dir "$CLIPS_DIR"
 PROCESSED=$?
 
 log "Drive processing complete. $PROCESSED directories processed."
 
-# Send notification if configured
+# Send notification only if new routes were added
 if [ -x /root/bin/send-push-message ]; then
   STATS=$(curl -sf "${API_URL}/api/drives/stats" 2>/dev/null)
   if [ $? -eq 0 ]; then
-    DRIVE_COUNT=$(echo "$STATS" | grep -o '"drives_count":[0-9]*' | cut -d: -f2)
-    TOTAL_MI=$(echo "$STATS" | grep -o '"total_distance_mi":[0-9.]*' | cut -d: -f2)
-    /root/bin/send-push-message "${NOTIFICATION_TITLE:-SentryUSB}:" \
-      "Drive processing complete. ${DRIVE_COUNT:-0} total drives, ${TOTAL_MI:-0} miles mapped." \
-      info || log "Failed to send notification"
+    ROUTES_AFTER=$(echo "$STATS" | grep -o '"routes_count":[0-9]*' | cut -d: -f2)
+    ROUTES_AFTER=${ROUTES_AFTER:-0}
+    if [ "$ROUTES_AFTER" -gt "$ROUTES_BEFORE" ]; then
+      DRIVE_COUNT=$(echo "$STATS" | grep -o '"drives_count":[0-9]*' | cut -d: -f2)
+      NEW_ROUTES=$((ROUTES_AFTER - ROUTES_BEFORE))
+
+      # Check user unit preference (mi or km)
+      UNIT_PREF=$(curl -sf "${API_URL}/api/config/preference?key=unit" 2>/dev/null | grep -o '"value":"[^"]*"' | cut -d'"' -f4)
+      if [ "$UNIT_PREF" = "km" ]; then
+        TOTAL_DIST=$(echo "$STATS" | grep -o '"total_distance_km":[0-9.]*' | cut -d: -f2)
+        DIST_LABEL="km"
+      else
+        TOTAL_DIST=$(echo "$STATS" | grep -o '"total_distance_mi":[0-9.]*' | cut -d: -f2)
+        DIST_LABEL="miles"
+      fi
+
+      /root/bin/send-push-message "${NOTIFICATION_TITLE:-SentryUSB}:" \
+        "Drive processing complete. ${DRIVE_COUNT:-0} total drives, ${TOTAL_DIST:-0} ${DIST_LABEL} mapped." \
+        info || log "Failed to send notification"
+    else
+      log "No new routes found, skipping drive stats notification."
+    fi
+  fi
+fi
+
+# Check for updates automatically (if not disabled)
+AUTO_UPDATE_CHECK=$(curl -sf "${API_URL}/api/config/preference?key=auto_update_check" 2>/dev/null | grep -o '"value":"[^"]*"' | cut -d'"' -f4)
+if [ "$AUTO_UPDATE_CHECK" != "disabled" ]; then
+  log "Checking for SentryUSB updates..."
+  UPDATE_RESULT=$(curl -sf -X POST "${API_URL}/api/system/check-update" 2>/dev/null)
+  if [ $? -eq 0 ]; then
+    UPDATE_AVAILABLE=$(echo "$UPDATE_RESULT" | grep -o '"update_available":true')
+    if [ -n "$UPDATE_AVAILABLE" ]; then
+      LATEST_VER=$(echo "$UPDATE_RESULT" | grep -o '"latest_version":"[^"]*"' | cut -d'"' -f4)
+      # Only send notification once per version (check marker file)
+      NOTIFIED_FILE="/tmp/sentryusb-update-notified-${LATEST_VER}"
+      if [ ! -f "$NOTIFIED_FILE" ] && [ -x /root/bin/send-push-message ]; then
+        /root/bin/send-push-message "${NOTIFICATION_TITLE:-SentryUSB}:" \
+          "Update available: ${LATEST_VER}. Open Settings to install." \
+          info || log "Failed to send update notification"
+        touch "$NOTIFIED_FILE"
+      fi
+      log "Update available: ${LATEST_VER}"
+    else
+      log "SentryUSB is up to date."
+    fi
+  else
+    log "Could not check for updates (no internet?)."
   fi
 fi
 

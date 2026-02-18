@@ -142,7 +142,7 @@ export function ArchiveStep({ data, onChange }: StepProps) {
           {[
             { field: "ARCHIVE_SAVEDCLIPS", label: "Saved Clips", def: "true" },
             { field: "ARCHIVE_SENTRYCLIPS", label: "Sentry Clips", def: "true" },
-            { field: "ARCHIVE_RECENTCLIPS", label: "Recent Clips", def: "false" },
+            { field: "ARCHIVE_RECENTCLIPS", label: "Recent Clips", def: "true" },
             { field: "ARCHIVE_TRACKMODECLIPS", label: "Track Mode Clips", def: "true" },
           ].map(({ field, label, def }) => (
             <label key={field} className="flex items-center gap-2">

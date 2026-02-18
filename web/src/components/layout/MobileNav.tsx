@@ -5,6 +5,7 @@ import {
   FolderOpen,
   ScrollText,
   MapPin,
+  MessageCircle,
   Settings,
   X,
   Shield,
@@ -22,6 +23,7 @@ const navItems = [
   { to: "/files", icon: FolderOpen, label: "Files" },
   { to: "/logs", icon: ScrollText, label: "Logs" },
   { to: "/drives", icon: MapPin, label: "Drives" },
+  { to: "/support", icon: MessageCircle, label: "Support" },
   { to: "/settings", icon: Settings, label: "Settings" },
 ]
 

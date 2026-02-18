@@ -288,9 +288,48 @@ func (h *handlers) getWifiConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Detect WLAN country
+	wlanCountry := ""
+	// Try iw reg get
+	if out, err := shell.Run("iw", "reg", "get"); err == nil {
+		for _, line := range strings.Split(out, "\n") {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "country") {
+				// "country US: DFS-FCC"
+				parts := strings.SplitN(line, " ", 3)
+				if len(parts) >= 2 {
+					wlanCountry = strings.TrimSuffix(parts[1], ":")
+				}
+				break
+			}
+		}
+	}
+	// Fallback: check wpa_supplicant.conf
+	if wlanCountry == "" {
+		wpaPaths := []string{
+			"/etc/wpa_supplicant/wpa_supplicant.conf",
+			"/boot/firmware/wpa_supplicant.conf",
+		}
+		for _, p := range wpaPaths {
+			if data, err := os.ReadFile(p); err == nil {
+				for _, line := range strings.Split(string(data), "\n") {
+					line = strings.TrimSpace(line)
+					if strings.HasPrefix(line, "country=") {
+						wlanCountry = strings.TrimPrefix(line, "country=")
+						break
+					}
+				}
+			}
+			if wlanCountry != "" {
+				break
+			}
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"current":     info,
-		"config_ssid": configSSID,
+		"current":      info,
+		"config_ssid":  configSSID,
+		"wlan_country": wlanCountry,
 	})
 }
 

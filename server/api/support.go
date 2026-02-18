@@ -1,0 +1,193 @@
+package api
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"time"
+)
+
+const supportServerURL = "https://api.sentry-six.com"
+
+func supportProxy(method, path string, payload []byte, authToken string, timeout time.Duration) ([]byte, int, error) {
+	var body io.Reader
+	if payload != nil {
+		body = bytes.NewReader(payload)
+	}
+
+	req, err := http.NewRequest(method, supportServerURL+path, body)
+	if err != nil {
+		return nil, 0, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if authToken != "" {
+		req.Header.Set("X-Auth-Token", authToken)
+	}
+
+	client := &http.Client{Timeout: timeout}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, resp.StatusCode, err
+	}
+	return respBody, resp.StatusCode, nil
+}
+
+// POST /api/support/ticket — create a new support ticket
+func (h *handlers) createSupportTicket(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Failed to read body")
+		return
+	}
+	defer r.Body.Close()
+
+	respBody, status, err := supportProxy("POST", "/chat/ticket", body, "", 30*time.Second)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "Support server unreachable: "+err.Error())
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	w.Write(respBody)
+}
+
+// POST /api/support/ticket/{id}/message — send a message
+func (h *handlers) sendSupportMessage(w http.ResponseWriter, r *http.Request) {
+	ticketId := r.PathValue("id")
+	authToken := r.Header.Get("X-Auth-Token")
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Failed to read body")
+		return
+	}
+	defer r.Body.Close()
+
+	respBody, status, err := supportProxy("POST", fmt.Sprintf("/chat/ticket/%s/message", ticketId), body, authToken, 30*time.Second)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "Support server unreachable")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	w.Write(respBody)
+}
+
+// POST /api/support/ticket/{id}/media — upload media
+func (h *handlers) uploadSupportMedia(w http.ResponseWriter, r *http.Request) {
+	ticketId := r.PathValue("id")
+	authToken := r.Header.Get("X-Auth-Token")
+
+	// Limit to 100MB
+	r.Body = http.MaxBytesReader(w, r.Body, 100*1024*1024)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Failed to read body")
+		return
+	}
+	defer r.Body.Close()
+
+	// Scale timeout based on body size
+	timeout := 3*time.Minute + time.Duration(len(body)/(50*1024*1024))*time.Minute
+	if timeout > 10*time.Minute {
+		timeout = 10 * time.Minute
+	}
+
+	respBody, status, err := supportProxy("POST", fmt.Sprintf("/chat/ticket/%s/media", ticketId), body, authToken, timeout)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "Support server unreachable")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	w.Write(respBody)
+}
+
+// GET /api/support/ticket/{id}/messages — fetch messages
+func (h *handlers) fetchSupportMessages(w http.ResponseWriter, r *http.Request) {
+	ticketId := r.PathValue("id")
+	authToken := r.Header.Get("X-Auth-Token")
+
+	query := ""
+	if since := r.URL.Query().Get("since"); since != "" {
+		query = "?since=" + since
+	}
+
+	respBody, status, err := supportProxy("GET", fmt.Sprintf("/chat/ticket/%s/messages%s", ticketId, query), nil, authToken, 15*time.Second)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "Support server unreachable")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	w.Write(respBody)
+}
+
+// POST /api/support/ticket/{id}/close — close a ticket
+func (h *handlers) closeSupportTicket(w http.ResponseWriter, r *http.Request) {
+	ticketId := r.PathValue("id")
+	authToken := r.Header.Get("X-Auth-Token")
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Failed to read body")
+		return
+	}
+	defer r.Body.Close()
+
+	respBody, status, err := supportProxy("POST", fmt.Sprintf("/chat/ticket/%s/close", ticketId), body, authToken, 15*time.Second)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "Support server unreachable")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	w.Write(respBody)
+}
+
+// POST /api/support/ticket/{id}/mark-read — mark messages as read
+func (h *handlers) markSupportRead(w http.ResponseWriter, r *http.Request) {
+	ticketId := r.PathValue("id")
+	authToken := r.Header.Get("X-Auth-Token")
+
+	respBody, status, err := supportProxy("POST", fmt.Sprintf("/chat/ticket/%s/mark-read", ticketId), nil, authToken, 15*time.Second)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "Support server unreachable")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	w.Write(respBody)
+}
+
+// GET /api/support/check — check if support server is reachable (and internet is available)
+func (h *handlers) checkSupportAvailable(w http.ResponseWriter, r *http.Request) {
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(supportServerURL + "/health")
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"available": false,
+			"error":     "Cannot reach support server. Check internet connection.",
+		})
+		return
+	}
+	defer resp.Body.Close()
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"available": resp.StatusCode == 200,
+	})
+}

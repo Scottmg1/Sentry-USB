@@ -9,6 +9,9 @@ import (
 )
 
 func RegisterRoutes(mux *http.ServeMux, hub *ws.Hub) {
+	// Ensure Wraps and LicensePlate folders exist on startup
+	ensureMediaFolders()
+
 	h := &handlers{hub: hub}
 
 	// Status & config
@@ -56,6 +59,24 @@ func RegisterRoutes(mux *http.ServeMux, hub *ws.Hub) {
 	mux.HandleFunc("GET /api/system/check-internet", h.checkInternet)
 	mux.HandleFunc("POST /api/system/update", h.runUpdate)
 	mux.HandleFunc("GET /api/system/version", h.getVersion)
+	mux.HandleFunc("POST /api/system/check-update", h.checkForUpdate)
+	mux.HandleFunc("GET /api/system/update-status", h.getUpdateStatus)
+
+	// User preferences
+	mux.HandleFunc("GET /api/config/preference", h.getPreference)
+	mux.HandleFunc("PUT /api/config/preference", h.setPreference)
+
+	// Block devices (for data drive selection)
+	mux.HandleFunc("GET /api/system/block-devices", h.listBlockDevices)
+
+	// Support chat (proxy to api.sentry-six.com)
+	mux.HandleFunc("GET /api/support/check", h.checkSupportAvailable)
+	mux.HandleFunc("POST /api/support/ticket", h.createSupportTicket)
+	mux.HandleFunc("POST /api/support/ticket/{id}/message", h.sendSupportMessage)
+	mux.HandleFunc("POST /api/support/ticket/{id}/media", h.uploadSupportMedia)
+	mux.HandleFunc("GET /api/support/ticket/{id}/messages", h.fetchSupportMessages)
+	mux.HandleFunc("POST /api/support/ticket/{id}/close", h.closeSupportTicket)
+	mux.HandleFunc("POST /api/support/ticket/{id}/mark-read", h.markSupportRead)
 }
 
 type handlers struct {

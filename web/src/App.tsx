@@ -8,6 +8,7 @@ import Files from "@/pages/Files"
 import Logs from "@/pages/Logs"
 import Settings from "@/pages/Settings"
 import Drives from "@/pages/Drives"
+import Support from "@/pages/Support"
 import { SetupWizard } from "@/components/setup/SetupWizard"
 
 type AppState = "loading" | "setup" | "configuring" | "ready"
@@ -104,6 +105,7 @@ export default function App() {
           <Route path="/files" element={<Files />} />
           <Route path="/logs" element={<Logs />} />
           <Route path="/drives" element={<Drives />} />
+          <Route path="/support" element={<Support />} />
           <Route path="/settings" element={<Settings />} />
         </Route>
       </Routes>

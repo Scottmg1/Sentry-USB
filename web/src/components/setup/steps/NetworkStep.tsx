@@ -51,6 +51,7 @@ function Field({
 interface DetectedWifi {
   current: { ssid: string; connected: boolean; source: string }
   config_ssid: string
+  wlan_country?: string
 }
 
 export function NetworkStep({ data, onChange, onBatchChange }: StepProps) {
@@ -74,6 +75,10 @@ export function NetworkStep({ data, onChange, onBatchChange }: StepProps) {
           if (ssid) {
             onChange("SSID", ssid)
           }
+        }
+        // Pre-fill WLAN country if detected and not already set
+        if (!data.WPA_COUNTRY && d.wlan_country) {
+          onChange("WPA_COUNTRY", d.wlan_country)
         }
       })
       .catch(() => {})

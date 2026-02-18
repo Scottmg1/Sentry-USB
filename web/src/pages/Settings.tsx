@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import {
   Settings as SettingsIcon,
   RotateCcw,
@@ -43,6 +43,12 @@ function ActionButton({
     setMsg("")
     try {
       const result = await onClick()
+      if (result === "confirm") {
+        // Special case: action needs confirmation, don't show success
+        setState("idle")
+        setMsg("")
+        return
+      }
       setState("success")
       setMsg(typeof result === "string" ? result : successMessage)
       setTimeout(() => { setState("idle"); setMsg("") }, 5000)
@@ -95,14 +101,185 @@ function ActionButton({
   )
 }
 
+function SpeedTestButton() {
+  const [running, setRunning] = useState(false)
+  const [results, setResults] = useState<string[]>([])
+  const cancelRef = useRef(false)
+
+  async function runOnce(): Promise<string> {
+    const start = Date.now()
+    const res = await fetch("/api/system/speedtest")
+    if (!res.ok) throw new Error("Speed test failed")
+    const blob = await res.blob()
+    const elapsed = (Date.now() - start) / 1000
+    const mbps = ((blob.size * 8) / elapsed / 1_000_000).toFixed(1)
+    return `${mbps} Mbps (${(blob.size / 1_000_000).toFixed(1)} MB in ${elapsed.toFixed(1)}s)`
+  }
+
+  async function startTest() {
+    setRunning(true)
+    cancelRef.current = false
+    setResults([])
+    let round = 0
+    while (!cancelRef.current) {
+      round++
+      try {
+        const result = await runOnce()
+        if (cancelRef.current) break
+        setResults(prev => [...prev.slice(-4), `#${round}: ${result}`])
+      } catch {
+        if (cancelRef.current) break
+        setResults(prev => [...prev.slice(-4), `#${round}: Error`])
+        break
+      }
+    }
+    setRunning(false)
+  }
+
+  function stopTest() {
+    cancelRef.current = true
+  }
+
+  return (
+    <button
+      onClick={running ? stopTest : startTest}
+      className="glass-card glass-card-hover flex items-start gap-3 p-4 text-left transition-colors"
+    >
+      <div className={cn(
+        "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-colors",
+        running ? "bg-amber-500/15 text-amber-400" : "bg-blue-500/15 text-blue-400"
+      )}>
+        {running ? <Loader2 className="h-5 w-5 animate-spin" /> : <Gauge className="h-5 w-5" />}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-slate-200">
+          {running ? "Stop Speed Test" : "Network Speed Test"}
+        </p>
+        {results.length > 0 ? (
+          <div className="mt-0.5 space-y-0.5">
+            {results.map((r, i) => (
+              <p key={i} className={cn("text-xs", i === results.length - 1 ? "text-blue-400 font-medium" : "text-slate-600")}>{r}</p>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-0.5 text-xs text-slate-500">
+            {running ? "Running..." : "Runs continuously until stopped"}
+          </p>
+        )}
+      </div>
+    </button>
+  )
+}
+
 type UpdateStatus = "idle" | "checking" | "downloading" | "installing" | "updating_scripts" | "restarting" | "done" | "error"
+
+interface RawConfigEntry {
+  value: string
+  active: boolean
+}
+
+function RawConfigEditor({ config, onClose }: { config: Record<string, RawConfigEntry>; onClose: () => void }) {
+  const [entries, setEntries] = useState<Record<string, { value: string; active: boolean }>>(() => {
+    const e: Record<string, { value: string; active: boolean }> = {}
+    for (const [k, v] of Object.entries(config)) {
+      e[k] = { value: v.value, active: v.active }
+    }
+    return e
+  })
+  const [saving, setSaving] = useState(false)
+  const [saveMsg, setSaveMsg] = useState<string | null>(null)
+  const [newKey, setNewKey] = useState("")
+  const [newVal, setNewVal] = useState("")
+
+  const sortedKeys = Object.keys(entries).sort()
+
+  async function handleSave() {
+    setSaving(true)
+    setSaveMsg(null)
+    try {
+      const configData: Record<string, string> = {}
+      for (const [k, v] of Object.entries(entries)) {
+        if (v.active) configData[k] = v.value
+      }
+      const res = await fetch("/api/setup/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(configData),
+      })
+      if (!res.ok) throw new Error("Failed to save")
+      setSaveMsg("Saved successfully")
+      setTimeout(() => setSaveMsg(null), 3000)
+    } catch (err) {
+      setSaveMsg(err instanceof Error ? err.message : "Save failed")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function addEntry() {
+    if (!newKey.trim()) return
+    setEntries(prev => ({ ...prev, [newKey.trim()]: { value: newVal, active: true } }))
+    setNewKey("")
+    setNewVal("")
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="glass-card relative flex h-[85vh] w-full max-w-3xl flex-col overflow-hidden">
+        <div className="flex shrink-0 items-center justify-between border-b border-white/5 px-6 py-4">
+          <h2 className="text-lg font-semibold text-slate-100">Raw Configuration</h2>
+          <div className="flex gap-2">
+            {saveMsg && <span className={cn("text-xs self-center", saveMsg.includes("success") ? "text-emerald-400" : "text-red-400")}>{saveMsg}</span>}
+            <button onClick={handleSave} disabled={saving}
+              className="rounded-lg bg-blue-500 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-600 disabled:opacity-50">
+              {saving ? "Saving..." : "Save"}
+            </button>
+            <button onClick={onClose}
+              className="rounded-lg px-3 py-1.5 text-sm text-slate-500 hover:bg-white/5 hover:text-slate-300">Close</button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto px-6 py-4">
+          <div className="space-y-1">
+            {sortedKeys.map(key => (
+              <div key={key} className="flex items-center gap-2 rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2">
+                <input type="checkbox" checked={entries[key].active}
+                  onChange={e => setEntries(prev => ({ ...prev, [key]: { ...prev[key], active: e.target.checked } }))}
+                  className="accent-blue-500" />
+                <span className={cn("w-48 shrink-0 truncate font-mono text-xs", entries[key].active ? "text-blue-400" : "text-slate-600")}>{key}</span>
+                <input type="text" value={entries[key].value}
+                  onChange={e => setEntries(prev => ({ ...prev, [key]: { ...prev[key], value: e.target.value } }))}
+                  className="flex-1 rounded border border-white/10 bg-white/5 px-2 py-1 font-mono text-xs text-slate-200 outline-none focus:border-blue-500/50" />
+                <button onClick={() => setEntries(prev => { const n = { ...prev }; delete n[key]; return n })}
+                  className="text-xs text-slate-600 hover:text-red-400">✕</button>
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 flex items-center gap-2">
+            <input type="text" value={newKey} onChange={e => setNewKey(e.target.value)}
+              placeholder="NEW_KEY" className="w-48 rounded border border-white/10 bg-white/5 px-2 py-1 font-mono text-xs text-slate-200 placeholder-slate-600 outline-none focus:border-blue-500/50" />
+            <input type="text" value={newVal} onChange={e => setNewVal(e.target.value)}
+              placeholder="value" className="flex-1 rounded border border-white/10 bg-white/5 px-2 py-1 font-mono text-xs text-slate-200 placeholder-slate-600 outline-none focus:border-blue-500/50" />
+            <button onClick={addEntry}
+              className="rounded bg-blue-500/20 px-3 py-1 text-xs font-medium text-blue-400 hover:bg-blue-500/30">Add</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export default function Settings() {
   const [confirmReboot, setConfirmReboot] = useState(false)
   const [wizardOpen, setWizardOpen] = useState(false)
+  const [wizardInitialData, setWizardInitialData] = useState<Record<string, string> | undefined>(undefined)
+  const [rawConfigOpen, setRawConfigOpen] = useState(false)
+  const [rawConfig, setRawConfig] = useState<Record<string, RawConfigEntry> | null>(null)
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>("idle")
   const [updateError, setUpdateError] = useState<string | null>(null)
   const [version, setVersion] = useState<string | null>(null)
+  const [piConfig, setPiConfig] = useState<{ uses_ble: string } | null>(null)
+  const [updateAvailable, setUpdateAvailable] = useState<{ latest_version: string; release_url: string; release_notes: string } | null>(null)
+  const [autoUpdateEnabled, setAutoUpdateEnabled] = useState(true)
 
   useEffect(() => {
     fetch("/api/system/version")
@@ -110,6 +287,27 @@ export default function Settings() {
       .then(data => setVersion(data.version || "unknown"))
       .catch(() => setVersion("unknown"))
   }, [updateStatus])
+
+  useEffect(() => {
+    fetch("/api/config")
+      .then(r => r.json())
+      .then(data => setPiConfig(data))
+      .catch(() => {})
+    // Check for cached update status
+    fetch("/api/system/update-status")
+      .then(r => r.json())
+      .then(data => {
+        if (data.update_available) {
+          setUpdateAvailable({ latest_version: data.latest_version, release_url: data.release_url, release_notes: data.release_notes })
+        }
+      })
+      .catch(() => {})
+    // Load auto-update preference
+    fetch("/api/config/preference?key=auto_update_check")
+      .then(r => r.json())
+      .then(data => setAutoUpdateEnabled(data.value !== "disabled"))
+      .catch(() => {})
+  }, [])
 
   async function handleUpdate() {
     setUpdateStatus("checking")
@@ -164,10 +362,11 @@ export default function Settings() {
     if (!confirmReboot) {
       setConfirmReboot(true)
       setTimeout(() => setConfirmReboot(false), 10000)
-      return
+      return "confirm"
     }
     fetch("/api/system/reboot", { method: "POST" })
     setConfirmReboot(false)
+    return "Rebooting..."
   }
 
   return (
@@ -194,12 +393,58 @@ export default function Settings() {
               setup experience.
             </p>
           </div>
-          <button
-            onClick={() => setWizardOpen(true)}
-            className="shrink-0 rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-600"
-          >
-            Open Wizard
-          </button>
+          <div className="flex shrink-0 gap-2">
+            <button
+              onClick={async () => {
+                try {
+                  const res = await fetch("/api/setup/config")
+                  if (!res.ok) throw new Error("Failed")
+                  const data = await res.json()
+                  // Build conf file content
+                  let content = "# sentryusb.conf - exported from SentryUSB UI\n"
+                  for (const [k, v] of Object.entries(data)) {
+                    const entry = v as { value: string; active: boolean }
+                    if (entry.active) {
+                      content += `export ${k}='${entry.value}'\n`
+                    } else {
+                      content += `# export ${k}='${entry.value}'\n`
+                    }
+                  }
+                  const blob = new Blob([content], { type: "text/plain" })
+                  const url = URL.createObjectURL(blob)
+                  const a = document.createElement("a")
+                  a.href = url
+                  a.download = "sentryusb.conf"
+                  a.click()
+                  URL.revokeObjectURL(url)
+                } catch { /* ignore */ }
+              }}
+              className="shrink-0 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-slate-300 transition-colors hover:bg-white/10"
+            >
+              <Download className="mr-1.5 inline h-3.5 w-3.5" />
+              Export Config
+            </button>
+            <button
+              onClick={async () => {
+                try {
+                  const res = await fetch("/api/setup/config")
+                  if (res.ok) {
+                    const data = await res.json()
+                    const flat: Record<string, string> = {}
+                    for (const [k, v] of Object.entries(data)) {
+                      const entry = v as { value: string; active: boolean }
+                      if (entry.active) flat[k] = entry.value
+                    }
+                    setWizardInitialData(flat)
+                  }
+                } catch { /* use empty data */ }
+                setWizardOpen(true)
+              }}
+              className="shrink-0 rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-600"
+            >
+              Open Wizard
+            </button>
+          </div>
         </div>
       </div>
 
@@ -229,32 +474,49 @@ export default function Settings() {
               if (!res.ok) throw new Error("Failed to trigger sync")
             }}
           />
-          <ActionButton
-            icon={Gauge}
-            label="Network Speed Test"
-            description="Test the network throughput"
-            onClick={async () => {
-              const start = Date.now()
-              const res = await fetch("/api/system/speedtest")
-              if (!res.ok) throw new Error("Speed test failed")
-              const blob = await res.blob()
-              const elapsed = (Date.now() - start) / 1000
-              const mbps = ((blob.size * 8) / elapsed / 1_000_000).toFixed(1)
-              return `${mbps} Mbps (${(blob.size / 1_000_000).toFixed(1)} MB in ${elapsed.toFixed(1)}s)`
-            }}
-          />
-          <ActionButton
-            icon={Bluetooth}
-            label="Pair BLE with Car"
-            description="Initiate Bluetooth Low Energy pairing"
-            successMessage="BLE pairing initiated"
-            onClick={async () => {
-              const res = await fetch("/api/system/ble-pair", { method: "POST" })
-              if (!res.ok) throw new Error("Failed to initiate BLE pairing")
-            }}
-          />
+          <SpeedTestButton />
+          {piConfig?.uses_ble === "yes" && (
+            <ActionButton
+              icon={Bluetooth}
+              label="Pair BLE with Car"
+              description="Initiate Bluetooth Low Energy pairing"
+              successMessage="BLE pairing initiated"
+              onClick={async () => {
+                const res = await fetch("/api/system/ble-pair", { method: "POST" })
+                if (!res.ok) throw new Error("Failed to initiate BLE pairing")
+              }}
+            />
+          )}
         </div>
       </div>
+
+      {/* Update available banner */}
+      {updateAvailable && updateStatus === "idle" && (
+        <div className="glass-card overflow-hidden border border-amber-500/20 bg-amber-500/5">
+          <div className="flex items-center gap-4 p-5">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-amber-500/20">
+              <Download className="h-6 w-6 text-amber-400" />
+            </div>
+            <div className="flex-1">
+              <h2 className="text-lg font-semibold text-amber-200">
+                Update Available: {updateAvailable.latest_version}
+              </h2>
+              <p className="mt-0.5 text-sm text-slate-400">
+                A new version of SentryUSB is ready to install.
+                {" "}
+                <a href={updateAvailable.release_url} target="_blank" rel="noopener noreferrer"
+                  className="text-blue-400 hover:text-blue-300 underline">View on GitHub</a>
+              </p>
+            </div>
+            <button
+              onClick={handleUpdate}
+              className="shrink-0 rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-600"
+            >
+              Install Update
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Update SentryUSB */}
       <div className="glass-card overflow-hidden">
@@ -298,6 +560,26 @@ export default function Settings() {
             </button>
           </div>
         </div>
+        {/* Auto-update check toggle */}
+        <div className="border-t border-white/5 px-5 py-3">
+          <label className="flex cursor-pointer items-center justify-between">
+            <span className="text-sm text-slate-400">Automatically check for updates after each archive</span>
+            <input
+              type="checkbox"
+              checked={autoUpdateEnabled}
+              onChange={async (e) => {
+                const enabled = e.target.checked
+                setAutoUpdateEnabled(enabled)
+                await fetch("/api/config/preference", {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ key: "auto_update_check", value: enabled ? "enabled" : "disabled" }),
+                }).catch(() => {})
+              }}
+              className="h-4 w-4 rounded border-white/20 bg-white/5 accent-blue-500"
+            />
+          </label>
+        </div>
       </div>
 
       {/* System */}
@@ -320,13 +602,15 @@ export default function Settings() {
           <ActionButton
             icon={SettingsIcon}
             label="Advanced Settings"
-            description="Open raw configuration file in browser"
+            description="View and edit raw configuration file"
             onClick={async () => {
               const res = await fetch("/api/setup/config")
               if (!res.ok) throw new Error("Failed to load config")
-              setWizardOpen(true)
+              const data = await res.json()
+              setRawConfig(data)
+              setRawConfigOpen(true)
+              return "confirm"
             }}
-            successMessage="Opening wizard..."
           />
         </div>
       </div>
@@ -364,7 +648,12 @@ export default function Settings() {
 
       {/* Setup Wizard Modal */}
       {wizardOpen && (
-        <SetupWizard onClose={() => setWizardOpen(false)} />
+        <SetupWizard initialData={wizardInitialData} onClose={() => { setWizardOpen(false); setWizardInitialData(undefined) }} />
+      )}
+
+      {/* Raw Config Editor Modal */}
+      {rawConfigOpen && rawConfig && (
+        <RawConfigEditor config={rawConfig} onClose={() => { setRawConfigOpen(false); setRawConfig(null) }} />
       )}
     </div>
   )

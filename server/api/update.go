@@ -189,6 +189,74 @@ fi
 	writeJSON(w, http.StatusOK, map[string]string{"status": "update_started"})
 }
 
+// checkForUpdate checks GitHub for a newer release and stores the result
+func (h *handlers) checkForUpdate(w http.ResponseWriter, r *http.Request) {
+	currentVersion := ""
+	if data, err := os.ReadFile("/opt/sentryusb/version"); err == nil {
+		currentVersion = strings.TrimSpace(string(data))
+	}
+
+	tagOutput, tagErr := shell.RunWithTimeout(10*time.Second, "curl", "-sfL", "--max-time", "8",
+		fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", updateRepo))
+	if tagErr != nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"update_available": false,
+			"error":            "Cannot reach GitHub",
+		})
+		return
+	}
+
+	var release struct {
+		TagName string `json:"tag_name"`
+		HTMLURL string `json:"html_url"`
+		Body    string `json:"body"`
+	}
+	if err := json.Unmarshal([]byte(tagOutput), &release); err != nil || release.TagName == "" {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"update_available": false,
+			"error":            "Failed to parse release info",
+		})
+		return
+	}
+
+	updateAvailable := release.TagName != currentVersion && currentVersion != "" && currentVersion != "dev"
+
+	// Store the check result for the Settings UI to read
+	updateInfo := map[string]interface{}{
+		"update_available":  updateAvailable,
+		"current_version":   currentVersion,
+		"latest_version":    release.TagName,
+		"release_url":       release.HTMLURL,
+		"release_notes":     release.Body,
+		"checked_at":        time.Now().UTC().Format(time.RFC3339),
+	}
+	if data, err := json.Marshal(updateInfo); err == nil {
+		os.WriteFile("/tmp/sentryusb-update-check.json", data, 0644)
+	}
+
+	writeJSON(w, http.StatusOK, updateInfo)
+}
+
+// getUpdateStatus returns the last cached update check result
+func (h *handlers) getUpdateStatus(w http.ResponseWriter, r *http.Request) {
+	data, err := os.ReadFile("/tmp/sentryusb-update-check.json")
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"update_available": false,
+			"checked_at":       "",
+		})
+		return
+	}
+	var result map[string]interface{}
+	if err := json.Unmarshal(data, &result); err != nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"update_available": false,
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
 func (h *handlers) getVersion(w http.ResponseWriter, r *http.Request) {
 	version := ""
 	if data, err := os.ReadFile("/opt/sentryusb/version"); err == nil {
