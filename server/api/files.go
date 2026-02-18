@@ -23,8 +23,8 @@ type fileEntry struct {
 // Allowed base paths for file operations (security)
 var allowedBases = []string{
 	"/mutable/TeslaCam",
-	"/var/www/html/fs/Wraps",
-	"/var/www/html/fs/LicensePlate",
+	"/mutable/Wraps",
+	"/mutable/LicensePlate",
 	"/var/www/html/fs/Music",
 	"/var/www/html/fs/LightShow",
 	"/var/www/html/fs/Boombox",
@@ -247,7 +247,10 @@ func (h *handlers) uploadFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Ensure parent directory exists (e.g. user uploading to Wraps/LicensePlate for first time)
-	os.MkdirAll(filepath.Dir(cleanPath), 0755)
+	if err := os.MkdirAll(filepath.Dir(cleanPath), 0755); err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to create directory: "+err.Error())
+		return
+	}
 
 	dst, err := os.Create(cleanPath)
 	if err != nil {

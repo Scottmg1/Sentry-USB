@@ -32,8 +32,8 @@ interface DriveTab {
 
 const ALL_DRIVES: DriveTab[] = [
   { id: "TeslaCam", base: "/mutable/TeslaCam", icon: "cam" },
-  { id: "Wraps", base: "/var/www/html/fs/Wraps", icon: "wrap" },
-  { id: "License Plates", base: "/var/www/html/fs/LicensePlate", icon: "plate" },
+  { id: "Wraps", base: "/mutable/Wraps", icon: "wrap" },
+  { id: "License Plates", base: "/mutable/LicensePlate", icon: "plate" },
   { id: "Music", base: "/var/www/html/fs/Music", icon: "media" },
   { id: "LightShow", base: "/var/www/html/fs/LightShow", icon: "media" },
   { id: "Boombox", base: "/var/www/html/fs/Boombox", icon: "media" },

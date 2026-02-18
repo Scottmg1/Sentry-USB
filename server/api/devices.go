@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -111,13 +112,28 @@ func (h *handlers) listBlockDevices(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, devices)
 }
 
-// ensureMediaFolders creates Wraps and LicensePlate folders if they don't exist
+// ensureMediaFolders creates media folders if they don't exist.
+// Wraps and LicensePlate are always created (user-uploadable).
+// Music, LightShow, and Boombox are only created if configured.
 func ensureMediaFolders() {
+	// Always create user-uploadable folders
 	dirs := []string{
-		"/var/www/html/fs/Wraps",
-		"/var/www/html/fs/LicensePlate",
+		"/mutable/Wraps",
+		"/mutable/LicensePlate",
+	}
+	// Only create optional media folders if their backing files exist
+	if fileExists("/backingfiles/music_disk.bin") {
+		dirs = append(dirs, "/var/www/html/fs/Music")
+	}
+	if fileExists("/backingfiles/lightshow_disk.bin") {
+		dirs = append(dirs, "/var/www/html/fs/LightShow")
+	}
+	if fileExists("/backingfiles/boombox_disk.bin") {
+		dirs = append(dirs, "/var/www/html/fs/Boombox")
 	}
 	for _, d := range dirs {
-		os.MkdirAll(d, 0755)
+		if err := os.MkdirAll(d, 0755); err != nil {
+			log.Printf("Warning: could not create %s: %v", d, err)
+		}
 	}
 }
