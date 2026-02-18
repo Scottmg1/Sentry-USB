@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Wifi, Radio, CheckCircle, AlertCircle, RefreshCw, Pencil } from "lucide-react"
+import { Wifi, Radio, CheckCircle, AlertCircle, RefreshCw, Pencil, ShieldCheck } from "lucide-react"
 import type { StepProps } from "../SetupWizard"
 import { SecretInput } from "../SecretInput"
 import { cn } from "@/lib/utils"
@@ -60,6 +60,8 @@ export function NetworkStep({ data, onChange, onBatchChange }: StepProps) {
   const [detected, setDetected] = useState<DetectedWifi | null>(null)
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(false)
+  // When true, skip WiFi config entirely — keep current connection untouched
+  const [skipWifi, setSkipWifi] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -70,11 +72,18 @@ export function NetworkStep({ data, onChange, onBatchChange }: StepProps) {
         if (cancelled) return
         setDetected(d)
 
-        // Pre-fill SSID: prefer the actually connected SSID over config file value
-        if (!data.SSID) {
-          const ssid = d.current.ssid || d.config_ssid
-          if (ssid) {
-            onChange("SSID", ssid)
+        // If already connected to WiFi, default to skip mode
+        if (d.current.connected && d.current.ssid) {
+          setSkipWifi(true)
+          // Clear SSID/WIFIPASS so they don't get written to the conf
+          onBatchChange({ SSID: "", WIFIPASS: "" })
+        } else {
+          // Pre-fill SSID: prefer the actually connected SSID over config file value
+          if (!data.SSID) {
+            const ssid = d.current.ssid || d.config_ssid
+            if (ssid) {
+              onChange("SSID", ssid)
+            }
           }
         }
         // Pre-fill WLAN country if detected and not already set
@@ -92,7 +101,7 @@ export function NetworkStep({ data, onChange, onBatchChange }: StepProps) {
   const isConnected = detected?.current.connected ?? false
 
   // Show the detected banner if we have a detected SSID and user isn't manually editing
-  const showDetectedBanner = !loading && detectedSSID && !editing
+  const showDetectedBanner = !loading && detectedSSID && !editing && !skipWifi
 
   return (
     <div className="space-y-6">
@@ -110,6 +119,40 @@ export function NetworkStep({ data, onChange, onBatchChange }: StepProps) {
           <div className="flex items-center gap-2 rounded-lg border border-white/5 bg-white/[0.02] p-3">
             <RefreshCw className="h-4 w-4 animate-spin text-slate-500" />
             <p className="text-sm text-slate-500">Detecting WiFi configuration...</p>
+          </div>
+        )}
+
+        {/* Skip WiFi banner — shown when already connected and user chose to keep current */}
+        {!loading && skipWifi && isConnected && (
+          <div className="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <ShieldCheck className="h-5 w-5 text-emerald-400" />
+                <div>
+                  <p className="text-sm font-medium text-slate-200">
+                    Keeping current WiFi connection
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    Connected to: <span className="font-medium text-slate-300">{detectedSSID}</span>
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Setup will not modify your WiFi configuration.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setSkipWifi(false)
+                  setEditing(true)
+                  // Pre-fill with detected SSID so user can adjust
+                  onChange("SSID", detectedSSID)
+                }}
+                className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-white/10"
+              >
+                <Pencil className="h-3 w-3" />
+                Configure different WiFi
+              </button>
+            </div>
           </div>
         )}
 
@@ -152,7 +195,7 @@ export function NetworkStep({ data, onChange, onBatchChange }: StepProps) {
         )}
 
         {/* WiFi fields — shown if no detected wifi, or user clicks Change, or loading failed */}
-        {(!showDetectedBanner || editing) && !loading && (
+        {(!showDetectedBanner || editing) && !loading && !skipWifi && (
           <div className="grid gap-3 sm:grid-cols-2">
             <Field
               label="SSID"
