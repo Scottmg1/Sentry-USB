@@ -56,30 +56,38 @@ func getFingerprint() string {
 	return cachedFingerprint
 }
 
-// sendTelemetry fires and forgets a telemetry POST to the support server.
-func sendTelemetry(currentVersion string, updateAvailable bool, newVersion string) {
+// doSendTelemetry performs the actual telemetry POST (blocking).
+func doSendTelemetry(currentVersion string, updateAvailable bool, newVersion string) {
 	fp := getFingerprint()
 	if fp == "" {
 		return
 	}
-	go func() {
-		payload, _ := json.Marshal(map[string]interface{}{
-			"fingerprint":      fp,
-			"current_version":  currentVersion,
-			"update_available": updateAvailable,
-			"new_version":      newVersion,
-			"arch":             runtime.GOARCH,
-			"model":            getSBCModel(),
-		})
-		client := &http.Client{Timeout: 10 * time.Second}
-		resp, err := client.Post(telemetryURL, "application/json", bytes.NewReader(payload))
-		if err != nil {
-			log.Printf("[telemetry] Failed to send: %v", err)
-			return
-		}
-		resp.Body.Close()
-		log.Printf("[telemetry] Sent (status %d)", resp.StatusCode)
-	}()
+	payload, _ := json.Marshal(map[string]interface{}{
+		"fingerprint":      fp,
+		"current_version":  currentVersion,
+		"update_available": updateAvailable,
+		"new_version":      newVersion,
+		"arch":             runtime.GOARCH,
+		"model":            getSBCModel(),
+	})
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Post(telemetryURL, "application/json", bytes.NewReader(payload))
+	if err != nil {
+		log.Printf("[telemetry] Failed to send: %v", err)
+		return
+	}
+	resp.Body.Close()
+	log.Printf("[telemetry] Sent (status %d)", resp.StatusCode)
+}
+
+// sendTelemetry fires and forgets a telemetry POST to the support server.
+func sendTelemetry(currentVersion string, updateAvailable bool, newVersion string) {
+	go doSendTelemetry(currentVersion, updateAvailable, newVersion)
+}
+
+// sendTelemetrySync sends telemetry and blocks until complete.
+func sendTelemetrySync(currentVersion string, updateAvailable bool, newVersion string) {
+	doSendTelemetry(currentVersion, updateAvailable, newVersion)
 }
 
 const updateRepo = "Scottmg1/Sentry-USB"
@@ -139,6 +147,12 @@ func (h *handlers) runUpdate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// 2b. Read current version BEFORE updating (for before/after telemetry)
+		oldVersion := ""
+		if data, verErr := os.ReadFile("/opt/sentryusb/version"); verErr == nil {
+			oldVersion = strings.TrimSpace(string(data))
+		}
+
 		// 3. Remount filesystem as read-write
 		broadcast("remounting", "Remounting filesystem...")
 		shell.Run("bash", "-c", "/root/bin/remountfs_rw")
@@ -167,6 +181,11 @@ func (h *handlers) runUpdate(w http.ResponseWriter, r *http.Request) {
 			if json.Unmarshal([]byte(tagOutput), &release) == nil && release.TagName != "" {
 				versionTag = release.TagName
 			}
+		}
+
+		// 5b. Send "before update" telemetry with old version so Discord shows the update is starting
+		if oldVersion != "" && oldVersion != "dev" && oldVersion != "unknown" {
+			sendTelemetry(oldVersion, true, versionTag)
 		}
 
 		// 6. Replace the running binary
@@ -248,8 +267,8 @@ fi
 			log.Printf("[update] Shell scripts updated from %s", scriptRef)
 		}
 
-		// Send telemetry before restarting
-		sendTelemetry(versionTag, false, "")
+		// Send telemetry: "updated to new version" (synchronous so it completes before restart)
+		sendTelemetrySync(versionTag, false, "")
 
 		broadcast("restarting", "Restarting SentryUSB service...")
 

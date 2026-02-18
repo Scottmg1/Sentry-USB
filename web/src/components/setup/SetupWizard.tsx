@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react"
 import { ChevronLeft, ChevronRight, Check, Loader2, AlertCircle, CheckCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { SetupProgress } from "./SetupProgress"
 import { WelcomeStep } from "./steps/WelcomeStep"
 import { NetworkStep } from "./steps/NetworkStep"
 import { StorageStep } from "./steps/StorageStep"
@@ -199,6 +200,7 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
                   The full process may take 10-20 minutes.
                 </p>
               </div>
+              <SetupProgress />
             </>
           ) : phase === "complete" ? (
             <>

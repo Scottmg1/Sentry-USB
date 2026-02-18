@@ -20,6 +20,13 @@ var setupFinishedPaths = []string{
 	"/boot/SENTRYUSB_SETUP_FINISHED",
 }
 
+// Setup started marker paths (in priority order)
+var setupStartedPaths = []string{
+	"/sentryusb/SENTRYUSB_SETUP_STARTED",
+	"/boot/firmware/SENTRYUSB_SETUP_STARTED",
+	"/boot/SENTRYUSB_SETUP_STARTED",
+}
+
 var setupRunning struct {
 	sync.Mutex
 	running bool
@@ -34,13 +41,30 @@ func isSetupFinished() bool {
 	return false
 }
 
+func isSetupStarted() bool {
+	for _, p := range setupStartedPaths {
+		if _, err := os.Stat(p); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
 func (h *handlers) getSetupStatus(w http.ResponseWriter, r *http.Request) {
 	setupRunning.Lock()
 	running := setupRunning.running
 	setupRunning.Unlock()
 
+	finished := isSetupFinished()
+
+	// If setup was started (marker file on disk) but not finished,
+	// treat it as running even if the in-memory flag was lost during reboot.
+	if !running && !finished && isSetupStarted() {
+		running = true
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"setup_finished": isSetupFinished(),
+		"setup_finished": finished,
 		"setup_running":  running,
 	})
 }

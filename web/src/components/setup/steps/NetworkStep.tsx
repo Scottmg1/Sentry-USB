@@ -3,6 +3,7 @@ import { Wifi, Radio, CheckCircle, AlertCircle, RefreshCw, Pencil } from "lucide
 import type { StepProps } from "../SetupWizard"
 import { SecretInput } from "../SecretInput"
 import { cn } from "@/lib/utils"
+import { WIFI_COUNTRIES } from "../wifiCountries"
 
 function Field({
   label,
@@ -189,38 +190,11 @@ export function NetworkStep({ data, onChange, onBatchChange }: StepProps) {
           <select
             value={data.WPA_COUNTRY ?? "US"}
             onChange={(e) => onChange("WPA_COUNTRY", e.target.value)}
-            className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/25"
+            className="w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/25 [&>option]:bg-slate-900 [&>option]:text-slate-100"
           >
-            <option value="US">US — United States</option>
-            <option value="GB">GB — United Kingdom</option>
-            <option value="CA">CA — Canada</option>
-            <option value="AU">AU — Australia</option>
-            <option value="DE">DE — Germany</option>
-            <option value="FR">FR — France</option>
-            <option value="NL">NL — Netherlands</option>
-            <option value="IT">IT — Italy</option>
-            <option value="ES">ES — Spain</option>
-            <option value="SE">SE — Sweden</option>
-            <option value="NO">NO — Norway</option>
-            <option value="DK">DK — Denmark</option>
-            <option value="FI">FI — Finland</option>
-            <option value="CH">CH — Switzerland</option>
-            <option value="AT">AT — Austria</option>
-            <option value="BE">BE — Belgium</option>
-            <option value="IE">IE — Ireland</option>
-            <option value="NZ">NZ — New Zealand</option>
-            <option value="JP">JP — Japan</option>
-            <option value="KR">KR — South Korea</option>
-            <option value="SG">SG — Singapore</option>
-            <option value="HK">HK — Hong Kong</option>
-            <option value="TW">TW — Taiwan</option>
-            <option value="IN">IN — India</option>
-            <option value="BR">BR — Brazil</option>
-            <option value="MX">MX — Mexico</option>
-            <option value="IL">IL — Israel</option>
-            <option value="AE">AE — UAE</option>
-            <option value="ZA">ZA — South Africa</option>
-            <option value="CN">CN — China</option>
+            {WIFI_COUNTRIES.map(([code, name]) => (
+              <option key={code} value={code}>{code} — {name}</option>
+            ))}
           </select>
           <p className="mt-1 text-xs text-slate-600">Required for WiFi to work on correct channels</p>
         </div>

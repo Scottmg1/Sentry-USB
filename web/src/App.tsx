@@ -10,6 +10,7 @@ import Settings from "@/pages/Settings"
 import Drives from "@/pages/Drives"
 import Support from "@/pages/Support"
 import { SetupWizard } from "@/components/setup/SetupWizard"
+import { SetupProgress } from "@/components/setup/SetupProgress"
 
 type AppState = "loading" | "setup" | "configuring" | "ready"
 
@@ -73,7 +74,7 @@ export default function App() {
             <Loader2 className="h-8 w-8 animate-spin text-blue-400" />
           </div>
           <div>
-            <h2 className="text-xl font-semibold text-slate-100">SentryUSB is Configuring</h2>
+            <h2 className="text-xl font-semibold text-slate-100">Setting Up SentryUSB</h2>
             <p className="mt-2 text-sm text-slate-400">
               Setup is in progress. The device will reboot several times — this is normal.
             </p>
@@ -82,6 +83,7 @@ export default function App() {
               Do not power off the device. This may take 10–20 minutes.
             </p>
           </div>
+          <SetupProgress />
         </div>
       </div>
     )

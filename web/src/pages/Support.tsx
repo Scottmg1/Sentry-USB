@@ -368,18 +368,31 @@ export default function Support() {
                   </span>
                 )}
                 {msg.attachments && msg.attachments.length > 0 && (
-                  <div className="mt-2 space-y-1">
-                    {msg.attachments.map((a, j) => (
-                      <a
-                        key={j}
-                        href={a.url?.startsWith("http") ? a.url : `https://api.sentry-six.com${a.url}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="block rounded bg-white/5 px-2 py-1 text-xs text-blue-400 hover:bg-white/10"
-                      >
-                        📎 {a.name}
-                      </a>
-                    ))}
+                  <div className="mt-2 space-y-2">
+                    {msg.attachments.map((a, j) => {
+                      const url = a.url?.startsWith("http") ? a.url : `https://api.sentry-six.com${a.url}`
+                      const isImage = a.type?.startsWith("image/") || /\.(png|jpe?g|gif|webp|svg)$/i.test(a.name)
+                      return isImage ? (
+                        <a key={j} href={url} target="_blank" rel="noopener noreferrer" className="block">
+                          <img
+                            src={url}
+                            alt={a.name}
+                            className="max-h-64 rounded-lg border border-white/10 object-contain"
+                            loading="lazy"
+                          />
+                        </a>
+                      ) : (
+                        <a
+                          key={j}
+                          href={url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block rounded bg-white/5 px-2 py-1 text-xs text-blue-400 hover:bg-white/10"
+                        >
+                          📎 {a.name}
+                        </a>
+                      )
+                    })}
                   </div>
                 )}
                 <p className="mt-1 text-[10px] text-slate-600">
