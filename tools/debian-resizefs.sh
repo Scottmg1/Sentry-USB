@@ -92,6 +92,16 @@ chmod +x /etc/initramfs-tools/scripts/init-premount/resize
 # Regenerate initrd
 update-initramfs -v -u -k "$(uname -r)"
 
+# On Bookworm the boot partition is /boot/firmware/, not /boot/.
+# Copy the updated initramfs there so the bootloader can find it.
+INITRD_NAME="initrd.img-$(uname -r)"
+if [ -L /sentryusb ]; then
+  BOOT_PART="$(readlink -f /sentryusb)"
+  if [ "/boot" != "${BOOT_PART}" ] && [ -e "/boot/${INITRD_NAME}" ]; then
+    cp "/boot/${INITRD_NAME}" "${BOOT_PART}/${INITRD_NAME}"
+  fi
+fi
+
 # Remove files
 rm -f /etc/initramfs-tools/hooks/resize2fs /etc/initramfs-tools/scripts/init-premount/resize
 

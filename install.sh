@@ -86,7 +86,12 @@ if [ "${1:-}" != "norootshrink" ] && [ "$unpart" -lt $(( (1<<30) * 32)) ]; then
 
     if [ "$partnumsectors" -le "$fsnumsectors" ]; then
         if [ -f "$marker" ]; then
-            error_exit "Previous resize attempt failed. Delete $marker before retrying."
+            if [ -t 0 ]; then
+                warn "Previous resize attempt failed. Retrying..."
+                rm -f "$marker"
+            else
+                error_exit "Previous resize attempt failed. Delete $marker before retrying."
+            fi
         fi
         touch "$marker"
 
@@ -103,14 +108,23 @@ if [ "${1:-}" != "norootshrink" ] && [ "$unpart" -lt $(( (1<<30) * 32)) ]; then
 		EOF
         chmod a+x /etc/rc.local
 
-        if [ ! -e "/boot/initrd.img-$(uname -r)" ]; then
+        INITRD_NAME="initrd.img-$(uname -r)"
+        # On Bookworm the boot partition is /boot/firmware/, not /boot/.
+        # The bootloader loads files relative to the boot partition, so the
+        # initramfs must live there, but update-initramfs writes to /boot/.
+        BOOT_PART="$(readlink -f /sentryusb)"
+        if [ ! -e "${BOOT_PART}/${INITRD_NAME}" ] && [ ! -e "/boot/${INITRD_NAME}" ]; then
             if [ -f /etc/os-release ] && grep -q Raspbian /etc/os-release && [ -e /sentryusb/config.txt ]; then
                 info "Temporarily switching Raspberry Pi OS to use initramfs"
                 update-initramfs -c -k "$(uname -r)"
-                echo "initramfs initrd.img-$(uname -r) followkernel # SENTRYUSB-REMOVE" >> /sentryusb/config.txt
+                echo "initramfs ${INITRD_NAME} followkernel # SENTRYUSB-REMOVE" >> /sentryusb/config.txt
             else
                 error_exit "Can't automatically shrink root partition for this OS, please shrink it manually before proceeding"
             fi
+        fi
+        # Ensure initramfs is on the boot partition where the bootloader can find it
+        if [ "/boot" != "${BOOT_PART}" ] && [ -e "/boot/${INITRD_NAME}" ]; then
+            cp "/boot/${INITRD_NAME}" "${BOOT_PART}/${INITRD_NAME}"
         fi
 
         {

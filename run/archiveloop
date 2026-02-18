@@ -876,11 +876,12 @@ logrotator &
 wifichecker &
 
 fix_errors_in_images
-# always remove files that fsck recoverd
-clean_cam_mount boot
 
 if has_cam_disk
 then
+  # always remove files that fsck recoverd
+  clean_cam_mount boot
+
   # don't need another fsck because fix_errors_in_images already did that
   /root/bin/make_snapshot.sh nofsck
 fi

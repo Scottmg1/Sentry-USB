@@ -140,6 +140,26 @@ func (h *handlers) runSetup(w http.ResponseWriter, r *http.Request) {
 			setupRunning.Unlock()
 		}()
 
+		// Remove setup markers so rc.local will actually re-run setup.
+		// Without this, rc.local sees SENTRYUSB_SETUP_FINISHED and exits
+		// immediately, making wizard re-runs a silent no-op.
+		for _, p := range setupFinishedPaths {
+			os.Remove(p)
+		}
+		for _, p := range setupStartedPaths {
+			os.Remove(p)
+		}
+		// Remove cached setup scripts so fresh versions are downloaded
+		for _, script := range []string{
+			"/root/bin/setup-sentryusb",
+			"/root/bin/setup-teslausb",
+			"/root/bin/envsetup.sh",
+		} {
+			os.Remove(script)
+		}
+		// Remove resize marker so a previous failed resize doesn't block setup
+		os.Remove("/root/RESIZE_ATTEMPTED")
+
 		h.hub.Broadcast("setup_status", map[string]string{"status": "running"})
 		log.Println("[setup] Running /etc/rc.local (SentryUSB setup boot-loop)")
 
