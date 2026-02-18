@@ -50,6 +50,16 @@ systemctl disable radxa-adbd radxa-usbnet &> /dev/null || true
 systemctl disable armbian-led-state &> /dev/null || true
 
 log_progress "Removing unwanted packages..."
+# Protect NetworkManager and WiFi-related packages from autoremove.
+# On non-Raspbian distros (e.g. DietPi), these may be auto-installed
+# dependencies that autoremove would purge, killing WiFi.
+for pkg in network-manager wpasupplicant wpa-supplicant ifupdown dhcpcd dhcpcd5 isc-dhcp-client firmware-brcm80211 firmware-realtek firmware-atheros firmware-iwlwifi firmware-misc-nonfree
+do
+  if dpkg -s "$pkg" &> /dev/null
+  then
+    apt-mark manual "$pkg" 2>/dev/null || true
+  fi
+done
 apt-get remove -y --force-yes --purge triggerhappy logrotate dphys-swapfile
 apt-get -y --force-yes autoremove --purge
 # Replace log management with busybox (use logread if needed)
@@ -98,12 +108,42 @@ then
   sed -i 's/Before=.*/After=mutable.mount/' /lib/systemd/system/fake-hwclock.service
 fi
 
-if [ -d /var/lib/NetworkManager/ ] && [ -n "$AP_SSID" ]
+if [ -d /var/lib/NetworkManager/ ] && [ ! -L /var/lib/NetworkManager ]
 then
   log_progress "Moving /var/lib/NetworkManager to mutable"
   mkdir -p /mutable/var/lib/
   mv /var/lib/NetworkManager /mutable/var/lib/
   ln -s /mutable/var/lib/NetworkManager/ /var/lib/NetworkManager
+fi
+
+# Also move NetworkManager connection profiles to mutable so WiFi
+# connections persist on a read-only root filesystem
+if [ -d /etc/NetworkManager/system-connections ] && [ ! -L /etc/NetworkManager/system-connections ]
+then
+  log_progress "Moving NetworkManager connection profiles to mutable"
+  mkdir -p /mutable/etc/NetworkManager
+  cp -a /etc/NetworkManager/system-connections /mutable/etc/NetworkManager/
+  rm -rf /etc/NetworkManager/system-connections
+  ln -s /mutable/etc/NetworkManager/system-connections /etc/NetworkManager/system-connections
+fi
+
+# Ensure DHCP lease directories are writable on read-only root.
+# Without this, DHCP clients can authenticate WiFi but never get an IP.
+if [ -d /var/lib/dhcp ] && [ ! -L /var/lib/dhcp ]
+then
+  log_progress "Moving DHCP lease directory to mutable"
+  mkdir -p /mutable/var/lib/dhcp
+  cp -a /var/lib/dhcp/* /mutable/var/lib/dhcp/ 2>/dev/null || true
+  rm -rf /var/lib/dhcp
+  ln -s /mutable/var/lib/dhcp /var/lib/dhcp
+fi
+if [ -d /var/lib/dhcpcd ] && [ ! -L /var/lib/dhcpcd ]
+then
+  log_progress "Moving dhcpcd lease directory to mutable"
+  mkdir -p /mutable/var/lib/dhcpcd
+  cp -a /var/lib/dhcpcd/* /mutable/var/lib/dhcpcd/ 2>/dev/null || true
+  rm -rf /var/lib/dhcpcd
+  ln -s /mutable/var/lib/dhcpcd /var/lib/dhcpcd
 fi
 
 # Create a configs directory for others to use

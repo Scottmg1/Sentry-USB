@@ -56,11 +56,19 @@ then
   PARTITION_PREFIX=$(partition_prefix_for "$DATA_DRIVE")
   P1="${DATA_DRIVE}${PARTITION_PREFIX}1"
   P2="${DATA_DRIVE}${PARTITION_PREFIX}2"
-  # Check if backingfiles and mutable partitions exist
-  if [ /dev/disk/by-label/backingfiles -ef "$P2" ] && [ /dev/disk/by-label/mutable -ef "$P1" ]
+  # Check if backingfiles and mutable partitions already exist on this drive.
+  # By default, always wipe and recreate to avoid stale data from previous
+  # TeslaUSB/SentryUSB installs causing boot failures. Set PRESERVE_DATA_DRIVE=true
+  # to skip the wipe (e.g. during upgrades where data should be kept).
+  if [ "${PRESERVE_DATA_DRIVE:-false}" = "true" ] && \
+     [ /dev/disk/by-label/backingfiles -ef "$P2" ] && [ /dev/disk/by-label/mutable -ef "$P1" ]
   then
-    log_progress "Looks like backingfiles and mutable partitions already exist. Skipping partition creation."
+    log_progress "PRESERVE_DATA_DRIVE is set and partitions exist. Skipping partition creation."
   else
+    if [ /dev/disk/by-label/backingfiles -ef "$P2" ] || [ /dev/disk/by-label/mutable -ef "$P1" ]
+    then
+      log_progress "Found existing backingfiles/mutable partitions on $DATA_DRIVE. Wiping to start fresh."
+    fi
     log_progress "WARNING !!! This will delete EVERYTHING in $DATA_DRIVE."
     wipefs -afq "$DATA_DRIVE"
     parted "$DATA_DRIVE" --script mktable gpt
