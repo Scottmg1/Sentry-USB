@@ -59,7 +59,7 @@ function formatTime(iso: string) {
 }
 
 function formatTimeMs(ms: number) {
-  return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+  return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "UTC" })
 }
 
 function formatDate(dateStr: string) {
@@ -99,6 +99,9 @@ export default function Drives() {
   const [processing, setProcessing] = useState(false)
   const [processMsg, setProcessMsg] = useState("")
   const [mobileListOpen, setMobileListOpen] = useState(false)
+  const [visibleCount, setVisibleCount] = useState(30)
+  const sentinelRef = useRef<HTMLDivElement>(null)
+  const mobileSentinelRef = useRef<HTMLDivElement>(null)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -191,7 +194,7 @@ export default function Drives() {
       if (!pts || pts.length < 2) return
       const latlngs = pts.map((p) => [p[0], p[1]] as L.LatLngExpression)
 
-      const route = L.polyline(latlngs, { color: "#3b82f6", weight: 4, opacity: 1 }).addTo(map)
+      const route = L.polyline(latlngs, { color: "#3b82f6", weight: 4, opacity: 1, smoothFactor: 0 }).addTo(map)
       selectionLayers.current.push(route)
 
       const startM = L.marker(latlngs[0], {
@@ -287,9 +290,26 @@ export default function Drives() {
   }
 
   // ── Derived ──
+  // Reset visible count when search changes
+  useEffect(() => { setVisibleCount(30) }, [search])
+
+  // IntersectionObserver for lazy loading more drives
+  useEffect(() => {
+    const cb: IntersectionObserverCallback = (entries) => {
+      if (entries.some((e) => e.isIntersecting)) {
+        setVisibleCount((c) => c + 30)
+      }
+    }
+    const obs = new IntersectionObserver(cb, { rootMargin: "200px" })
+    if (sentinelRef.current) obs.observe(sentinelRef.current)
+    if (mobileSentinelRef.current) obs.observe(mobileSentinelRef.current)
+    return () => obs.disconnect()
+  }, [drives, search])
+
   const filtered = search
     ? drives.filter((d) => d.date.includes(search) || formatDate(d.date).toLowerCase().includes(search.toLowerCase()))
     : drives
+  const visible = filtered.slice(0, visibleCount)
 
   const dist = (d: DriveSummary | DriveDetail) => metric ? `${d.distanceKm} km` : `${d.distanceMi} mi`
   const avgSpd = (d: DriveSummary | DriveDetail) => metric ? `${d.avgSpeedKmh} km/h` : `${d.avgSpeedMph} mph`
@@ -386,7 +406,7 @@ export default function Drives() {
               {!loading && filtered.length === 0 && <p className="p-4 text-center text-xs text-slate-600">No drives found</p>}
               {(() => {
                 let cd = ""
-                return filtered.map((d) => {
+                return visible.map((d) => {
                   const sh = d.date !== cd
                   cd = d.date
                   return (
@@ -416,6 +436,7 @@ export default function Drives() {
                   )
                 })
               })()}
+              {visibleCount < filtered.length && <div ref={mobileSentinelRef} className="py-4 text-center text-[10px] text-slate-600">Loading more...</div>}
             </div>
           </div>
         )}
@@ -439,7 +460,7 @@ export default function Drives() {
             {!loading && filtered.length === 0 && <p className="p-4 text-center text-xs text-slate-600">No drives found</p>}
             {(() => {
               let currentDate = ""
-              return filtered.map((d) => {
+              return visible.map((d) => {
                 const showHeader = d.date !== currentDate
                 currentDate = d.date
                 return (
@@ -469,6 +490,7 @@ export default function Drives() {
                 )
               })
             })()}
+            {visibleCount < filtered.length && <div ref={sentinelRef} className="py-4 text-center text-[10px] text-slate-600">Loading more...</div>}
           </div>
         </div>
 

@@ -209,8 +209,8 @@ func buildDriveStats(clips []timedRoute, idx int) Drive {
 	return Drive{
 		ID:          idx,
 		Date:        firstClip.Date,
-		StartTime:   startTime.UTC().Format(time.RFC3339),
-		EndTime:     endTime.UTC().Format(time.RFC3339),
+		StartTime:   startTime.Format("2006-01-02T15:04:05"),
+		EndTime:     endTime.Format("2006-01-02T15:04:05"),
 		DurationMs:  durationMs,
 		DistanceMi:  math.Round(totalDistanceM/1609.344*100) / 100,
 		DistanceKm:  math.Round(totalDistanceM/1000*100) / 100,
