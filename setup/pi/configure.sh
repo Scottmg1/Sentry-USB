@@ -370,6 +370,7 @@ function install_archive_scripts () {
   copy_script run/remountfs_rw "$install_path"
   copy_script run/awake_start "$install_path"
   copy_script run/awake_stop "$install_path"
+  copy_script run/post-archive-process.sh "$install_path"
   log_progress "Installing archive module scripts"
   copy_script "$archive_module"/verify-and-configure-archive.sh /tmp
   copy_script "$archive_module"/archive-clips.sh "$install_path"
