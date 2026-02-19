@@ -109,10 +109,13 @@ else
   echo "DATA_DRIVE not set. Proceeding to SD card setup"
 fi
 
-readonly LAST_PARTITION_DEVICE=$(sfdisk -q -l "$BOOT_DISK" | tail -1 | awk '{print $1}')
-readonly LAST_PART_NUM=$(echo "$LAST_PARTITION_DEVICE" | grep -o '[0-9]*$')
+LAST_PARTITION_DEVICE=$(sfdisk -q -l "$BOOT_DISK" | tail -1 | awk '{print $1}')
+readonly LAST_PARTITION_DEVICE
+LAST_PART_NUM=$(echo "$LAST_PARTITION_DEVICE" | grep -o '[0-9]*$')
+readonly LAST_PART_NUM
 readonly SECOND_TO_LAST_PART_NUM=$((LAST_PART_NUM - 1))
-readonly LAST_PARTITION_DEVICE_PREFIX=$(echo "$LAST_PARTITION_DEVICE" | sed 's/[0-9]*$//')
+LAST_PARTITION_DEVICE_PREFIX=$(echo "$LAST_PARTITION_DEVICE" | sed 's/[0-9]*$//')
+readonly LAST_PARTITION_DEVICE_PREFIX
 readonly SECOND_TO_LAST_PARTITION_DEVICE=${LAST_PARTITION_DEVICE_PREFIX}${SECOND_TO_LAST_PART_NUM}
 if [ /dev/disk/by-label/mutable -ef "$LAST_PARTITION_DEVICE" ]
 then
