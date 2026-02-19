@@ -588,6 +588,20 @@ function cmd_upgrade_finish {
   reboot
 }
 
+# Fix WiFi/networking on installs that used the old read-only setup (symlinks to
+# /mutable). Run after remounting root rw. Safe to run multiple times.
+function cmd_fix_networking {
+  if [ ! -e /sentryusb/SENTRYUSB_SETUP_FINISHED ]; then
+    setup_progress "STOP: run this only on a completed install. Run full setup first."
+    exit 1
+  fi
+  setup_progress "Remounting root read-write..."
+  /root/bin/remountfs_rw
+  copy_script setup/pi/fix-readonly-networking.sh /tmp
+  /tmp/fix-readonly-networking.sh
+  setup_progress "Networking fix applied. Reboot for WiFi/AP to work correctly."
+}
+
 function checkmounted() {
   if ! findmnt "$1" &> /dev/null
   then

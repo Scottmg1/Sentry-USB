@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from "react"
-import { ScrollText, Download, RefreshCw } from "lucide-react"
+import { useState, useEffect, useRef, useCallback } from "react"
+import { ScrollText, Download, RefreshCw, ArrowDown } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const logTabs = [
@@ -8,42 +8,67 @@ const logTabs = [
   { id: "diagnostics", label: "Diagnostics", url: "/api/logs/diagnostics" },
 ]
 
+const SCROLL_THRESHOLD = 60
+
 export default function Logs() {
   const [activeTab, setActiveTab] = useState("archiveloop")
   const [content, setContent] = useState<string>("Loading...")
   const [loading, setLoading] = useState(false)
+  const [showScrollBtn, setShowScrollBtn] = useState(false)
   const preRef = useRef<HTMLPreElement>(null)
+  const followRef = useRef(true)
 
   const activeLog = logTabs.find((t) => t.id === activeTab)!
 
+  const handleScroll = useCallback(() => {
+    const el = preRef.current
+    if (!el) return
+    const atBottom =
+      el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_THRESHOLD
+    followRef.current = atBottom
+    setShowScrollBtn(!atBottom)
+  }, [])
+
+  function scrollToBottom() {
+    if (preRef.current) {
+      preRef.current.scrollTop = preRef.current.scrollHeight
+      followRef.current = true
+      setShowScrollBtn(false)
+    }
+  }
+
+  useEffect(() => {
+    followRef.current = true
+    setShowScrollBtn(false)
+  }, [activeTab])
+
   useEffect(() => {
     let mounted = true
+    let isFirstFetch = true
     setLoading(true)
     setContent("Loading...")
 
     async function fetchLog() {
       try {
-        // For diagnostics, use the dedicated endpoint that returns a
-        // helpful message when the file hasn't been generated yet.
-        const url = activeTab === "diagnostics"
-          ? "/api/diagnostics?" + Math.random()
-          : activeLog.url + "?" + Math.random()
+        const url =
+          activeTab === "diagnostics"
+            ? "/api/diagnostics?" + Math.random()
+            : activeLog.url + "?" + Math.random()
         const res = await fetch(url)
         const text = await res.text()
         if (mounted) {
-          // The API may return JSON error for non-diagnostics logs
           if (!res.ok && activeTab !== "diagnostics") {
             setContent("Log file not available. It may not exist yet.")
           } else {
             setContent(text || "(empty)")
           }
           setLoading(false)
-          // Auto-scroll to bottom
           requestAnimationFrame(() => {
-            if (preRef.current) {
+            if (preRef.current && (followRef.current || isFirstFetch)) {
               preRef.current.scrollTop = preRef.current.scrollHeight
             }
           })
+          isFirstFetch = false
         }
       } catch {
         if (mounted) {
@@ -55,10 +80,8 @@ export default function Logs() {
 
     fetchLog()
 
-    // Tail the log every 2s (but not diagnostics — those are static until refreshed)
-    const interval = activeTab !== "diagnostics"
-      ? setInterval(fetchLog, 2000)
-      : undefined
+    const interval =
+      activeTab !== "diagnostics" ? setInterval(fetchLog, 2000) : undefined
 
     return () => {
       mounted = false
@@ -81,7 +104,6 @@ export default function Logs() {
     setContent("Generating diagnostics...")
     try {
       await fetch("/api/diagnostics/refresh", { method: "POST" })
-      // Wait a moment for diagnostics to generate
       await new Promise((r) => setTimeout(r, 3000))
       const res = await fetch("/api/logs/diagnostics?" + Math.random())
       const text = await res.text()
@@ -108,7 +130,9 @@ export default function Logs() {
               disabled={loading}
               className="glass-card glass-card-hover flex items-center gap-1.5 px-3 py-1.5 text-sm text-slate-400 transition-colors hover:text-slate-200 disabled:opacity-50"
             >
-              <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+              <RefreshCw
+                className={cn("h-4 w-4", loading && "animate-spin")}
+              />
               Refresh
             </button>
           )}
@@ -141,9 +165,10 @@ export default function Logs() {
       </div>
 
       {/* Log output */}
-      <div className="glass-card flex-1 overflow-hidden">
+      <div className="glass-card relative flex-1 overflow-hidden">
         <pre
           ref={preRef}
+          onScroll={handleScroll}
           className="h-full overflow-auto p-4 font-mono text-xs leading-relaxed text-slate-300"
         >
           {content || (
@@ -153,6 +178,15 @@ export default function Logs() {
             </span>
           )}
         </pre>
+        {showScrollBtn && (
+          <button
+            onClick={scrollToBottom}
+            className="absolute bottom-4 right-6 flex items-center gap-1.5 rounded-full bg-blue-500/90 px-3 py-1.5 text-xs font-medium text-white shadow-lg backdrop-blur transition-opacity hover:bg-blue-500"
+          >
+            <ArrowDown className="h-3.5 w-3.5" />
+            Follow
+          </button>
+        )}
       </div>
     </div>
   )
