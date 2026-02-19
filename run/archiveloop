@@ -918,6 +918,13 @@ then
 
   set_time
 
+  # A large clock step can cause NetworkManager to drop the WiFi
+  # connection (it thinks the DHCP lease expired). Re-verify and recover.
+  if ! archive_is_reachable; then
+    log "Network lost after time adjustment, waiting for recovery..."
+    wait_for_archive_to_be_reachable
+  fi
+
   /root/bin/awake_start || true
 
   archive_clips
@@ -940,6 +947,13 @@ do
   fastblink
 
   set_time
+
+  # A large clock step can cause NetworkManager to drop the WiFi
+  # connection (it thinks the DHCP lease expired). Re-verify and recover.
+  if ! archive_is_reachable; then
+    log "Network lost after time adjustment, waiting for recovery..."
+    wait_for_archive_to_be_reachable
+  fi
 
   /root/bin/awake_start || true
 

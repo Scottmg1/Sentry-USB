@@ -52,6 +52,10 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
   // Defaults for fields that appear pre-selected in the UI but may not exist
   // in the config file yet. Without this, untouched defaults never get saved.
   const defaults: SetupFormData = {
+    ARCHIVE_SAVEDCLIPS: "true",
+    ARCHIVE_SENTRYCLIPS: "true",
+    ARCHIVE_RECENTCLIPS: "true",
+    ARCHIVE_TRACKMODECLIPS: "true",
     DRIVE_MAP_ENABLED: "true",
   }
   const [formData, setFormData] = useState<SetupFormData>({ ...defaults, ...(initialData ?? {}) })

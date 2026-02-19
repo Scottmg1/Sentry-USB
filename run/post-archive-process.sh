@@ -84,24 +84,24 @@ if [ ! -d "$CLIPS_DIR" ]; then
   exit 0
 fi
 
-# Capture route count before processing so we can detect new data
+# Capture drive count before processing so we can detect new data
 BEFORE_STATS=$(curl -sf "${API_URL}/api/drives/stats" 2>/dev/null)
-ROUTES_BEFORE=$(echo "$BEFORE_STATS" | grep -o '"routes_count":[0-9]*' | cut -d: -f2)
-ROUTES_BEFORE=${ROUTES_BEFORE:-0}
+DRIVES_BEFORE=$(echo "$BEFORE_STATS" | grep -o '"drives_count":[0-9]*' | cut -d: -f2)
+DRIVES_BEFORE=${DRIVES_BEFORE:-0}
 
 process_clips_dir "$CLIPS_DIR"
 PROCESSED=$?
 
 log "Drive processing complete. $PROCESSED directories processed."
 
-# Send notification only if new routes were added
+# Send notification only if new drives were added
 if [ -x /root/bin/send-push-message ]; then
   STATS=$(curl -sf "${API_URL}/api/drives/stats" 2>/dev/null)
   if [ $? -eq 0 ]; then
-    ROUTES_AFTER=$(echo "$STATS" | grep -o '"routes_count":[0-9]*' | cut -d: -f2)
-    ROUTES_AFTER=${ROUTES_AFTER:-0}
-    if [ "$ROUTES_AFTER" -gt "$ROUTES_BEFORE" ]; then
-      NEW_ROUTES=$((ROUTES_AFTER - ROUTES_BEFORE))
+    DRIVES_AFTER=$(echo "$STATS" | grep -o '"drives_count":[0-9]*' | cut -d: -f2)
+    DRIVES_AFTER=${DRIVES_AFTER:-0}
+    if [ "$DRIVES_AFTER" -gt "$DRIVES_BEFORE" ]; then
+      NEW_DRIVES=$((DRIVES_AFTER - DRIVES_BEFORE))
 
       # Check user unit preference (mi or km)
       UNIT_PREF=$(curl -sf "${API_URL}/api/config/preference?key=unit" 2>/dev/null | grep -o '"value":"[^"]*"' | cut -d'"' -f4)
@@ -121,17 +121,17 @@ if [ -x /root/bin/send-push-message ]; then
       # Calculate new distance (using awk for float subtraction)
       NEW_DIST=$(awk "BEGIN { printf \"%.2f\", ${DIST_AFTER} - ${DIST_BEFORE} }")
 
-      if [ "$NEW_ROUTES" -eq 1 ]; then
+      if [ "$NEW_DRIVES" -eq 1 ]; then
         DRIVE_WORD="drive"
       else
         DRIVE_WORD="drives"
       fi
 
       /root/bin/send-push-message "${NOTIFICATION_TITLE:-SentryUSB}:" \
-        "${NEW_ROUTES} new ${DRIVE_WORD} mapped (${NEW_DIST} ${DIST_LABEL})." \
+        "${NEW_DRIVES} new ${DRIVE_WORD} mapped (${NEW_DIST} ${DIST_LABEL})." \
         info || log "Failed to send notification"
     else
-      log "No new routes found, skipping drive stats notification."
+      log "No new drives found, skipping drive stats notification."
     fi
   fi
 fi
