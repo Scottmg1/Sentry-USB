@@ -371,7 +371,7 @@ if systemctl is-active --quiet "$SERVICE_NAME"; then
     echo -e "  Configure via the ${BLUE}Setup Wizard${NC} in the web UI."
     echo -e "  The device will reboot several times during setup — this is normal."
     echo -e "  The full process takes 10-20 minutes. Do NOT power off the device."
-    echo -e "  Or edit /root/sentryusb.conf and run /etc/rc.local"
+    echo -e "  Or edit /root/sentryusb.conf, touch /sentryusb/SENTRYUSB_SETUP_STARTED, and run /etc/rc.local"
     echo ""
 else
     error_exit "Service failed to start. Check: journalctl -u $SERVICE_NAME -f"

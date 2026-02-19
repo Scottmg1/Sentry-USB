@@ -134,7 +134,7 @@ func (h *handlers) runSetup(w http.ResponseWriter, r *http.Request) {
 	setupRunning.Unlock()
 
 	// Run /etc/rc.local — the SentryUSB boot-loop mechanism.
-	// rc.local creates SENTRYUSB_SETUP_STARTED, downloads setup-sentryusb,
+	// rc.local checks for SENTRYUSB_SETUP_STARTED, downloads setup-sentryusb,
 	// runs it, and reboots when done. On each boot, rc.local re-runs
 	// setup until SENTRYUSB_SETUP_FINISHED exists.
 	go func() {
@@ -144,14 +144,21 @@ func (h *handlers) runSetup(w http.ResponseWriter, r *http.Request) {
 			setupRunning.Unlock()
 		}()
 
-		// Remove setup markers so rc.local will actually re-run setup.
+		// Remove the finished marker so rc.local will actually re-run setup.
 		// Without this, rc.local sees SENTRYUSB_SETUP_FINISHED and exits
 		// immediately, making wizard re-runs a silent no-op.
 		for _, p := range setupFinishedPaths {
 			os.Remove(p)
 		}
+		// Create the started marker so rc.local knows the user explicitly
+		// triggered setup via the wizard. rc.local only proceeds when this
+		// marker exists, preventing auto-start on boot before the wizard
+		// has been completed.
 		for _, p := range setupStartedPaths {
 			os.Remove(p)
+		}
+		if f, err := os.Create(setupStartedPaths[0]); err == nil {
+			f.Close()
 		}
 		// Remove cached setup scripts so fresh versions are downloaded
 		for _, script := range []string{

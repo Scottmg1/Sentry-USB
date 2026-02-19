@@ -180,6 +180,9 @@ then
   fi
   mv /sentryusb/sentryusb.conf /root/
   dos2unix /root/sentryusb.conf
+  # A config on the boot partition means the user wants headless setup.
+  # Create the started marker so the boot-loop below will proceed.
+  touch "/sentryusb/SENTRYUSB_SETUP_STARTED"
 fi
 if [ -e "/root/sentryusb.conf" ]
 then
@@ -196,14 +199,15 @@ enable_wifi
 # Good to start setup at this point
 
 # This begins the Headless Setup loop
-# If the FINISHED file does not exist then we start setup. Otherwise passes on to normal loop
-if [ ! -e "/sentryusb/SENTRYUSB_SETUP_FINISHED" ]
+# Only continue setup if it was explicitly started (via the web wizard or manually)
+# and hasn't finished yet. Without the STARTED check, a fresh install would auto-run
+# setup on boot before the user had a chance to configure via the wizard.
+if [ -e "/sentryusb/SENTRYUSB_SETUP_STARTED" ] && [ ! -e "/sentryusb/SENTRYUSB_SETUP_FINISHED" ]
 then
   if [ -e /root/bin/remountfs_rw ]
   then
     /root/bin/remountfs_rw
   fi
-  touch "/sentryusb/SENTRYUSB_SETUP_STARTED"
 
   if [ -e "/root/sentryusb.conf" ]
   then
