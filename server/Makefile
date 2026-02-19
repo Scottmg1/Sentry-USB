@@ -17,6 +17,7 @@ build-all: build-arm64 build-armv7
 
 # Copy built frontend into static/ for embedding
 copy-static:
+	@mkdir -p static
 	@if [ -d ../web/dist ]; then \
 		rm -rf static/*; \
 		cp -r ../web/dist/* static/; \

@@ -303,11 +303,15 @@ if [ "$BINARY_INSTALLED" = false ]; then
 
     info "Building server binary..."
     cd "$BUILD_DIR/server"
-    make build 2>&1 | tail -3
-    cp bin/sentryusb "$INSTALL_DIR/$BINARY_NAME"
-    chmod +x "$INSTALL_DIR/$BINARY_NAME"
-    BINARY_INSTALLED=true
-    ok "Binary built and installed"
+    mkdir -p static
+    if make build 2>&1 | tail -5; then
+        cp bin/sentryusb "$INSTALL_DIR/$BINARY_NAME"
+        chmod +x "$INSTALL_DIR/$BINARY_NAME"
+        BINARY_INSTALLED=true
+        ok "Binary built and installed"
+    else
+        warn "Go build failed -- check output above"
+    fi
     rm -rf "$BUILD_DIR"
 fi
 
