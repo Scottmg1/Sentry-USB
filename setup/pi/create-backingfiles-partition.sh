@@ -35,17 +35,28 @@ MUTABLE_MOUNTPOINT="${2:-none}"
 function update_fstab {
   if grep -q "LABEL=backingfiles" /etc/fstab
   then
+    # Ensure existing entries have nofail (upgrades from older setups)
+    if ! grep "LABEL=backingfiles" /etc/fstab | grep -q "nofail"
+    then
+      log_progress "Adding nofail to existing backingfiles fstab entry"
+      sed -i '/LABEL=backingfiles/ s/auto,rw/auto,rw,nofail/' /etc/fstab
+    fi
     log_progress "backingfiles already defined in /etc/fstab. Not modifying /etc/fstab."
   elif [ "$BACKINGFILES_MOUNTPOINT" != "none" ]
   then
-    echo "LABEL=backingfiles $BACKINGFILES_MOUNTPOINT xfs auto,rw,noatime 0 2" >> /etc/fstab
+    echo "LABEL=backingfiles $BACKINGFILES_MOUNTPOINT xfs auto,rw,noatime,nofail 0 2" >> /etc/fstab
   fi
   if grep -q 'LABEL=mutable' /etc/fstab
   then
+    if ! grep "LABEL=mutable" /etc/fstab | grep -q "nofail"
+    then
+      log_progress "Adding nofail to existing mutable fstab entry"
+      sed -i '/LABEL=mutable/ s/auto,rw/auto,rw,nofail/' /etc/fstab
+    fi
     log_progress "mutable already defined in /etc/fstab. Not modifying /etc/fstab."
   elif [ "$MUTABLE_MOUNTPOINT" != "none" ]
   then
-    echo "LABEL=mutable $MUTABLE_MOUNTPOINT ext4 auto,rw 0 2" >> /etc/fstab
+    echo "LABEL=mutable $MUTABLE_MOUNTPOINT ext4 auto,rw,nofail 0 2" >> /etc/fstab
   fi
 }
 
