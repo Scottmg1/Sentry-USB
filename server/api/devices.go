@@ -27,38 +27,47 @@ func (h *handlers) listBlockDevices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Find the root device so we can exclude it
-	rootDev := ""
-	if data, err := os.ReadFile("/proc/cmdline"); err == nil {
-		for _, part := range strings.Fields(string(data)) {
-			if strings.HasPrefix(part, "root=") {
-				rootDev = strings.TrimPrefix(part, "root=")
-				rootDev = strings.TrimPrefix(rootDev, "/dev/")
-				// Strip partition suffix: mmcblk0p2 -> mmcblk0
-				if idx := strings.LastIndex(rootDev, "p"); idx > 0 {
-					rootDev = rootDev[:idx]
-				}
-				break
-			}
-		}
+	// Build a set of block devices that host system mount points so we
+	// never offer the OS drive for selection. This handles PARTUUID-style
+	// root=, NVMe, SD cards, USB-booted drives, etc.
+	excludedDevs := map[string]bool{
+		"mmcblk0": true, // always exclude the onboard SD card slot
 	}
-
-	// Also try to find the root device via /proc/mounts if cmdline didn't work
-	if rootDev == "" {
-		if data, err := os.ReadFile("/proc/mounts"); err == nil {
-			for _, line := range strings.Split(string(data), "\n") {
-				fields := strings.Fields(line)
-				if len(fields) >= 2 && fields[1] == "/" {
-					dev := strings.TrimPrefix(fields[0], "/dev/")
-					// Strip partition: mmcblk0p2 -> mmcblk0, sda1 -> sda
-					if idx := strings.LastIndex(dev, "p"); idx > 0 && strings.ContainsAny(dev[idx+1:], "0123456789") {
-						rootDev = dev[:idx]
-					} else {
-						rootDev = strings.TrimRight(dev, "0123456789")
-					}
+	systemMounts := []string{"/", "/boot", "/boot/firmware"}
+	if data, err := os.ReadFile("/proc/mounts"); err == nil {
+		for _, line := range strings.Split(string(data), "\n") {
+			fields := strings.Fields(line)
+			if len(fields) < 2 || !strings.HasPrefix(fields[0], "/dev/") {
+				continue
+			}
+			mountpoint := fields[1]
+			isSystem := false
+			for _, sm := range systemMounts {
+				if mountpoint == sm {
+					isSystem = true
 					break
 				}
 			}
+			if !isSystem {
+				continue
+			}
+			// Resolve symlinks (e.g. /dev/disk/by-partuuid/xxx -> /dev/sda1)
+			devPath := fields[0]
+			if resolved, err := filepath.EvalSymlinks(devPath); err == nil {
+				devPath = resolved
+			}
+			dev := strings.TrimPrefix(devPath, "/dev/")
+			// Strip partition suffix: mmcblk0p2 -> mmcblk0, nvme0n1p2 -> nvme0n1, sda1 -> sda
+			if strings.Contains(dev, "mmcblk") || strings.Contains(dev, "nvme") || strings.Contains(dev, "loop") {
+				// mmcblk/nvme/loop style: partition suffix is "pN"
+				if idx := strings.LastIndex(dev, "p"); idx > 0 {
+					excludedDevs[dev[:idx]] = true
+				}
+			} else {
+				// sd-style: partition suffix is just digits
+				excludedDevs[strings.TrimRight(dev, "0123456789")] = true
+			}
+			excludedDevs[dev] = true // also exclude the partition device name itself
 		}
 	}
 
@@ -67,11 +76,7 @@ func (h *handlers) listBlockDevices(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(name, "loop") || strings.HasPrefix(name, "ram") || strings.HasPrefix(name, "zram") {
 			continue
 		}
-		if name == rootDev {
-			continue
-		}
-		// Always exclude mmcblk0 (SD card) even if root detection failed
-		if name == "mmcblk0" {
+		if excludedDevs[name] {
 			continue
 		}
 

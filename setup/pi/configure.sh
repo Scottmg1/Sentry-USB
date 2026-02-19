@@ -804,7 +804,9 @@ install_push_message_scripts /root/bin
 check_archive_configs
 
 rm -f /root/teslausb.conf
-rm -rf /mutable/TeslaCam/RecentClips/event.json
+# Clean stale TeslaCam symlinks so the viewer doesn't show old clips after re-setup
+rm -rf /mutable/TeslaCam/RecentClips /mutable/TeslaCam/SavedClips /mutable/TeslaCam/SentryClips /mutable/TeslaCam/TeslaTrackMode
+rm -f /mutable/sentry_files_archived
 
 archive_module="$( get_archive_module )"
 log_progress "Using archive module: $archive_module"
