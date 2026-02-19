@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -14,15 +15,19 @@ const DefaultDataPath = "/root/drive-data.json"
 
 // Route represents GPS data extracted from a single front-camera clip.
 type Route struct {
-	File   string     `json:"file"`
-	Date   string     `json:"date"`
-	Points []GPSPoint `json:"points"`
+	File          string     `json:"file"`
+	Date          string     `json:"date"`
+	Points        []GPSPoint `json:"points"`
+	GearStates    []uint8    `json:"gearStates,omitempty"`
+	RawParkCount  int        `json:"rawParkCount,omitempty"`
+	RawFrameCount int        `json:"rawFrameCount,omitempty"`
 }
 
 // StoreData is the persistent JSON structure.
 type StoreData struct {
-	ProcessedFiles []string `json:"processedFiles"`
-	Routes         []Route  `json:"routes"`
+	ProcessedFiles []string            `json:"processedFiles"`
+	Routes         []Route             `json:"routes"`
+	DriveTags      map[string][]string `json:"driveTags,omitempty"`
 }
 
 // Store manages the drive data file with thread-safe access.
@@ -104,16 +109,21 @@ func (s *Store) ProcessedSet() map[string]bool {
 }
 
 // AddRoute adds a processed file and its route data.
-func (s *Store) AddRoute(relativePath, dateDir string, points []GPSPoint) {
+// gears is a parallel slice of gear states (same length as points); may be nil for legacy data.
+// rawParkCount/rawFrameCount are pre-dedup counts for accurate park time estimation.
+func (s *Store) AddRoute(relativePath, dateDir string, points []GPSPoint, gears []uint8, rawParkCount, rawFrameCount int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	s.data.ProcessedFiles = append(s.data.ProcessedFiles, relativePath)
 	if len(points) > 0 {
 		s.data.Routes = append(s.data.Routes, Route{
-			File:   relativePath,
-			Date:   dateDir,
-			Points: points,
+			File:          relativePath,
+			Date:          dateDir,
+			Points:        points,
+			GearStates:    gears,
+			RawParkCount:  rawParkCount,
+			RawFrameCount: rawFrameCount,
 		})
 	}
 }
@@ -165,10 +175,70 @@ func (s *Store) ReplaceData(data StoreData) {
 func (s *Store) GetData() StoreData {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return StoreData{
+	sd := StoreData{
 		ProcessedFiles: append([]string{}, s.data.ProcessedFiles...),
 		Routes:         append([]Route{}, s.data.Routes...),
 	}
+	if s.data.DriveTags != nil {
+		sd.DriveTags = make(map[string][]string, len(s.data.DriveTags))
+		for k, v := range s.data.DriveTags {
+			sd.DriveTags[k] = append([]string{}, v...)
+		}
+	}
+	return sd
+}
+
+// SetDriveTags sets the tags for a drive identified by its start time key.
+func (s *Store) SetDriveTags(driveKey string, tags []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.data.DriveTags == nil {
+		s.data.DriveTags = make(map[string][]string)
+	}
+	if len(tags) == 0 {
+		delete(s.data.DriveTags, driveKey)
+	} else {
+		s.data.DriveTags[driveKey] = tags
+	}
+}
+
+// GetDriveTags returns the tags for a drive identified by its start time key.
+func (s *Store) GetDriveTags(driveKey string) []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.data.DriveTags[driveKey]
+}
+
+// GetAllDriveTags returns the full tag map.
+func (s *Store) GetAllDriveTags() map[string][]string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.data.DriveTags == nil {
+		return nil
+	}
+	copy := make(map[string][]string, len(s.data.DriveTags))
+	for k, v := range s.data.DriveTags {
+		copy[k] = append([]string{}, v...)
+	}
+	return copy
+}
+
+// GetAllTagNames returns a deduplicated sorted list of all tag names in use.
+func (s *Store) GetAllTagNames() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	seen := make(map[string]bool)
+	for _, tags := range s.data.DriveTags {
+		for _, t := range tags {
+			seen[t] = true
+		}
+	}
+	names := make([]string, 0, len(seen))
+	for t := range seen {
+		names = append(names, t)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // ArchivePath returns the path where drive data is backed up on the archive mount.

@@ -49,7 +49,12 @@ type SetupPhase = "wizard" | "applying" | "running" | "rebooting" | "complete" |
 
 export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
   const [currentStep, setCurrentStep] = useState(0)
-  const [formData, setFormData] = useState<SetupFormData>(initialData ?? {})
+  // Defaults for fields that appear pre-selected in the UI but may not exist
+  // in the config file yet. Without this, untouched defaults never get saved.
+  const defaults: SetupFormData = {
+    DRIVE_MAP_ENABLED: "true",
+  }
+  const [formData, setFormData] = useState<SetupFormData>({ ...defaults, ...(initialData ?? {}) })
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [phase, setPhase] = useState<SetupPhase>("wizard")

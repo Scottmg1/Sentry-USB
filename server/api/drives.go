@@ -45,12 +45,15 @@ func NewDriveHandlers(dataPath string, hub broadcaster) *DriveHandlers {
 func RegisterDriveRoutes(mux *http.ServeMux, dh *DriveHandlers) {
 	mux.HandleFunc("GET /api/drives", dh.listDrives)
 	mux.HandleFunc("GET /api/drives/routes", dh.allRoutes)
-	mux.HandleFunc("GET /api/drives/{id}", dh.singleDrive)
+	mux.HandleFunc("GET /api/drives/tags", dh.listTags)
+	mux.HandleFunc("GET /api/drives/process", dh.processingStatus)
 	mux.HandleFunc("POST /api/drives/process", dh.processFiles)
 	mux.HandleFunc("GET /api/drives/status", dh.processingStatus)
 	mux.HandleFunc("GET /api/drives/data/download", dh.downloadData)
 	mux.HandleFunc("POST /api/drives/data/upload", dh.uploadData)
 	mux.HandleFunc("GET /api/drives/stats", dh.driveStats)
+	mux.HandleFunc("PUT /api/drives/{id}/tags", dh.setDriveTags)
+	mux.HandleFunc("GET /api/drives/{id}", dh.singleDrive)
 }
 
 // Store returns the underlying drive store (for external integration like post-archive hooks).
@@ -64,9 +67,26 @@ func (dh *DriveHandlers) Processor() *drives.Processor {
 }
 
 // GET /api/drives — list all drives (summaries, no full point data)
+// Query params: ?tag=Work (filter by tag)
 func (dh *DriveHandlers) listDrives(w http.ResponseWriter, r *http.Request) {
 	routes := dh.store.GetRoutes()
 	summaries := drives.GroupSummaries(routes)
+	drives.ApplySummaryTags(summaries, dh.store.GetAllDriveTags())
+
+	// Filter by tag if requested
+	if tagFilter := r.URL.Query().Get("tag"); tagFilter != "" {
+		var filtered []drives.DriveSummary
+		for _, s := range summaries {
+			for _, t := range s.Tags {
+				if t == tagFilter {
+					filtered = append(filtered, s)
+					break
+				}
+			}
+		}
+		summaries = filtered
+	}
+
 	writeJSON(w, http.StatusOK, summaries)
 }
 
@@ -106,6 +126,7 @@ func (dh *DriveHandlers) singleDrive(w http.ResponseWriter, r *http.Request) {
 
 	routes := dh.store.GetRoutes()
 	allDrives := drives.GroupIntoDrives(routes)
+	drives.ApplyTags(allDrives, dh.store.GetAllDriveTags())
 
 	if id < 0 || id >= len(allDrives) {
 		writeError(w, http.StatusNotFound, "drive not found")
@@ -113,6 +134,51 @@ func (dh *DriveHandlers) singleDrive(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, allDrives[id])
+}
+
+// PUT /api/drives/{id}/tags — set tags for a drive
+// Body: { "tags": ["Work", "Commute"] }
+func (dh *DriveHandlers) setDriveTags(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid drive id")
+		return
+	}
+
+	routes := dh.store.GetRoutes()
+	allDrives := drives.GroupIntoDrives(routes)
+
+	if id < 0 || id >= len(allDrives) {
+		writeError(w, http.StatusNotFound, "drive not found")
+		return
+	}
+
+	var body struct {
+		Tags []string `json:"tags"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	driveKey := allDrives[id].StartTime
+	dh.store.SetDriveTags(driveKey, body.Tags)
+	if err := dh.store.Save(); err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to save: %v", err))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"drive_id":   id,
+		"start_time": driveKey,
+		"tags":       body.Tags,
+	})
+}
+
+// GET /api/drives/tags — list all tag names in use
+func (dh *DriveHandlers) listTags(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, dh.store.GetAllTagNames())
 }
 
 // POST /api/drives/process — trigger GPS extraction on a clips directory

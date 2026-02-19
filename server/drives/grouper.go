@@ -24,6 +24,7 @@ type Drive struct {
 	ClipCount   int        `json:"clipCount"`
 	PointCount  int        `json:"pointCount"`
 	Points      [][4]float64 `json:"points"` // [lat, lng, timeMs, speedMps]
+	Tags        []string     `json:"tags,omitempty"`
 }
 
 // DriveSummary is a lighter version of Drive without full point data (for list views).
@@ -43,6 +44,7 @@ type DriveSummary struct {
 	PointCount  int        `json:"pointCount"`
 	StartPoint  *[2]float64 `json:"startPoint"`
 	EndPoint    *[2]float64 `json:"endPoint"`
+	Tags        []string    `json:"tags,omitempty"`
 }
 
 // driveGapMs is the time gap threshold to split clips into separate drives (5 minutes).
@@ -55,7 +57,9 @@ type timedRoute struct {
 	timestamp time.Time
 }
 
-// GroupIntoDrives groups routes into logical drives based on time gaps.
+// GroupIntoDrives groups routes into logical drives based on time gaps and gear state.
+// First pass: split on time gaps > 5 minutes between clips.
+// Second pass: split further when gear state transitions through Park.
 func GroupIntoDrives(routes []Route) []Drive {
 	// Deduplicate routes by normalized file path (handles mixed \ and / from imports)
 	seen := make(map[string]bool, len(routes))
@@ -84,20 +88,26 @@ func GroupIntoDrives(routes []Route) []Drive {
 		return timed[i].timestamp.Before(timed[j].timestamp)
 	})
 
-	// Group by time gap
-	var groups [][]timedRoute
+	// First pass: group by time gap
+	var timeGroups [][]timedRoute
 	current := []timedRoute{timed[0]}
 
 	for i := 1; i < len(timed); i++ {
 		gap := timed[i].timestamp.Sub(current[len(current)-1].timestamp).Milliseconds()
 		if gap > driveGapMs {
-			groups = append(groups, current)
+			timeGroups = append(timeGroups, current)
 			current = []timedRoute{timed[i]}
 		} else {
 			current = append(current, timed[i])
 		}
 	}
-	groups = append(groups, current)
+	timeGroups = append(timeGroups, current)
+
+	// Second pass: split each time group further by gear state (Park transitions)
+	var groups [][]timedRoute
+	for _, tg := range timeGroups {
+		groups = append(groups, splitByGearState(tg)...)
+	}
 
 	// Build drive stats
 	drives := make([]Drive, 0, len(groups))
@@ -106,6 +116,102 @@ func GroupIntoDrives(routes []Route) []Drive {
 	}
 
 	return drives
+}
+
+// parkThresholdSeconds is the minimum time in Park (seconds) for a clip to be
+// considered a drive boundary. Clips with >= this much park time split drives.
+const parkThresholdSeconds = 15.0
+
+// splitByGearState splits a group of clips into sub-groups when the gear state
+// shows a Park period between driving segments. Clips with >= 15 seconds of
+// Park time (estimated from raw frame counts) are treated as boundaries.
+// Falls back to no splitting when no gear data is available.
+func splitByGearState(group []timedRoute) [][]timedRoute {
+	if len(group) <= 1 {
+		return [][]timedRoute{group}
+	}
+
+	// Check if any clip has gear data
+	hasGear := false
+	for _, clip := range group {
+		if len(clip.GearStates) > 0 {
+			hasGear = true
+			break
+		}
+	}
+	if !hasGear {
+		return [][]timedRoute{group}
+	}
+
+	var result [][]timedRoute
+	var current []timedRoute
+
+	for _, clip := range group {
+		if clipIsMostlyParked(clip) {
+			// Park clip — finalize the current drive segment
+			if len(current) > 0 {
+				result = append(result, current)
+				current = nil
+			}
+		} else {
+			current = append(current, clip)
+		}
+	}
+	if len(current) > 0 {
+		result = append(result, current)
+	}
+
+	// If everything was parked, return original group to avoid losing data
+	if len(result) == 0 {
+		return [][]timedRoute{group}
+	}
+	return result
+}
+
+// clipIsMostlyParked returns true if the clip has >= parkThresholdSeconds of Park time.
+// Uses raw (pre-dedup) frame counts for accurate time estimation.
+// Returns false if no gear data is available (legacy clips).
+func clipIsMostlyParked(clip timedRoute) bool {
+	// Use raw frame counts if available (accurate, pre-dedup)
+	if clip.RawFrameCount > 0 {
+		parkSeconds := float64(clip.RawParkCount) / float64(clip.RawFrameCount) * 60.0
+		return parkSeconds >= parkThresholdSeconds
+	}
+	// Fallback for data processed without raw counts: use deduplicated gear states
+	if len(clip.GearStates) == 0 {
+		return false
+	}
+	parkCount := 0
+	for _, g := range clip.GearStates {
+		if g == GearPark {
+			parkCount++
+		}
+	}
+	return parkCount > len(clip.GearStates)/2
+}
+
+// ApplyTags populates the Tags field on each drive from a tag map (keyed by StartTime).
+func ApplyTags(drives []Drive, tagMap map[string][]string) {
+	if len(tagMap) == 0 {
+		return
+	}
+	for i := range drives {
+		if tags, ok := tagMap[drives[i].StartTime]; ok {
+			drives[i].Tags = tags
+		}
+	}
+}
+
+// ApplySummaryTags populates the Tags field on each summary from a tag map.
+func ApplySummaryTags(summaries []DriveSummary, tagMap map[string][]string) {
+	if len(tagMap) == 0 {
+		return
+	}
+	for i := range summaries {
+		if tags, ok := tagMap[summaries[i].StartTime]; ok {
+			summaries[i].Tags = tags
+		}
+	}
 }
 
 // GroupSummaries returns only the summary (no full points) for each drive.

@@ -4,6 +4,7 @@ import "leaflet/dist/leaflet.css"
 import {
   MapPin, Navigation, Clock, Gauge, Play,
   Download, Upload, Loader2, ChevronLeft, Search, List, X,
+  Tag, Plus,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -25,10 +26,12 @@ interface DriveSummary {
   pointCount: number
   startPoint: [number, number] | null
   endPoint: [number, number] | null
+  tags?: string[]
 }
 
 interface DriveDetail extends Omit<DriveSummary, "startPoint" | "endPoint"> {
   points: [number, number, number, number][] // [lat, lng, timeMs, speedMps]
+  tags?: string[]
 }
 
 interface RouteOverview {
@@ -105,6 +108,11 @@ export default function Drives() {
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  const [allTags, setAllTags] = useState<string[]>([])
+  const [tagFilter, setTagFilter] = useState<string>("")
+  const [tagInput, setTagInput] = useState("")
+  const [showTagInput, setShowTagInput] = useState(false)
+
   // ── Init map ──
   useEffect(() => {
     if (!mapRef.current || mapInstance.current) return
@@ -133,8 +141,13 @@ export default function Drives() {
       setStats(statsData)
 
       // Draw overview routes
-      const routesRes = await fetch("/api/drives/routes")
+      const [routesRes, tagsRes] = await Promise.all([
+        fetch("/api/drives/routes"),
+        fetch("/api/drives/tags"),
+      ])
       const routes: RouteOverview[] = await routesRes.json()
+      const tagsData: string[] = await tagsRes.json()
+      setAllTags(tagsData ?? [])
       drawOverview(routes)
     } catch {
       // API may not be available in dev
@@ -176,9 +189,40 @@ export default function Drives() {
     if (arrowMarker.current) { map.removeLayer(arrowMarker.current); arrowMarker.current = null }
   }
 
+  async function saveTags(driveId: number, tags: string[]) {
+    try {
+      await fetch(`/api/drives/${driveId}/tags`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tags }),
+      })
+      // Update local state
+      setDrives((prev) => prev.map((d) => d.id === driveId ? { ...d, tags } : d))
+      if (selectedDrive && selectedId === driveId) {
+        setSelectedDrive({ ...selectedDrive, tags })
+      }
+      // Refresh tag list
+      const res = await fetch("/api/drives/tags")
+      const data: string[] = await res.json()
+      setAllTags(data ?? [])
+    } catch { /* ignore */ }
+  }
+
+  function addTagToDrive(driveId: number, currentTags: string[], tag: string) {
+    const trimmed = tag.trim()
+    if (!trimmed || currentTags.includes(trimmed)) return
+    saveTags(driveId, [...currentTags, trimmed])
+  }
+
+  function removeTagFromDrive(driveId: number, currentTags: string[], tag: string) {
+    saveTags(driveId, currentTags.filter((t) => t !== tag))
+  }
+
   async function selectDrive(id: number) {
     setSelectedId(id)
     setSliderIdx(0)
+    setShowTagInput(false)
+    setTagInput("")
     const map = mapInstance.current
     if (!map) return
 
@@ -306,9 +350,18 @@ export default function Drives() {
     return () => obs.disconnect()
   }, [drives, search])
 
-  const filtered = search
-    ? drives.filter((d) => d.date.includes(search) || formatDate(d.date).toLowerCase().includes(search.toLowerCase()))
-    : drives
+  const filtered = drives.filter((d) => {
+    // Tag filter
+    if (tagFilter && !(d.tags ?? []).includes(tagFilter)) return false
+    // Text search
+    if (search) {
+      const q = search.toLowerCase()
+      const matchDate = d.date.includes(search) || formatDate(d.date).toLowerCase().includes(q)
+      const matchTag = (d.tags ?? []).some((t) => t.toLowerCase().includes(q))
+      return matchDate || matchTag
+    }
+    return true
+  })
   const visible = filtered.slice(0, visibleCount)
 
   const dist = (d: DriveSummary | DriveDetail) => metric ? `${d.distanceKm} km` : `${d.distanceMi} mi`
@@ -396,10 +449,33 @@ export default function Drives() {
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Filter by date..."
+                  placeholder="Filter by date or tag..."
                   className="w-full rounded-lg border border-white/10 bg-white/5 py-1.5 pl-8 pr-3 text-xs text-slate-200 placeholder-slate-600 outline-none focus:border-blue-500/50"
                 />
               </div>
+              {allTags.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  <button
+                    onClick={() => setTagFilter("")}
+                    className={cn(
+                      "rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors",
+                      tagFilter === "" ? "bg-blue-500/20 text-blue-400" : "bg-white/5 text-slate-500 hover:text-slate-300"
+                    )}
+                  >All</button>
+                  {allTags.map((t) => (
+                    <button
+                      key={t}
+                      onClick={() => setTagFilter(tagFilter === t ? "" : t)}
+                      className={cn(
+                        "rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors",
+                        tagFilter === t ? "bg-blue-500/20 text-blue-400" : "bg-white/5 text-slate-500 hover:text-slate-300"
+                      )}
+                    >
+                      <Tag className="mr-0.5 inline h-2.5 w-2.5" />{t}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="flex-1 overflow-y-auto">
               {loading && <p className="p-4 text-center text-xs text-slate-600">Loading drives...</p>}
@@ -431,6 +507,15 @@ export default function Drives() {
                           <span>{formatDuration(d.durationMs)}</span>
                           <span>{avgSpd(d)}</span>
                         </div>
+                        {(d.tags ?? []).length > 0 && (
+                          <div className="mt-1.5 flex flex-wrap gap-1">
+                            {d.tags!.map((t) => (
+                              <span key={t} className="inline-flex items-center rounded-full bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-400">
+                                <Tag className="mr-0.5 h-2 w-2" />{t}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </button>
                     </div>
                   )
@@ -450,10 +535,33 @@ export default function Drives() {
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Filter by date..."
+                placeholder="Filter by date or tag..."
                 className="w-full rounded-lg border border-white/10 bg-white/5 py-1.5 pl-8 pr-3 text-xs text-slate-200 placeholder-slate-600 outline-none focus:border-blue-500/50"
               />
             </div>
+            {allTags.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1">
+                <button
+                  onClick={() => setTagFilter("")}
+                  className={cn(
+                    "rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors",
+                    tagFilter === "" ? "bg-blue-500/20 text-blue-400" : "bg-white/5 text-slate-500 hover:text-slate-300"
+                  )}
+                >All</button>
+                {allTags.map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => setTagFilter(tagFilter === t ? "" : t)}
+                    className={cn(
+                      "rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors",
+                      tagFilter === t ? "bg-blue-500/20 text-blue-400" : "bg-white/5 text-slate-500 hover:text-slate-300"
+                    )}
+                  >
+                    <Tag className="mr-0.5 inline h-2.5 w-2.5" />{t}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           <div className="flex-1 overflow-y-auto">
             {loading && <p className="p-4 text-center text-xs text-slate-600">Loading drives...</p>}
@@ -485,6 +593,15 @@ export default function Drives() {
                         <span>{formatDuration(d.durationMs)}</span>
                         <span>{avgSpd(d)}</span>
                       </div>
+                      {(d.tags ?? []).length > 0 && (
+                        <div className="mt-1.5 flex flex-wrap gap-1">
+                          {d.tags!.map((t) => (
+                            <span key={t} className="inline-flex items-center rounded-full bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-400">
+                              <Tag className="mr-0.5 h-2 w-2" />{t}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </button>
                   </div>
                 )
@@ -517,6 +634,41 @@ export default function Drives() {
           {/* Detail panel */}
           {selectedDrive && (
             <div className="absolute inset-x-0 bottom-0 z-[1000] border-t border-white/10 bg-slate-950/90 px-4 py-3 backdrop-blur-md">
+              {/* Tags row */}
+              <div className="mb-2 flex flex-wrap items-center gap-1.5">
+                <Tag className="h-3 w-3 text-slate-600" />
+                {(selectedDrive.tags ?? []).map((t) => (
+                  <span key={t} className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-medium text-blue-400">
+                    {t}
+                    <button onClick={() => removeTagFromDrive(selectedId!, selectedDrive.tags ?? [], t)} className="ml-0.5 text-blue-400/60 hover:text-blue-300"><X className="h-2.5 w-2.5" /></button>
+                  </span>
+                ))}
+                {showTagInput ? (
+                  <input
+                    autoFocus
+                    value={tagInput}
+                    onChange={(e) => setTagInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && tagInput.trim()) {
+                        addTagToDrive(selectedId!, selectedDrive.tags ?? [], tagInput)
+                        setTagInput("")
+                        setShowTagInput(false)
+                      }
+                      if (e.key === "Escape") { setShowTagInput(false); setTagInput("") }
+                    }}
+                    onBlur={() => { setShowTagInput(false); setTagInput("") }}
+                    placeholder="Tag name..."
+                    className="w-20 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] text-slate-200 placeholder-slate-600 outline-none focus:border-blue-500/50"
+                  />
+                ) : (
+                  <button
+                    onClick={() => setShowTagInput(true)}
+                    className="inline-flex items-center gap-0.5 rounded-full border border-dashed border-white/10 px-2 py-0.5 text-[10px] text-slate-500 transition-colors hover:border-blue-500/30 hover:text-blue-400"
+                  >
+                    <Plus className="h-2.5 w-2.5" /> Add Tag
+                  </button>
+                )}
+              </div>
               <div className="mb-2 flex flex-wrap gap-x-6 gap-y-1">
                 <Stat icon={<Navigation className="h-3 w-3" />} label="Distance" value={dist(selectedDrive)} highlight />
                 <Stat icon={<Clock className="h-3 w-3" />} label="Duration" value={formatDuration(selectedDrive.durationMs)} />

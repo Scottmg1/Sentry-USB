@@ -122,7 +122,7 @@ func (p *Processor) ProcessDirectory(ctx context.Context, clipsDir string, throt
 		default:
 		}
 
-		points, err := ExtractGPSFromFile(f.fullPath)
+		points, gears, err := ExtractGPSFromFile(f.fullPath)
 		if err != nil {
 			result.Errors++
 			if len(result.ErrorMessages) < 10 {
@@ -130,10 +130,19 @@ func (p *Processor) ProcessDirectory(ctx context.Context, clipsDir string, throt
 			}
 			p.store.MarkProcessed(f.relativePath)
 		} else {
+			// Count raw park frames before dedup for accurate park time estimation
+			rawFrameCount := len(gears)
+			rawParkCount := 0
+			for _, g := range gears {
+				if g == GearPark {
+					rawParkCount++
+				}
+			}
+
 			// Deduplicate consecutive identical points
-			deduped := deduplicatePoints(points)
+			deduped, dedupedGears := deduplicatePoints(points, gears)
 			if len(deduped) > 0 {
-				p.store.AddRoute(f.relativePath, f.dateDir, deduped)
+				p.store.AddRoute(f.relativePath, f.dateDir, deduped, dedupedGears, rawParkCount, rawFrameCount)
 				result.FilesWithGPS++
 				result.TotalPoints += len(deduped)
 			} else {
@@ -227,16 +236,24 @@ func discoverFrontCameraFiles(clipsDir string) ([]fileInfo, error) {
 	return files, nil
 }
 
-// deduplicatePoints removes consecutive identical GPS points.
-func deduplicatePoints(points []GPSPoint) []GPSPoint {
+// deduplicatePoints removes consecutive identical GPS points, keeping gear states in sync.
+func deduplicatePoints(points []GPSPoint, gears []uint8) ([]GPSPoint, []uint8) {
 	if len(points) == 0 {
-		return nil
+		return nil, nil
 	}
+	hasGears := len(gears) == len(points)
 	deduped := []GPSPoint{points[0]}
+	var dedupedGears []uint8
+	if hasGears {
+		dedupedGears = []uint8{gears[0]}
+	}
 	for i := 1; i < len(points); i++ {
 		if points[i][0] != points[i-1][0] || points[i][1] != points[i-1][1] {
 			deduped = append(deduped, points[i])
+			if hasGears {
+				dedupedGears = append(dedupedGears, gears[i])
+			}
 		}
 	}
-	return deduped
+	return deduped, dedupedGears
 }
