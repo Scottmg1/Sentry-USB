@@ -36,20 +36,45 @@ func getSBCModel() string {
 	return "unknown"
 }
 
-// getFingerprint generates a SHA-256 hash of /etc/machine-id + salt.
+// getFingerprint generates a SHA-256 hash of a stable hardware identifier + salt.
+// Uses the SBC's hardware serial number (survives reflash) with fallback to machine-id.
 // Cached after first call.
 func getFingerprint() string {
 	fingerprintOnce.Do(func() {
-		raw, err := os.ReadFile("/etc/machine-id")
-		if err != nil {
-			// Fallback: try /var/lib/dbus/machine-id
-			raw, err = os.ReadFile("/var/lib/dbus/machine-id")
-			if err != nil {
-				log.Printf("[telemetry] Cannot read machine-id: %v", err)
-				return
+		var id string
+
+		// Prefer hardware serial — persists across SD card reflashes
+		for _, p := range []string{
+			"/sys/firmware/devicetree/base/serial-number",
+			"/proc/device-tree/serial-number",
+		} {
+			raw, err := os.ReadFile(p)
+			if err == nil {
+				id = strings.TrimRight(string(raw), "\x00\n ")
+				if id != "" {
+					break
+				}
 			}
 		}
-		id := strings.TrimSpace(string(raw))
+
+		// Fallback to machine-id (changes on reflash, but better than nothing)
+		if id == "" {
+			for _, p := range []string{"/etc/machine-id", "/var/lib/dbus/machine-id"} {
+				raw, err := os.ReadFile(p)
+				if err == nil {
+					id = strings.TrimSpace(string(raw))
+					if id != "" {
+						break
+					}
+				}
+			}
+		}
+
+		if id == "" {
+			log.Printf("[telemetry] Cannot determine device identity (no serial or machine-id)")
+			return
+		}
+
 		hash := sha256.Sum256([]byte(id + telemetrySalt))
 		cachedFingerprint = hex.EncodeToString(hash[:])
 	})
@@ -60,6 +85,7 @@ func getFingerprint() string {
 func doSendTelemetry(currentVersion string, updateAvailable bool, newVersion string) {
 	fp := getFingerprint()
 	if fp == "" {
+		log.Printf("[telemetry] Skipped: no fingerprint available")
 		return
 	}
 	payload, _ := json.Marshal(map[string]interface{}{
@@ -281,12 +307,26 @@ fi
 	writeJSON(w, http.StatusOK, map[string]string{"status": "update_started"})
 }
 
-// checkForUpdate checks GitHub for a newer release and stores the result
+// checkForUpdate checks GitHub for a newer release and stores the result.
+// Always sends a telemetry heartbeat regardless of whether GitHub is reachable,
+// so the API server sees the device even when called from shell scripts
+// (e.g. post-archive-process.sh) that may run without full internet.
 func (h *handlers) checkForUpdate(w http.ResponseWriter, r *http.Request) {
+	log.Printf("[update] checkForUpdate called (source: %s)", r.RemoteAddr)
+
 	currentVersion := ""
 	if data, err := os.ReadFile("/opt/sentryusb/version"); err == nil {
 		currentVersion = strings.TrimSpace(string(data))
 	}
+
+	// Track whether we sent rich telemetry; if not, the defer sends a basic heartbeat.
+	telemetrySent := false
+	defer func() {
+		if !telemetrySent {
+			log.Printf("[update] Sending basic telemetry heartbeat (GitHub check didn't complete)")
+			sendTelemetry(currentVersion, false, "")
+		}
+	}()
 
 	tagOutput, tagErr := shell.RunWithTimeout(10*time.Second, "curl", "-sfL", "--max-time", "8",
 		fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", updateRepo))
@@ -326,12 +366,13 @@ func (h *handlers) checkForUpdate(w http.ResponseWriter, r *http.Request) {
 		os.WriteFile("/tmp/sentryusb-update-check.json", data, 0644)
 	}
 
-	// Send telemetry to support server (fire-and-forget)
+	// Send telemetry with update info
 	newVer := ""
 	if updateAvailable {
 		newVer = release.TagName
 	}
 	sendTelemetry(currentVersion, updateAvailable, newVer)
+	telemetrySent = true
 
 	writeJSON(w, http.StatusOK, updateInfo)
 }

@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils"
 const CONFIG_GROUPS: Record<string, { label: string; keys: string[] }> = {
   network: {
     label: "Network",
-    keys: ["SSID", "WIFIPASS", "SENTRYUSB_HOSTNAME", "WPA_COUNTRY", "AP_SSID", "AP_PASS", "AP_IP"],
+    keys: ["SENTRYUSB_HOSTNAME", "AP_SSID", "AP_PASS", "AP_IP"],
   },
   storage: {
     label: "Storage",
@@ -214,8 +214,9 @@ export function WelcomeStep({ data: _data, onChange: _onChange, onBatchChange }:
       </h2>
       <p className="mt-3 max-w-md text-sm leading-relaxed text-slate-400">
         This wizard will guide you through configuring your SentryUSB device.
-        You&apos;ll set up WiFi, storage, archive destinations, notifications,
-        and more — all from this interface.
+        You&apos;ll set up storage, archive destinations, notifications,
+        and more — all from this interface. WiFi should be configured
+        in Raspberry Pi Imager before flashing your SD card.
       </p>
 
       {/* Upload .conf file */}

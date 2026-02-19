@@ -34,8 +34,8 @@ Browser (React SPA)  ←→  Go API Server (single ARM binary)  ←→  Shell Sc
 ## Quick Start
 
 **Option A** — Flash the SentryUSB image (recommended):
-1. Flash the image to your SD card, boot, open `http://sentryusb.local`
-2. Complete the Setup Wizard, wait for reboots (10–20 min), plug into your Tesla
+1. Flash the image to your SD card using **Raspberry Pi Imager** — configure WiFi, hostname (`sentryusb`), and SSH in the imager settings before writing
+2. Boot, open `http://sentryusb.local`, complete the Setup Wizard, wait for reboots (10–20 min), plug into your Tesla
 
 **Option B** — Install on existing Raspberry Pi OS:
 ```bash

@@ -206,6 +206,39 @@ if ! command -v sntp &> /dev/null && ! command -v ntpdig &> /dev/null; then
 fi
 ok "Prerequisites installed"
 
+# ── Set hostname early so sentryusb.local works before setup wizard ──
+DESIRED_HOSTNAME="sentryusb"
+CURRENT_HOSTNAME=$(hostname 2>/dev/null)
+if [ "$CURRENT_HOSTNAME" != "$DESIRED_HOSTNAME" ]; then
+    info "Setting hostname to '$DESIRED_HOSTNAME' (was '$CURRENT_HOSTNAME')..."
+    hostnamectl set-hostname "$DESIRED_HOSTNAME" 2>/dev/null || {
+        echo "$DESIRED_HOSTNAME" > /etc/hostname
+        hostname "$DESIRED_HOSTNAME"
+    }
+    # Update /etc/hosts so hostname resolves locally
+    if ! grep -q "$DESIRED_HOSTNAME" /etc/hosts 2>/dev/null; then
+        sed -i "s/127\.0\.1\.1.*/127.0.1.1\t$DESIRED_HOSTNAME/" /etc/hosts 2>/dev/null || \
+            echo "127.0.1.1	$DESIRED_HOSTNAME" >> /etc/hosts
+    fi
+    # Ensure avahi-daemon is installed and running for mDNS
+    if ! command -v avahi-daemon &> /dev/null; then
+        apt-get install -y avahi-daemon 2>/dev/null || true
+    fi
+    systemctl enable avahi-daemon 2>/dev/null || true
+    systemctl restart avahi-daemon 2>/dev/null || true
+    ok "Hostname set to '$DESIRED_HOSTNAME' — ${DESIRED_HOSTNAME}.local is now available"
+else
+    # Still ensure avahi is running even if hostname is correct
+    if ! systemctl is-active --quiet avahi-daemon 2>/dev/null; then
+        if ! command -v avahi-daemon &> /dev/null; then
+            apt-get install -y avahi-daemon 2>/dev/null || true
+        fi
+        systemctl enable avahi-daemon 2>/dev/null || true
+        systemctl restart avahi-daemon 2>/dev/null || true
+    fi
+    ok "Hostname already set to '$DESIRED_HOSTNAME'"
+fi
+
 # ── Step 2: Install SentryUSB Binary ───────────────────────────────
 
 # Detect architecture

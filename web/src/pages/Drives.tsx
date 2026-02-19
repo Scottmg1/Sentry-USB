@@ -94,9 +94,21 @@ export default function Drives() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [selectedDrive, setSelectedDrive] = useState<DriveDetail | null>(null)
   const [search, setSearch] = useState("")
-  const [metric, setMetric] = useState(() => {
-    try { return localStorage.getItem("sentryusb_metric") === "true" } catch { return false }
-  })
+  const [metric, setMetric] = useState(false)
+
+  // Load unit from setup config (DRIVE_MAP_UNIT set in wizard)
+  useEffect(() => {
+    fetch("/api/setup/config")
+      .then((r) => r.json())
+      .then((cfg) => {
+        const entry = cfg.DRIVE_MAP_UNIT
+        if (entry) {
+          const val = typeof entry === "object" ? entry.value : entry
+          setMetric(val === "km")
+        }
+      })
+      .catch(() => {})
+  }, [])
   const [sliderIdx, setSliderIdx] = useState(0)
   const [loading, setLoading] = useState(true)
   const [processing, setProcessing] = useState(false)
@@ -423,11 +435,6 @@ export default function Drives() {
           )}
         </div>
         <div className="flex items-center gap-2">
-          {/* Unit toggle */}
-          <div className="flex overflow-hidden rounded-lg border border-white/10">
-            <button onClick={() => { setMetric(false); try { localStorage.setItem("sentryusb_metric", "false") } catch {} fetch("/api/config/preference", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "unit", value: "mi" }) }).catch(() => {}) }} className={cn("px-2.5 py-1 text-xs font-medium transition-colors", !metric ? "bg-blue-500 text-white" : "text-slate-500 hover:text-slate-300")}>MI</button>
-            <button onClick={() => { setMetric(true); try { localStorage.setItem("sentryusb_metric", "true") } catch {} fetch("/api/config/preference", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "unit", value: "km" }) }).catch(() => {}) }} className={cn("px-2.5 py-1 text-xs font-medium transition-colors", metric ? "bg-blue-500 text-white" : "text-slate-500 hover:text-slate-300")}>KM</button>
-          </div>
           {/* Process */}
           <button onClick={triggerProcess} disabled={processing} className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-white/10 disabled:opacity-50">
             {processing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}

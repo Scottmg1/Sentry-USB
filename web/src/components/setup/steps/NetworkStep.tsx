@@ -1,9 +1,7 @@
-import { useEffect, useState } from "react"
-import { Wifi, Radio, CheckCircle, AlertCircle, RefreshCw, Pencil, ShieldCheck } from "lucide-react"
+import { Radio, Wifi, Info } from "lucide-react"
 import type { StepProps } from "../SetupWizard"
 import { SecretInput } from "../SecretInput"
 import { cn } from "@/lib/utils"
-import { WIFI_COUNTRIES } from "../wifiCountries"
 
 function Field({
   label,
@@ -49,198 +47,48 @@ function Field({
   )
 }
 
-interface DetectedWifi {
-  current: { ssid: string; connected: boolean; source: string }
-  config_ssid: string
-  wlan_country?: string
-}
-
 export function NetworkStep({ data, onChange, onBatchChange }: StepProps) {
   const apEnabled = !!data.AP_SSID
-  const [detected, setDetected] = useState<DetectedWifi | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [editing, setEditing] = useState(false)
-  // When true, skip WiFi config entirely — keep current connection untouched
-  const [skipWifi, setSkipWifi] = useState(false)
-
-  useEffect(() => {
-    let cancelled = false
-    setLoading(true)
-    fetch("/api/wifi")
-      .then((r) => r.json())
-      .then((d: DetectedWifi) => {
-        if (cancelled) return
-        setDetected(d)
-
-        // If already connected to WiFi, default to skip mode
-        if (d.current.connected && d.current.ssid) {
-          setSkipWifi(true)
-          // Clear SSID/WIFIPASS so they don't get written to the conf
-          onBatchChange({ SSID: "", WIFIPASS: "" })
-        } else {
-          // Pre-fill SSID: prefer the actually connected SSID over config file value
-          if (!data.SSID) {
-            const ssid = d.current.ssid || d.config_ssid
-            if (ssid) {
-              onChange("SSID", ssid)
-            }
-          }
-        }
-        // Pre-fill WLAN country if detected and not already set
-        if (!data.WPA_COUNTRY && d.wlan_country) {
-          onChange("WPA_COUNTRY", d.wlan_country)
-        }
-      })
-      .catch(() => {})
-      .finally(() => { if (!cancelled) setLoading(false) })
-    return () => { cancelled = true }
-  }, [])
-
-  const detectedSSID = detected?.current.ssid || ""
-  const configSSID = detected?.config_ssid || ""
-  const isConnected = detected?.current.connected ?? false
-
-  // Show the detected banner if we have a detected SSID and user isn't manually editing
-  const showDetectedBanner = !loading && detectedSSID && !editing && !skipWifi
 
   return (
     <div className="space-y-6">
-      {/* WiFi */}
+      {/* WiFi info banner */}
+      <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-4">
+        <div className="flex items-start gap-3">
+          <Info className="mt-0.5 h-5 w-5 shrink-0 text-blue-400" />
+          <div>
+            <p className="text-sm font-medium text-slate-200">
+              WiFi is configured during SD card imaging
+            </p>
+            <p className="mt-1 text-xs leading-relaxed text-slate-400">
+              Set your WiFi network name, password, and country code in
+              <span className="font-medium text-slate-300"> Raspberry Pi Imager </span>
+              before flashing your SD card. SentryUSB will use that WiFi configuration automatically.
+            </p>
+            <p className="mt-2 text-xs text-slate-500">
+              If you need to change WiFi later, re-flash the SD card with updated settings or
+              edit <code className="rounded bg-white/5 px-1 py-0.5 text-slate-400">wpa_supplicant.conf</code> via SSH.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Hostname */}
       <div>
         <div className="mb-3 flex items-center gap-2">
           <Wifi className="h-4 w-4 text-blue-400" />
           <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400">
-            Home WiFi
+            Hostname
           </h3>
         </div>
-
-        {/* Loading state */}
-        {loading && (
-          <div className="flex items-center gap-2 rounded-lg border border-white/5 bg-white/[0.02] p-3">
-            <RefreshCw className="h-4 w-4 animate-spin text-slate-500" />
-            <p className="text-sm text-slate-500">Detecting WiFi configuration...</p>
-          </div>
-        )}
-
-        {/* Skip WiFi banner — shown when already connected and user chose to keep current */}
-        {!loading && skipWifi && isConnected && (
-          <div className="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <ShieldCheck className="h-5 w-5 text-emerald-400" />
-                <div>
-                  <p className="text-sm font-medium text-slate-200">
-                    Keeping current WiFi connection
-                  </p>
-                  <p className="text-xs text-slate-400">
-                    Connected to: <span className="font-medium text-slate-300">{detectedSSID}</span>
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Setup will not modify your WiFi configuration.
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  setSkipWifi(false)
-                  setEditing(true)
-                  // Pre-fill with detected SSID so user can adjust
-                  onChange("SSID", detectedSSID)
-                }}
-                className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-white/10"
-              >
-                <Pencil className="h-3 w-3" />
-                Configure different WiFi
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Detected WiFi banner */}
-        {showDetectedBanner && (
-          <div className={cn(
-            "mb-4 flex items-center justify-between rounded-lg border p-4",
-            isConnected
-              ? "border-emerald-500/30 bg-emerald-500/10"
-              : "border-amber-500/30 bg-amber-500/10"
-          )}>
-            <div className="flex items-center gap-3">
-              {isConnected ? (
-                <CheckCircle className="h-5 w-5 text-emerald-400" />
-              ) : (
-                <AlertCircle className="h-5 w-5 text-amber-400" />
-              )}
-              <div>
-                <p className="text-sm font-medium text-slate-200">
-                  {isConnected ? "Connected to WiFi" : "WiFi Configured"}
-                </p>
-                <p className="text-xs text-slate-400">
-                  Network: <span className="font-medium text-slate-300">{detectedSSID}</span>
-                  {configSSID && configSSID !== detectedSSID && (
-                    <span className="ml-2 text-slate-500">
-                      (config: {configSSID})
-                    </span>
-                  )}
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={() => setEditing(true)}
-              className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-white/10"
-            >
-              <Pencil className="h-3 w-3" />
-              Change
-            </button>
-          </div>
-        )}
-
-        {/* WiFi fields — shown if no detected wifi, or user clicks Change, or loading failed */}
-        {(!showDetectedBanner || editing) && !loading && !skipWifi && (
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field
-              label="SSID"
-              field="SSID"
-              placeholder="Your WiFi network name"
-              data={data}
-              onChange={onChange}
-            />
-            <Field
-              label="Password"
-              field="WIFIPASS"
-              type="password"
-              placeholder="WiFi password"
-              data={data}
-              onChange={onChange}
-            />
-          </div>
-        )}
-      </div>
-
-      {/* Hostname & Country */}
-      <div className="grid gap-3 sm:grid-cols-2">
         <Field
-          label="Hostname"
+          label="Device Hostname"
           field="SENTRYUSB_HOSTNAME"
           placeholder="sentryusb"
           data={data}
           onChange={onChange}
-          hint="The device will be accessible at hostname.local"
+          hint="The device will be accessible at hostname.local (e.g. sentryusb.local)"
         />
-        <div>
-          <label className="mb-1 block text-sm font-medium text-slate-300">
-            WiFi Country
-          </label>
-          <select
-            value={data.WPA_COUNTRY ?? "US"}
-            onChange={(e) => onChange("WPA_COUNTRY", e.target.value)}
-            className="w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/25 [&>option]:bg-slate-900 [&>option]:text-slate-100"
-          >
-            {WIFI_COUNTRIES.map(([code, name]) => (
-              <option key={code} value={code}>{code} — {name}</option>
-            ))}
-          </select>
-          <p className="mt-1 text-xs text-slate-600">Required for WiFi to work on correct channels</p>
-        </div>
       </div>
 
       {/* Access Point */}

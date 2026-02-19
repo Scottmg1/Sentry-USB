@@ -267,15 +267,15 @@ func (dh *DriveHandlers) processingStatus(w http.ResponseWriter, r *http.Request
 
 // GET /api/drives/data/download — download the drive-data.json file
 func (dh *DriveHandlers) downloadData(w http.ResponseWriter, r *http.Request) {
-	path := dh.store.Path()
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		writeError(w, http.StatusNotFound, "no drive data file found")
+	data := dh.store.GetData()
+	if len(data.Routes) == 0 && len(data.ProcessedFiles) == 0 {
+		writeError(w, http.StatusNotFound, "no drive data found")
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition", "attachment; filename=drive-data.json")
-	http.ServeFile(w, r, path)
+	json.NewEncoder(w).Encode(&data)
 }
 
 // POST /api/drives/data/upload — upload a drive-data.json file to replace current data

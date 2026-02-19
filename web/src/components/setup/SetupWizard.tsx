@@ -45,7 +45,7 @@ interface SetupWizardProps {
   onClose: () => void
 }
 
-type SetupPhase = "wizard" | "applying" | "running" | "rebooting" | "complete" | "error"
+type SetupPhase = "wizard" | "applying" | "running" | "rebooting" | "finalizing" | "complete" | "error"
 
 export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
   const [currentStep, setCurrentStep] = useState(0)
@@ -77,12 +77,13 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
         const res = await fetch("/api/setup/status")
         const data = await res.json()
         if (data.setup_finished) {
-          setPhase("complete")
-          setSetupMessage("Setup completed successfully! Your device is ready.")
+          // Setup scripts are done — the Pi will do a final reboot.
+          // Transition to "finalizing" which keeps the spinner and
+          // waits for the server to come back before showing dashboard.
+          setPhase("finalizing")
+          setSetupMessage("SentryUSB has finished setting up. The device is now rebooting one last time...")
           if (pollRef.current) clearInterval(pollRef.current)
         } else if (!data.setup_running && phase === "running") {
-          // Setup stopped but not finished — switch to rebooting since
-          // the Pi reboots multiple times during setup.
           setPhase("rebooting")
           setSetupMessage("System is rebooting to continue setup. This page will reconnect automatically.")
         }
@@ -95,6 +96,31 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
       }
     }, 3000)
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
+  }, [phase])
+
+  // Poll during finalizing — wait for server to be reachable after final reboot
+  useEffect(() => {
+    if (phase !== "finalizing") return
+    let reachable = false
+    const poll = setInterval(async () => {
+      try {
+        const res = await fetch("/api/setup/status")
+        if (res.ok) {
+          // Server is back up after final reboot
+          if (!reachable) {
+            reachable = true
+            setPhase("complete")
+            setSetupMessage("Setup completed successfully! Your device is ready.")
+            clearInterval(poll)
+          }
+        }
+      } catch {
+        // Still rebooting — keep waiting
+        reachable = false
+        setSetupMessage("Waiting for SentryUSB to come back online after final reboot...")
+      }
+    }, 3000)
+    return () => clearInterval(poll)
   }, [phase])
 
   // Also listen to WebSocket for real-time updates
@@ -115,8 +141,8 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
             } else if (d.status === "running") {
               setSetupMessage("Running setup... This may take several minutes.")
             } else if (d.status === "complete") {
-              setPhase("complete")
-              setSetupMessage("Setup completed successfully! Your device is ready.")
+              setPhase("finalizing")
+              setSetupMessage("SentryUSB has finished setting up. The device is now rebooting one last time...")
             } else if (d.status === "rebooting") {
               setPhase("rebooting")
               setSetupMessage(d.message || "System is rebooting to continue setup...")
@@ -190,20 +216,30 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
         <div className="glass-card flex w-full max-w-lg flex-col items-center gap-6 p-10 text-center">
-          {phase === "applying" || phase === "running" || phase === "rebooting" ? (
+          {phase === "applying" || phase === "running" || phase === "rebooting" || phase === "finalizing" ? (
             <>
               <div className="flex h-16 w-16 items-center justify-center rounded-full bg-blue-500/20">
                 <Loader2 className="h-8 w-8 animate-spin text-blue-400" />
               </div>
               <div>
-                <h2 className="text-xl font-semibold text-slate-100">Setting Up SentryUSB</h2>
+                <h2 className="text-xl font-semibold text-slate-100">
+                  {phase === "finalizing" ? "Almost Done!" : "Setting Up SentryUSB"}
+                </h2>
                 <p className="mt-2 text-sm text-slate-400">{setupMessage}</p>
-                <p className="mt-4 text-xs text-slate-600">
-                  This process creates disk images, configures archiving, and sets up USB gadget mode.
-                  The device will reboot multiple times — this is completely normal.
-                  Setup continues automatically after each reboot. Do not power off the device.
-                  The full process may take 10-20 minutes.
-                </p>
+                {phase !== "finalizing" && (
+                  <p className="mt-4 text-xs text-slate-600">
+                    This process creates disk images, configures archiving, and sets up USB gadget mode.
+                    The device will reboot multiple times — this is completely normal.
+                    Setup continues automatically after each reboot. Do not power off the device.
+                    The full process may take 10-20 minutes.
+                  </p>
+                )}
+                {phase === "finalizing" && (
+                  <p className="mt-4 text-xs text-slate-600">
+                    SentryUSB is performing its final reboot. This page will automatically
+                    redirect you to the dashboard once the device is back online.
+                  </p>
+                )}
               </div>
               <SetupProgress />
             </>

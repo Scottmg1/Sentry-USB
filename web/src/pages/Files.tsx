@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import {
   FolderOpen,
   Upload,
@@ -13,6 +13,8 @@ import {
   Video,
   Paintbrush,
   RectangleHorizontal,
+  CheckCircle,
+  X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -53,6 +55,14 @@ function formatSize(bytes: number): string {
   return `${(bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0)} ${units[i]}`
 }
 
+interface UploadProgress {
+  fileName: string
+  loaded: number
+  total: number
+  done: boolean
+  error: boolean
+}
+
 export default function Files() {
   const [drives, setDrives] = useState<DriveTab[]>([])
   const [activeDrive, setActiveDrive] = useState<DriveTab | null>(null)
@@ -62,6 +72,8 @@ export default function Files() {
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const uploadRef = useRef<HTMLInputElement>(null)
+  const [uploads, setUploads] = useState<UploadProgress[]>([])
+  const [uploading, setUploading] = useState(false)
 
   // Fetch config to determine which tabs to show
   useEffect(() => {
@@ -146,18 +158,64 @@ export default function Files() {
     fetchFiles(currentPath)
   }
 
-  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const fileList = e.target.files
-    if (!fileList) return
-    for (const file of Array.from(fileList)) {
+  function uploadFileWithProgress(file: globalThis.File, destPath: string, index: number): Promise<void> {
+    return new Promise((resolve) => {
       const form = new FormData()
       form.append("file", file)
-      form.append("path", currentPath)
-      await fetch("/api/files/upload", { method: "POST", body: form })
-    }
+      form.append("path", destPath)
+
+      const xhr = new XMLHttpRequest()
+      xhr.open("POST", "/api/files/upload")
+
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          setUploads((prev) => prev.map((u, i) => i === index ? { ...u, loaded: e.loaded, total: e.total } : u))
+        }
+      }
+
+      xhr.onload = () => {
+        setUploads((prev) => prev.map((u, i) => i === index ? { ...u, done: true, loaded: u.total, error: xhr.status >= 400 } : u))
+        resolve()
+      }
+
+      xhr.onerror = () => {
+        setUploads((prev) => prev.map((u, i) => i === index ? { ...u, done: true, error: true } : u))
+        resolve()
+      }
+
+      xhr.send(form)
+    })
+  }
+
+  const handleUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files
+    if (!fileList || fileList.length === 0) return
+
+    const fileArr = Array.from(fileList)
+    const initial: UploadProgress[] = fileArr.map((f) => ({
+      fileName: f.name,
+      loaded: 0,
+      total: f.size,
+      done: false,
+      error: false,
+    }))
+
+    setUploads(initial)
+    setUploading(true)
+
+    // Upload all files in parallel
+    await Promise.all(fileArr.map((f, i) => uploadFileWithProgress(f, currentPath, i)))
+
+    // All uploads finished — auto-refresh
     fetchFiles(currentPath)
     if (uploadRef.current) uploadRef.current.value = ""
-  }
+
+    // Keep progress visible briefly, then clear
+    setTimeout(() => {
+      setUploads([])
+      setUploading(false)
+    }, 2000)
+  }, [currentPath])
 
   async function handleNewFolder() {
     const name = prompt("Folder name:")
@@ -199,10 +257,14 @@ export default function Files() {
           </button>
           <button
             onClick={() => uploadRef.current?.click()}
-            className="glass-card glass-card-hover flex items-center gap-1.5 px-3 py-1.5 text-sm text-slate-400 transition-colors hover:text-slate-200"
+            disabled={uploading}
+            className={cn(
+              "glass-card glass-card-hover flex items-center gap-1.5 px-3 py-1.5 text-sm transition-colors",
+              uploading ? "text-slate-600 cursor-not-allowed" : "text-slate-400 hover:text-slate-200"
+            )}
           >
-            <Upload className="h-4 w-4" />
-            Upload
+            {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+            {uploading ? "Uploading..." : "Upload"}
           </button>
           <input ref={uploadRef} type="file" multiple className="hidden" onChange={handleUpload} />
         </div>
@@ -226,6 +288,66 @@ export default function Files() {
           </button>
         ))}
       </div>
+
+      {/* Upload progress */}
+      {uploads.length > 0 && (
+        <div className="glass-card space-y-2 p-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-medium text-slate-300">
+              {uploading ? "Uploading files..." : (
+                <span className="flex items-center gap-1.5">
+                  <CheckCircle className="h-3.5 w-3.5 text-emerald-400" />
+                  Upload complete
+                </span>
+              )}
+            </p>
+            {!uploading && (
+              <button onClick={() => setUploads([])} className="rounded p-0.5 text-slate-600 hover:text-slate-400">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+          {uploads.map((u, i) => {
+            const pct = u.total > 0 ? Math.round((u.loaded / u.total) * 100) : 0
+            return (
+              <div key={i} className="space-y-1">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="truncate text-slate-400">{u.fileName}</span>
+                  <span className={cn("tabular-nums", u.error ? "text-red-400" : u.done ? "text-emerald-400" : "text-slate-500")}>
+                    {u.error ? "Error" : u.done ? "Done" : `${pct}%`}
+                  </span>
+                </div>
+                <div className="h-1 overflow-hidden rounded-full bg-slate-800">
+                  <div
+                    className={cn(
+                      "h-full rounded-full transition-all duration-300",
+                      u.error ? "bg-red-500" : u.done ? "bg-emerald-500" : "bg-blue-500"
+                    )}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+              </div>
+            )
+          })}
+          {uploading && uploads.length > 1 && (() => {
+            const totalLoaded = uploads.reduce((s, u) => s + u.loaded, 0)
+            const totalSize = uploads.reduce((s, u) => s + u.total, 0)
+            const totalPct = totalSize > 0 ? Math.round((totalLoaded / totalSize) * 100) : 0
+            const doneCount = uploads.filter((u) => u.done).length
+            return (
+              <div className="border-t border-white/5 pt-2">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-slate-500">{doneCount}/{uploads.length} files</span>
+                  <span className="tabular-nums text-slate-400">{formatSize(totalLoaded)} / {formatSize(totalSize)} ({totalPct}%)</span>
+                </div>
+                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-800">
+                  <div className="h-full rounded-full bg-blue-500 transition-all duration-300" style={{ width: `${totalPct}%` }} />
+                </div>
+              </div>
+            )
+          })()}
+        </div>
+      )}
 
       {/* File list */}
       <div className="glass-card flex min-h-0 flex-1 flex-col overflow-hidden">

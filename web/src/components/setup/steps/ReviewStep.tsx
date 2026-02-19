@@ -4,7 +4,7 @@ import type { StepProps } from "../SetupWizard"
 const sections = [
   {
     title: "Network",
-    fields: ["SSID", "WIFIPASS", "SENTRYUSB_HOSTNAME", "WPA_COUNTRY", "AP_SSID", "AP_PASS", "AP_IP"],
+    fields: ["SENTRYUSB_HOSTNAME", "AP_SSID", "AP_PASS", "AP_IP"],
   },
   {
     title: "Storage",

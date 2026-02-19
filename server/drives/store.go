@@ -11,7 +11,12 @@ import (
 )
 
 // DefaultDataPath is where drive data is stored on the Pi.
-const DefaultDataPath = "/root/drive-data.json"
+// Uses /mutable/ which is always writable (root FS is read-only).
+const DefaultDataPath = "/mutable/drive-data.json"
+
+// legacyDataPath is the old location on the root filesystem.
+// Checked during Load() for migration.
+const legacyDataPath = "/root/drive-data.json"
 
 // Route represents GPS data extracted from a single front-camera clip.
 type Route struct {
@@ -46,6 +51,8 @@ func NewStore(path string) *Store {
 }
 
 // Load reads the data file from disk. Returns empty data if file doesn't exist.
+// If the file is missing at the current path but exists at the legacy path
+// (/root/drive-data.json), it is migrated to the new writable location.
 func (s *Store) Load() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -53,6 +60,18 @@ func (s *Store) Load() error {
 	f, err := os.Open(s.path)
 	if err != nil {
 		if os.IsNotExist(err) {
+			// Try migrating from the legacy path on the root filesystem
+			if s.path != legacyDataPath {
+				if lf, lerr := os.Open(legacyDataPath); lerr == nil {
+					defer lf.Close()
+					if decErr := json.NewDecoder(lf).Decode(&s.data); decErr == nil {
+						log.Printf("[drives] Migrated drive data from %s to %s", legacyDataPath, s.path)
+						// Best-effort: write to new path so future loads find it
+						s.saveLocked()
+						return nil
+					}
+				}
+			}
 			s.data = StoreData{}
 			return nil
 		}
@@ -68,7 +87,11 @@ func (s *Store) Load() error {
 func (s *Store) Save() error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	return s.saveLocked()
+}
 
+// saveLocked writes data to disk without acquiring the lock (caller must hold it).
+func (s *Store) saveLocked() error {
 	dir := filepath.Dir(s.path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
