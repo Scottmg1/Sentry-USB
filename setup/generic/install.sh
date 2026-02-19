@@ -117,6 +117,15 @@ then
     fi
     touch "$marker"
 
+    # Calculate a safe resize target: current usage + 2G headroom, minimum 6G
+    used_kb=$(df --output=used -k / | tail -1 | tr -d ' ')
+    target_gb=$(( (used_kb / 1024 / 1024) + 2 ))
+    if [ "$target_gb" -lt 6 ]
+    then
+      target_gb=6
+    fi
+    echo "Root filesystem uses ~$((used_kb / 1024 / 1024))G, will shrink to ${target_gb}G"
+
     echo "insufficient unpartitioned space, attempting to shrink root file system"
 
     cat <<- EOF > /etc/rc.local
@@ -160,7 +169,7 @@ then
       do
         sleep 1
       done
-    } | bash -s 3G
+    } | bash -s "${target_gb}G"
     exit 0
   fi
   rm -f "$marker"
