@@ -14,7 +14,7 @@
 #   curl -fsSL https://sentryusb.sentry-six.com | bash
 
 REPO="Scottmg1/Sentry-USB"
-BRANCH="test"
+BRANCH="main-dev"
 INSTALL_DIR="/opt/sentryusb"
 SERVICE_NAME="sentryusb"
 BINARY_NAME="sentryusb"
