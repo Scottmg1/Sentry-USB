@@ -164,12 +164,28 @@ function wait_for_archive_to_be_reachable () {
       rm /tmp/archive_is_reachable
       break
     fi
-    # Periodically trigger a WiFi rescan so NetworkManager reconnects to the
-    # home network when the car returns within range. Without this, NM may
-    # stop scanning while the AP virtual interface (ap0) is active.
+    # Progressively stronger WiFi recovery while waiting:
+    #   - Every 30s:  trigger a scan so NM sees the home network
+    #   - Every 2min: if wlan0 isn't connected, explicitly ask NM to connect
+    #   - Every 10min: full disconnect/reconnect cycle to recover from
+    #                  driver-level stalls (brcmfmac + concurrent AP mode)
     scan_counter=$((scan_counter + 1))
     if (( scan_counter % 30 == 0 )); then
       nmcli device wifi rescan 2>/dev/null || true
+    fi
+    if (( scan_counter % 120 == 0 )); then
+      local wifi_state
+      wifi_state=$(nmcli -t -f DEVICE,STATE device status 2>/dev/null | grep "^wlan0:" | cut -d: -f2) || true
+      if [ "${wifi_state:-}" != "connected" ]; then
+        log "WiFi not connected (state: ${wifi_state:-unknown}), requesting NM autoconnect..."
+        nmcli device connect wlan0 2>/dev/null || true
+      fi
+    fi
+    if (( scan_counter % 600 == 0 )); then
+      log "Archive still unreachable after $((scan_counter))s, cycling wlan0..."
+      nmcli device disconnect wlan0 2>/dev/null || true
+      sleep 2
+      nmcli device connect wlan0 2>/dev/null || true
     fi
     sleep 1
   done
