@@ -70,19 +70,33 @@ function nm_add_ap () {
   nmcli con modify SENTRYUSB_AP ipv4.addr "$IP/24" || return 1
   nmcli con modify SENTRYUSB_AP ipv4.method shared || return 1
   nmcli con modify SENTRYUSB_AP ipv6.method disabled || return 1
-  cat > /etc/network/if-up.d/sentryusb-ap << EOF
+  # Remove stale if-up.d script from previous installs — it doesn't fire on
+  # NetworkManager/netplan systems (e.g. Pi 5 with Debian Trixie).
+  rm -f /etc/network/if-up.d/sentryusb-ap
+
+  # Use a NetworkManager dispatcher script instead: NM calls scripts in
+  # /etc/NetworkManager/dispatcher.d/ with $1=interface $2=action whenever
+  # an interface changes state.
+  mkdir -p /etc/NetworkManager/dispatcher.d
+  cat > /etc/NetworkManager/dispatcher.d/10-sentryusb-ap << EOF
 #!/bin/bash
+# Recreate ap0 virtual interface when the wifi client comes up.
+# Created by SentryUSB configure-ap.sh
 
-if [ "\$IFACE" = "$WLAN" ]
+IFACE="\$1"
+ACTION="\$2"
+
+if [ "\$IFACE" = "$WLAN" ] && [ "\$ACTION" = "up" ]
 then
-  iw dev $WLAN interface add ap0 type __ap
-  iw "$WLAN" set power_save off
-  iw ap0 set power_save off
-  nmcli con up SENTRYUSB_AP
+  if ! iw dev ap0 info &> /dev/null; then
+    iw dev $WLAN interface add ap0 type __ap || true
+  fi
+  iw $WLAN set power_save off 2>/dev/null || true
+  iw ap0 set power_save off 2>/dev/null || true
+  nmcli con up SENTRYUSB_AP 2>/dev/null || true
 fi
-
 EOF
-  chmod a+x /etc/network/if-up.d/sentryusb-ap || return 1
+  chmod 755 /etc/NetworkManager/dispatcher.d/10-sentryusb-ap || return 1
 }
 
 

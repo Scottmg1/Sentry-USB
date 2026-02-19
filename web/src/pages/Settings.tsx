@@ -14,6 +14,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { SetupWizard } from "@/components/setup/SetupWizard"
+import { wsClient } from "@/lib/ws"
 
 type ActionState = "idle" | "loading" | "success" | "error"
 
@@ -95,6 +96,148 @@ function ActionButton({
           "text-slate-500"
         )}>
           {msg || description}
+        </p>
+      </div>
+    </button>
+  )
+}
+
+type BleState = "idle" | "initiating" | "waiting" | "polling" | "paired" | "error"
+
+function BlePairButton() {
+  const [bleState, setBleState] = useState<BleState>("idle")
+  const [bleMsg, setBleMsg] = useState("")
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Subscribe to WebSocket ble_status messages
+  useEffect(() => {
+    const unsub = wsClient.subscribe("ble_status", (data: unknown) => {
+      const d = data as { status: string; error?: string; output?: string }
+      if (d.status === "pairing") {
+        setBleState("initiating")
+        setBleMsg("Sending pairing request to car...")
+      } else if (d.status === "error") {
+        setBleState("error")
+        const errMsg = d.error || "Unknown error"
+        if (errMsg.includes("maximum number of BLE")) {
+          setBleMsg("Too many BLE devices active. Turn off Bluetooth on nearby phone keys and try again.")
+        } else if (errMsg.includes("timed out")) {
+          setBleMsg("BLE connection timed out. Make sure the Pi is near the car and try again.")
+        } else {
+          setBleMsg(errMsg)
+        }
+        cleanup()
+      } else if (d.status === "waiting") {
+        setBleState("waiting")
+        setBleMsg("Tap your keycard on the center console to confirm pairing.")
+        startPolling()
+      }
+    })
+    return () => {
+      unsub()
+      cleanup()
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  function cleanup() {
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
+    if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null }
+  }
+
+  function startPolling() {
+    cleanup()
+    let count = 0
+    pollRef.current = setInterval(async () => {
+      count++
+      try {
+        const res = await fetch("/api/system/ble-status")
+        if (res.ok) {
+          const data = await res.json()
+          if (data.status === "paired") {
+            setBleState("paired")
+            setBleMsg("Successfully paired with car!")
+            cleanup()
+            return
+          }
+        }
+      } catch { /* ignore fetch errors during polling */ }
+      if (count >= 12) {
+        setBleState("error")
+        setBleMsg("Pairing timed out. Make sure you tapped your keycard on the center console, then try again.")
+        cleanup()
+      }
+    }, 5000)
+    // Safety timeout at 65 seconds
+    timeoutRef.current = setTimeout(() => {
+      if (bleState !== "paired" && bleState !== "error") {
+        setBleState("error")
+        setBleMsg("Pairing timed out. Please try again.")
+        cleanup()
+      }
+    }, 65000)
+  }
+
+  async function handlePair() {
+    setBleState("initiating")
+    setBleMsg("Sending pairing request...")
+    try {
+      const res = await fetch("/api/system/ble-pair", { method: "POST" })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || "Failed to initiate BLE pairing")
+      }
+    } catch (err) {
+      setBleState("error")
+      setBleMsg(err instanceof Error ? err.message : "Failed to initiate pairing")
+    }
+  }
+
+  function handleReset() {
+    cleanup()
+    setBleState("idle")
+    setBleMsg("")
+  }
+
+  const isActive = bleState !== "idle" && bleState !== "paired" && bleState !== "error"
+
+  return (
+    <button
+      onClick={bleState === "idle" ? handlePair : (bleState === "paired" || bleState === "error") ? handleReset : undefined}
+      disabled={isActive}
+      className="glass-card glass-card-hover flex items-start gap-3 p-4 text-left transition-colors disabled:opacity-70"
+    >
+      <div
+        className={cn(
+          "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-colors",
+          bleState === "paired" ? "bg-emerald-500/15 text-emerald-400" :
+          bleState === "error" ? "bg-red-500/15 text-red-400" :
+          isActive ? "bg-amber-500/15 text-amber-400" :
+          "bg-blue-500/15 text-blue-400"
+        )}
+      >
+        {isActive ? (
+          <Loader2 className="h-5 w-5 animate-spin" />
+        ) : bleState === "paired" ? (
+          <CheckCircle className="h-5 w-5" />
+        ) : bleState === "error" ? (
+          <AlertCircle className="h-5 w-5" />
+        ) : (
+          <Bluetooth className="h-5 w-5" />
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-slate-200">
+          {bleState === "paired" ? "BLE Paired" : bleState === "error" ? "BLE Pairing Failed" : isActive ? "Pairing..." : "Pair BLE with Car"}
+        </p>
+        <p className={cn(
+          "mt-0.5 text-xs",
+          bleState === "paired" ? "text-emerald-400" :
+          bleState === "error" ? "text-red-400" :
+          bleState === "waiting" ? "text-amber-400 font-medium" :
+          "text-slate-500"
+        )}>
+          {bleMsg || "Initiate Bluetooth Low Energy pairing"}
         </p>
       </div>
     </button>
@@ -475,18 +618,7 @@ export default function Settings() {
             }}
           />
           <SpeedTestButton />
-          {piConfig?.uses_ble === "yes" && (
-            <ActionButton
-              icon={Bluetooth}
-              label="Pair BLE with Car"
-              description="Initiate Bluetooth Low Energy pairing"
-              successMessage="BLE pairing initiated"
-              onClick={async () => {
-                const res = await fetch("/api/system/ble-pair", { method: "POST" })
-                if (!res.ok) throw new Error("Failed to initiate BLE pairing")
-              }}
-            />
-          )}
+          {piConfig?.uses_ble === "yes" && <BlePairButton />}
         </div>
       </div>
 

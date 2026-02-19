@@ -150,6 +150,7 @@ function connect_usb_drives_to_host() {
 
 function wait_for_archive_to_be_reachable () {
   log "Waiting for archive to be reachable..."
+  local scan_counter=0
   while true
   do
     if archive_is_reachable
@@ -162,6 +163,13 @@ function wait_for_archive_to_be_reachable () {
       log "Simulating archive is reachable"
       rm /tmp/archive_is_reachable
       break
+    fi
+    # Periodically trigger a WiFi rescan so NetworkManager reconnects to the
+    # home network when the car returns within range. Without this, NM may
+    # stop scanning while the AP virtual interface (ap0) is active.
+    scan_counter=$((scan_counter + 1))
+    if (( scan_counter % 30 == 0 )); then
+      nmcli device wifi rescan 2>/dev/null || true
     fi
     sleep 1
   done
