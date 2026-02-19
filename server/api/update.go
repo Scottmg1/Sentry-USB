@@ -250,14 +250,13 @@ TMPDIR=$(mktemp -d)
 trap "rm -rf $TMPDIR" EXIT
 curl -fsSL "%s" | tar xz --strip-components=1 -C "$TMPDIR"
 
-# Update top-level run/ scripts that are already installed in /root/bin/
+# Update top-level run/ scripts in /root/bin/
+# Always install (not just update existing) so new scripts in future versions get deployed
 for f in "$TMPDIR"/run/*; do
   [ -f "$f" ] || continue
   name=$(basename "$f")
-  if [ -f "/root/bin/$name" ]; then
-    cp "$f" "/root/bin/$name"
-    chmod +x "/root/bin/$name"
-  fi
+  cp "$f" "/root/bin/$name"
+  chmod +x "/root/bin/$name"
 done
 
 # Update archive module scripts from the configured ARCHIVE_SYSTEM only
@@ -280,8 +279,14 @@ if [ -n "$ARCHIVE_SYSTEM" ]; then
   fi
 fi
 
-# Update envsetup.sh from setup/pi/ if installed
-if [ -f "$TMPDIR/setup/pi/envsetup.sh" ] && [ -f "/root/bin/envsetup.sh" ]; then
+# Update setup-sentryusb from setup/pi/
+if [ -f "$TMPDIR/setup/pi/setup-sentryusb" ]; then
+  cp "$TMPDIR/setup/pi/setup-sentryusb" "/root/bin/setup-sentryusb"
+  chmod +x "/root/bin/setup-sentryusb"
+fi
+
+# Update envsetup.sh from setup/pi/
+if [ -f "$TMPDIR/setup/pi/envsetup.sh" ]; then
   cp "$TMPDIR/setup/pi/envsetup.sh" "/root/bin/envsetup.sh"
   chmod +x "/root/bin/envsetup.sh"
 fi
