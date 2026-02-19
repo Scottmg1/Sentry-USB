@@ -57,6 +57,9 @@ func (h *handlers) blePair(w http.ResponseWriter, r *http.Request) {
 	var vin string
 	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "#") {
+			continue
+		}
 		if strings.HasPrefix(line, "export TESLA_BLE_VIN=") {
 			vin = strings.TrimPrefix(line, "export TESLA_BLE_VIN=")
 			vin = strings.Trim(vin, "'\"")
@@ -71,6 +74,7 @@ func (h *handlers) blePair(w http.ResponseWriter, r *http.Request) {
 
 	go func() {
 		h.hub.Broadcast("ble_status", map[string]string{"status": "pairing"})
+		vin = strings.ToUpper(vin)
 		output, err := shell.RunWithTimeout(120_000_000_000,
 			"/root/bin/tesla-control", "-ble", "-vin", vin,
 			"add-key-request", "/root/.ble/key_public.pem", "owner", "cloud_key")
@@ -85,12 +89,59 @@ func (h *handlers) blePair(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) bleStatus(w http.ResponseWriter, r *http.Request) {
-	// Check if the BLE key exists
-	if _, err := os.Stat("/root/.ble/key_public.pem"); err == nil {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "paired"})
-	} else {
+	// Check if the BLE key files exist
+	if _, err := os.Stat("/root/.ble/key_public.pem"); err != nil {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "not_paired"})
+		return
 	}
+	if _, err := os.Stat("/root/.ble/key_private.pem"); err != nil {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "not_paired"})
+		return
+	}
+
+	// Keys exist — verify the key is actually paired with the car
+	// by attempting to get session info from the vehicle
+	vin := readBLEVin()
+	if vin == "" {
+		// Keys exist but no VIN configured — report keys_generated
+		writeJSON(w, http.StatusOK, map[string]string{"status": "keys_generated"})
+		return
+	}
+
+	_, err := shell.RunWithTimeout(15*time.Second,
+		"/root/bin/tesla-control", "-ble", "-vin", strings.ToUpper(vin),
+		"session-info", "/root/.ble/key_private.pem", "infotainment")
+	if err != nil {
+		// Keys exist but pairing not confirmed — could be out of range or not paired
+		writeJSON(w, http.StatusOK, map[string]string{"status": "keys_generated", "note": "Car not reachable or key not paired"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "paired"})
+}
+
+// readBLEVin reads the TESLA_BLE_VIN from the config file.
+func readBLEVin() string {
+	configPath := findConfigFilePath()
+	if configPath == "" {
+		return ""
+	}
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "#") {
+			continue
+		}
+		if strings.HasPrefix(line, "export TESLA_BLE_VIN=") {
+			vin := strings.TrimPrefix(line, "export TESLA_BLE_VIN=")
+			vin = strings.Trim(vin, "'\"")
+			return vin
+		}
+	}
+	return ""
 }
 
 func (h *handlers) refreshDiagnostics(w http.ResponseWriter, r *http.Request) {

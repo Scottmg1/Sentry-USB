@@ -90,7 +90,7 @@ if systemctl --quiet is-enabled NetworkManager.service
 then
   # force-install iw because otherwise it will get autoremoved when
   # alsa-utils is removed later
-  apt-get -y --force-yes install iw || return 1
+  apt-get -y --force-yes install iw || exit 1
   if ! nm_add_ap
   then
     # Network Manager won't allow adding connections when started with a

@@ -184,6 +184,9 @@ func (h *handlers) getConfig(w http.ResponseWriter, r *http.Request) {
 			content := string(data)
 			for _, line := range strings.Split(content, "\n") {
 				line = strings.TrimSpace(line)
+				if strings.HasPrefix(line, "#") {
+					continue
+				}
 				if strings.HasPrefix(line, "export TESLA_BLE_VIN=") {
 					cfg.UsesBLE = "yes"
 					break

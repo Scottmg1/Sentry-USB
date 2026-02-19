@@ -806,6 +806,107 @@ function diagnose {
     ifconfig
     iwconfig wlan0 | grep Link
 
+    echo -e "====== access point ======"
+    if iw dev ap0 info &> /dev/null
+    then
+      echo "ap0 interface exists"
+      iw dev ap0 info || true
+      ip addr show ap0 2>/dev/null || true
+    else
+      echo "ap0 interface does not exist"
+    fi
+    if nmcli con show SENTRYUSB_AP &> /dev/null
+    then
+      echo "SENTRYUSB_AP connection exists"
+      nmcli con show SENTRYUSB_AP 2>/dev/null | head -20 || true
+    else
+      echo "SENTRYUSB_AP connection not found in NetworkManager"
+    fi
+    if systemctl is-active hostapd &> /dev/null
+    then
+      echo "hostapd is running"
+    elif systemctl is-enabled hostapd &> /dev/null
+    then
+      echo "hostapd is enabled but not running"
+      journalctl -u hostapd --no-pager -n 10 2>/dev/null || true
+    else
+      echo "hostapd is not enabled (using NetworkManager AP mode or AP not configured)"
+    fi
+    if systemctl is-active dnsmasq &> /dev/null
+    then
+      echo "dnsmasq is running"
+    fi
+
+    echo -e "====== bluetooth / BLE ======"
+    if command -v hciconfig &> /dev/null
+    then
+      hciconfig -a 2>/dev/null || echo "hciconfig failed"
+    else
+      echo "hciconfig not installed"
+    fi
+    if command -v bluetoothctl &> /dev/null
+    then
+      bluetoothctl show 2>/dev/null || echo "bluetoothctl show failed"
+    fi
+    if dpkg-query -W --showformat='${db:Status-Status}\n' "bluez" 2>/dev/null | grep -q '^installed$'
+    then
+      echo "bluez is installed"
+    else
+      echo "bluez is NOT installed"
+    fi
+    if systemctl is-active bluetooth &> /dev/null
+    then
+      echo "bluetooth service is running"
+    else
+      echo "bluetooth service is NOT running"
+      journalctl -u bluetooth --no-pager -n 10 2>/dev/null || true
+    fi
+    if [ -f /root/.ble/key_public.pem ]
+    then
+      echo "BLE public key exists: /root/.ble/key_public.pem"
+    else
+      echo "BLE public key does NOT exist"
+    fi
+    if [ -f /root/.ble/key_private.pem ]
+    then
+      echo "BLE private key exists: /root/.ble/key_private.pem"
+    else
+      echo "BLE private key does NOT exist"
+    fi
+    if [ -x /root/bin/tesla-control ]
+    then
+      echo "tesla-control binary exists"
+    else
+      echo "tesla-control binary does NOT exist"
+    fi
+    if [ -x /root/bin/tesla-keygen ]
+    then
+      echo "tesla-keygen binary exists"
+    else
+      echo "tesla-keygen binary does NOT exist"
+    fi
+    if [ -n "${TESLA_BLE_VIN:+x}" ]
+    then
+      echo "TESLA_BLE_VIN is set: ${TESLA_BLE_VIN}"
+      if [ -x /root/bin/tesla-control ] && [ -f /root/.ble/key_private.pem ]
+      then
+        if /root/bin/tesla-control -ble -vin "${TESLA_BLE_VIN^^}" body-controller-state 2>/dev/null
+        then
+          echo "Car is reachable via BLE"
+          if /root/bin/tesla-control -ble -vin "${TESLA_BLE_VIN^^}" session-info /root/.ble/key_private.pem infotainment 2>/dev/null
+          then
+            echo "BLE key is PAIRED with the car"
+          else
+            echo "BLE key is NOT paired with the car (or session-info failed)"
+          fi
+        else
+          echo "Car is NOT reachable via BLE (out of range or BLE issue)"
+        fi
+      fi
+    else
+      echo "TESLA_BLE_VIN is not set (BLE not configured)"
+    fi
+
     echo -e "====== fstab ======"
     if [ -e /etc/fstab ]
     then
