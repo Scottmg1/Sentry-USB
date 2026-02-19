@@ -142,7 +142,7 @@ readonly BOOT_DEVICE_PARTITION_PREFIX=${BOOT_PARTITION_DEVICE%?}
 export BOOT_DEVICE_PARTITION_PREFIX
 ROOT_PARTITION_DEVICE=$(lsblk -dpno name "$(findmnt -D -no SOURCE --target /)")
 declare -rx ROOT_PARTITION_DEVICE
-readonly ROOT_PART_NUM=${ROOT_PARTITION_DEVICE:0-1}
+readonly ROOT_PART_NUM=$(echo "$ROOT_PARTITION_DEVICE" | grep -o '[0-9]*$')
 INCREASE_ROOT_SIZE=$(($(dehumanize "$INCREASE_ROOT_SIZE") / 512))
 
 if [ "$INCREASE_ROOT_SIZE" != "0" ] && [ ! -e "${BOOT_DEVICE_PARTITION_PREFIX}$((ROOT_PART_NUM+1))" ]
@@ -329,6 +329,7 @@ function create_usb_drive_backing_files () {
   fi
 
   setup_progress "Creating backing disk files."
+  copy_script tools/resize-image.sh /root/bin
   copy_script setup/pi/create-backingfiles.sh /tmp
   /tmp/create-backingfiles.sh "$CAM_SIZE" "$MUSIC_SIZE" "$LIGHTSHOW_SIZE" "$BOOMBOX_SIZE" "$BACKINGFILES_MOUNTPOINT" "$USE_EXFAT"
 

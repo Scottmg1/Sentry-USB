@@ -139,7 +139,7 @@ if [ "${1:-}" != "norootshrink" ] && [ "$unpart" -lt $(( (1<<30) * 32)) ]; then
     info "Shrinking root partition to match root fs, $fsnumsectors sectors"
     sleep 3
     rootpartstartsector=$(sfdisk -q -l -o Start "${rootdev}" | tail +2 | sort -n | tail -1)
-    partnum=${rootpart:0-1}
+    partnum=$(echo "$rootpart" | grep -o '[0-9]*$')
     echo "${rootpartstartsector},${fsnumsectors}" | sfdisk --force "${rootdev}" -N "${partnum}"
 
     if [ -e /sentryusb/config.txt ] && grep -q SENTRYUSB-REMOVE /sentryusb/config.txt; then

@@ -14,7 +14,7 @@
 ROOT_FS_TYPE="$(sed -n -e 's|^/dev/\S\+ / \(ext4\) .*$|\1|p' /proc/mounts)"
 test "$ROOT_FS_TYPE" == ext4 || exit 100
 
-# Copy e2fsck and resize2fs to initrd
+# Copy e2fsck, resize2fs, and mount to initrd
 cat > /etc/initramfs-tools/hooks/resize2fs <<"EOF"
 #!/bin/sh
 
@@ -35,6 +35,8 @@ esac
 copy_exec $(readlink -f /sbin/findfs) /sbin/findfs-full
 copy_exec /sbin/e2fsck /sbin
 copy_exec /sbin/resize2fs /sbin
+copy_exec /bin/mount /bin
+copy_exec /bin/umount /bin
 EOF
 
 chmod +x /etc/initramfs-tools/hooks/resize2fs
@@ -75,15 +77,34 @@ echo "root device name is ${ROOT_DEVICE}  "
 if [ -x /sbin/vgchange ]; then
     /sbin/vgchange -a y || echo "vgchange: $?  "
 fi
+# Write a result marker to the root filesystem so userspace can verify
+write_resize_marker() {
+  mkdir -p /tmp/rootmnt
+  if mount "$ROOT_DEVICE" /tmp/rootmnt 2>/dev/null; then
+    echo "$1" > /tmp/rootmnt/root/RESIZE_RESULT
+    umount /tmp/rootmnt 2>/dev/null || true
+  fi
+  rmdir /tmp/rootmnt 2>/dev/null || true
+}
+
 # Check root filesystem
 if /sbin/e2fsck -y -v -f "$ROOT_DEVICE"; then
   # Resize
   # debug-flag 8 means debug moving the inode table
   # -f means ignore various checks, which is needed for devices with a bad clock.
   # This should be safe, because e2fsck just completed successfully.
-  /sbin/resize2fs -f -d 8 "$ROOT_DEVICE" "$ROOT_SIZE" || echo "resize2fs: $?  "
+  if /sbin/resize2fs -f -d 8 "$ROOT_DEVICE" "$ROOT_SIZE"; then
+    echo "resize2fs completed successfully"
+    write_resize_marker "success"
+  else
+    RC=$?
+    echo "resize2fs failed with exit code $RC"
+    write_resize_marker "fail:resize2fs:$RC"
+  fi
 else
-  echo "e2fsck $ROOT_DEVICE failed"
+  RC=$?
+  echo "e2fsck $ROOT_DEVICE failed with exit code $RC"
+  write_resize_marker "fail:e2fsck:$RC"
 fi
 EOF
 

@@ -49,6 +49,34 @@ rootpart=$(findmnt -n -o SOURCE /)
 rootname=$(lsblk -no pkname "${rootpart}")
 rootdev="/dev/${rootname}"
 marker="/root/RESIZE_ATTEMPTED"
+resize_result="/root/RESIZE_RESULT"
+
+# Check if a previous initramfs resize left a result marker
+if [ -f "$resize_result" ]
+then
+  result_content=$(cat "$resize_result")
+  rm -f "$resize_result"
+  case "$result_content" in
+    success)
+      echo "Root filesystem resize completed successfully during boot."
+      rm -f "$marker"
+      ;;
+    fail:e2fsck:*)
+      exit_code="${result_content##*:}"
+      rm -f "$marker"
+      error_exit "Root filesystem check (e2fsck) failed with exit code $exit_code during boot. The filesystem may be corrupted. Run 'e2fsck -f $rootpart' manually from a recovery environment."
+      ;;
+    fail:resize2fs:*)
+      exit_code="${result_content##*:}"
+      rm -f "$marker"
+      error_exit "Root filesystem resize (resize2fs) failed with exit code $exit_code during boot. The filesystem may be too fragmented. Try running 'resize2fs $rootpart 3G' manually."
+      ;;
+    *)
+      echo "WARNING: Unrecognized resize result: $result_content"
+      rm -f "$marker"
+      ;;
+  esac
+fi
 
 # Check that the root partition is the last one.
 lastpart=$(sfdisk -q -l "$rootdev" | tail +2 | sort -n -k 2 | tail -1 | awk '{print $1}')
@@ -140,7 +168,7 @@ then
   echo "shrinking root partition to match root fs, $fsnumsectors sectors"
   sleep 3
   rootpartstartsector=$(sfdisk -q -l -o Start "${rootdev}" | tail +2 | sort -n | tail -1)
-  partnum=${rootpart:0-1}
+  partnum=$(echo "$rootpart" | grep -o '[0-9]*$')
 
   echo "${rootpartstartsector},${fsnumsectors}" | sfdisk --force "${rootdev}" -N "${partnum}"
 

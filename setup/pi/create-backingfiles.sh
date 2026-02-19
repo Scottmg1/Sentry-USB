@@ -82,18 +82,39 @@ function calc_size () {
   echo "$requestedsize"
 }
 
-function add_drive () {
+function try_resize_image () {
+  local filename="$1"
+  local size_kb="$2"
+
+  if [ ! -e "$filename" ]
+  then
+    return 1
+  fi
+
+  if [ "$size_kb" -eq 0 ]
+  then
+    return 1
+  fi
+
+  local size_bytes=$((size_kb * 1024))
+  log_progress "Attempting in-place resize of $filename to ${size_kb}K..."
+  if /root/bin/resize-image.sh "$size_bytes" "$filename"
+  then
+    log_progress "Successfully resized $filename"
+    return 0
+  else
+    log_progress "In-place resize failed for $filename, will recreate"
+    return 1
+  fi
+}
+
+function create_drive () {
   local name="$1"
   local label="$2"
   local size="$3"
   local filename="$4"
   local useexfat="$5"
   local mountpoint=/mnt/"$name"
-
-  if image_matches_params "$filename" "$size" &> /dev/null
-  then
-    return
-  fi
 
   if [ "$size" -eq "0" ]
   then
@@ -104,6 +125,7 @@ function add_drive () {
   fi
 
   log_progress "Allocating ${size}K for $filename..."
+  rm -f "$filename"
   truncate --size="$size"K "$filename"
   if [ "$useexfat" = true  ]
   then
@@ -116,6 +138,7 @@ function add_drive () {
   partition_offset=$(first_partition_offset "$filename")
 
   loopdev=$(losetup_find_show -o "$partition_offset" "$filename")
+  udevadm settle --timeout=5 2>/dev/null || true
   log_progress "Creating filesystem with label '$label'"
   if [ "$useexfat" = true  ]
   then
@@ -125,11 +148,36 @@ function add_drive () {
   fi
   losetup -d "$loopdev"
 
-
   if [ ! -e "$mountpoint" ]
   then
     mkdir "$mountpoint"
   fi
+}
+
+function add_drive () {
+  local name="$1"
+  local label="$2"
+  local size="$3"
+  local filename="$4"
+  local useexfat="$5"
+
+  if image_matches_params "$filename" "$size" &> /dev/null
+  then
+    return
+  fi
+
+  if [ "$size" -eq "0" ] || [ ! -e "$filename" ]
+  then
+    create_drive "$name" "$label" "$size" "$filename" "$useexfat"
+    return
+  fi
+
+  if try_resize_image "$filename" "$size"
+  then
+    return
+  fi
+
+  create_drive "$name" "$label" "$size" "$filename" "$useexfat"
 }
 
 function check_for_exfat_support () {
@@ -294,15 +342,31 @@ then
   log_progress "Adjusted sizes to ${CAM_DISK_SIZE}K / ${MUSIC_DISK_SIZE}K / ${LIGHTSHOW_DISK_SIZE}K / ${BOOMBOX_DISK_SIZE}K"
 fi
 
-# if we get here, one or more of the images need to be created, deleted or updated, and there should be
-# enough space to do so, possibly requiring deleting some or all of the snapshots to free up space first.
+# If we get here, one or more of the images need to be created, deleted, or
+# updated.  Try in-place resize first to preserve data; only fall back to
+# destructive recreation when resize is not possible (new image, exFAT, etc.).
 
-# TODO: resize images where possible, instead of recreating them
-if [ -e "$CAM_DISK_FILE_NAME" ] || [ -e "$MUSIC_DISK_FILE_NAME" ] || [ -e "$LIGHTSHOW_DISK_FILE_NAME" ] || [ -e "$BOOMBOX_DISK_FILE_NAME" ] || [ -e "$BACKINGFILES_MOUNTPOINT/snapshots" ]
+# shut down everything that might be using any of the drive images
+release_all_images
+
+NEEDS_RECREATE=false
+for pair in \
+  "cam:CAM:$CAM_DISK_SIZE:$CAM_DISK_FILE_NAME" \
+  "music:MUSIC:$MUSIC_DISK_SIZE:$MUSIC_DISK_FILE_NAME" \
+  "lightshow:LIGHTSHOW:$LIGHTSHOW_DISK_SIZE:$LIGHTSHOW_DISK_FILE_NAME" \
+  "boombox:BOOMBOX:$BOOMBOX_DISK_SIZE:$BOOMBOX_DISK_FILE_NAME"
+do
+  IFS=: read -r _name _label _size _file <<< "$pair"
+  if image_matches_params "$_file" "$_size" &> /dev/null; then continue; fi
+  if [ "$_size" -gt 0 ] && [ -e "$_file" ] && try_resize_image "$_file" "$_size"; then continue; fi
+  NEEDS_RECREATE=true
+done
+
+if [ "$NEEDS_RECREATE" = true ]
 then
   if [ -t 0 ]
   then
-    read -r -p 'Delete and recreate drives? (yes/cancel)' answer
+    read -r -p 'Some drives must be recreated (resize was not possible). Proceed? (yes/cancel) ' answer
     case ${answer:0:1} in
       y|Y )
       ;;
@@ -313,9 +377,6 @@ then
     esac
   fi
 fi
-
-# shut down everything that might be using any of the drive images
-release_all_images
 
 add_drive "cam" "CAM" "$CAM_DISK_SIZE" "$CAM_DISK_FILE_NAME" "$USE_EXFAT"
 if [ "$CAM_DISK_SIZE" -eq 0 ]

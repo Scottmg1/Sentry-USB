@@ -25,7 +25,7 @@ function closeenough () {
 if [[ $# -ne 2 ]]
 then
   usage
-  exit
+  exit 1
 fi
 
 NEWSIZE=$(dehumanize "$1")
@@ -35,26 +35,19 @@ if [ ! -e "$FILE" ]
 then
   echo "No such file: $FILE"
   usage
-  exit
-fi
-
-# install fatresize if needed
-if ! hash fatresize &> /dev/null
-then
-  /root/bin/remountfs_rw
-  apt install -y fatresize
+  exit 1
 fi
 
 if findmnt /mnt/cam > /dev/null
 then
   echo "cam drive is mounted. Please ensure no archiving operation is in progress"
-  exit
+  exit 1
 fi
 
 if findmnt /mnt/music > /dev/null
 then
   echo "music drive is mounted. Please ensure no music sync operation is in progress"
-  exit
+  exit 1
 fi
 
 # remove device from any attached host
@@ -63,8 +56,24 @@ fi
 # fsck the image, since we may have just yanked it out from under the host.
 # Use -p repair arg. It works with vfat and exfat.
 DEVLOOP=$(losetup --show -P -f "$FILE")
+udevadm settle --timeout=5 2>/dev/null || true
 PARTLOOP=${DEVLOOP}p1
 fsck "$PARTLOOP" -- -p > /dev/null || true
+
+# Detect filesystem type on the partition
+FS_TYPE=$(blkid -s TYPE -o value "$PARTLOOP" 2>/dev/null || echo "unknown")
+IS_EXFAT=false
+if [ "$FS_TYPE" = "exfat" ]
+then
+  IS_EXFAT=true
+fi
+
+# install fatresize if needed (only useful for FAT16/FAT32)
+if [ "$IS_EXFAT" = false ] && ! hash fatresize &> /dev/null
+then
+  /root/bin/remountfs_rw
+  apt install -y fatresize
+fi
 
 # get size of the image file and the partition within
 CURRENT_PARTITION_SIZE=$(($(partx -o SECTORS -g -n 1 "$FILE") * 512 + 512))
@@ -74,14 +83,27 @@ PARTITION_OFFSET=$(($(partx -o START -g -n 1 "$FILE") * 512))
 # and sometimes segfault in that case, so add some padding
 PARTITION_PADDING=65536
 
+ORIGINAL_FILE_SIZE=$(stat --printf="%s" "$FILE")
+RESIZE_OK=true
+
 if closeenough $CURRENT_PARTITION_SIZE "$NEWSIZE"
 then
   echo "no sizing needed"
+elif [ "$IS_EXFAT" = true ]
+then
+  echo "exFAT filesystem detected -- fatresize does not support exFAT"
+  echo "resize not supported for exFAT images, image must be recreated"
+  RESIZE_OK=false
 elif [ $CURRENT_PARTITION_SIZE -lt "$NEWSIZE" ]
 then
   echo "growing"
   fallocate -l $((PARTITION_OFFSET + NEWSIZE + PARTITION_PADDING)) "$FILE"
-  fatresize -s "$NEWSIZE" "$FILE" > /dev/null
+  if ! fatresize -s "$NEWSIZE" "$FILE" > /dev/null
+  then
+    echo "fatresize failed during grow, rolling back file to original size"
+    truncate -s "$ORIGINAL_FILE_SIZE" "$FILE"
+    RESIZE_OK=false
+  fi
 else
   echo "shrinking"
   if fatresize -s "$NEWSIZE" "$FILE" > /dev/null
@@ -89,9 +111,15 @@ else
     PARTITION_END=$(($(partx -o END -g -n 1 "$FILE") * 512 + 512))
     truncate -s $((PARTITION_END + PARTITION_PADDING)) "$FILE"
   else
-    echo "resize failed, skipping image resizing"
+    echo "fatresize failed during shrink, image left at current size"
+    RESIZE_OK=false
   fi
 fi
 
 losetup -d "$DEVLOOP"
+
+if [ "$RESIZE_OK" = false ]
+then
+  exit 1
+fi
 

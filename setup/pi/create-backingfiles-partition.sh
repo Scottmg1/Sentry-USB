@@ -93,6 +93,7 @@ then
     log_progress "$DATA_DRIVE fully erased. Creating partitions..."
     parted -a optimal -m "$DATA_DRIVE" mkpart primary ext4 '0%' 2GB
     parted -a optimal -m "$DATA_DRIVE" mkpart primary ext4 2GB '100%'
+    udevadm settle --timeout=10 2>/dev/null || sleep 2
     log_progress "Backing files and mutable partitions created."
 
     log_progress "Formatting new partitions..."
@@ -109,9 +110,10 @@ else
 fi
 
 readonly LAST_PARTITION_DEVICE=$(sfdisk -q -l "$BOOT_DISK" | tail -1 | awk '{print $1}')
-readonly LAST_PART_NUM=${LAST_PARTITION_DEVICE:0-1}
+readonly LAST_PART_NUM=$(echo "$LAST_PARTITION_DEVICE" | grep -o '[0-9]*$')
 readonly SECOND_TO_LAST_PART_NUM=$((LAST_PART_NUM - 1))
-readonly SECOND_TO_LAST_PARTITION_DEVICE=${LAST_PARTITION_DEVICE:0:-1}${SECOND_TO_LAST_PART_NUM}
+readonly LAST_PARTITION_DEVICE_PREFIX=$(echo "$LAST_PARTITION_DEVICE" | sed 's/[0-9]*$//')
+readonly SECOND_TO_LAST_PARTITION_DEVICE=${LAST_PARTITION_DEVICE_PREFIX}${SECOND_TO_LAST_PART_NUM}
 if [ /dev/disk/by-label/mutable -ef "$LAST_PARTITION_DEVICE" ]
 then
   readonly MUTABLE_DEVICE="$LAST_PARTITION_DEVICE"
@@ -208,11 +210,13 @@ log_progress "Modifying partition table for mutable (writable) partition for scr
 echo "$FIRST_MUTABLE_SECTOR," | sfdisk --force --no-reread "${BOOT_DISK}" -N $((LAST_PART_NUM + 2))
 
 partprobe "${BOOT_DISK}" 2>/dev/null || true
+udevadm settle --timeout=10 2>/dev/null || sleep 2
 
 # manually adding the partitions to the kernel's view of things is sometimes needed
 if [ ! -e "${BACKINGFILES_DEVICE}" ] || [ ! -e "${MUTABLE_DEVICE}" ]
 then
   partx --add --nr $((LAST_PART_NUM + 1)):$((LAST_PART_NUM + 2)) "${BOOT_DISK}"
+  udevadm settle --timeout=10 2>/dev/null || sleep 2
 fi
 if [ ! -e "${BACKINGFILES_DEVICE}" ] || [ ! -e "${MUTABLE_DEVICE}" ]
 then
