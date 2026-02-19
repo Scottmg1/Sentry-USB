@@ -112,6 +112,8 @@ export default function Drives() {
   const [tagFilter, setTagFilter] = useState<string>("")
   const [tagInput, setTagInput] = useState("")
   const [showTagInput, setShowTagInput] = useState(false)
+  const [listTagInputId, setListTagInputId] = useState<number | null>(null)
+  const [listTagValue, setListTagValue] = useState("")
 
   // ── Init map ──
   useEffect(() => {
@@ -385,8 +387,25 @@ export default function Drives() {
   const sliderDist = cumDist[sliderIdx] ?? 0
   const sliderDistDisplay = metric ? (sliderDist / 1000).toFixed(2) : (sliderDist / 1609.344).toFixed(2)
 
-  const totalDist = stats ? (metric ? stats.total_distance_km.toFixed(1) : stats.total_distance_mi.toFixed(1)) : "0"
-  const totalDur = stats ? formatDuration(stats.total_duration_ms) : "0"
+  const isFiltered = tagFilter !== "" || search !== ""
+  const filteredStats = isFiltered
+    ? filtered.reduce(
+        (acc, d) => ({
+          count: acc.count + 1,
+          distKm: acc.distKm + d.distanceKm,
+          distMi: acc.distMi + d.distanceMi,
+          durMs: acc.durMs + d.durationMs,
+        }),
+        { count: 0, distKm: 0, distMi: 0, durMs: 0 }
+      )
+    : null
+  const displayCount = filteredStats ? filteredStats.count : stats?.drives_count ?? 0
+  const totalDist = filteredStats
+    ? (metric ? filteredStats.distKm.toFixed(1) : filteredStats.distMi.toFixed(1))
+    : stats ? (metric ? stats.total_distance_km.toFixed(1) : stats.total_distance_mi.toFixed(1)) : "0"
+  const totalDur = filteredStats
+    ? formatDuration(filteredStats.durMs)
+    : stats ? formatDuration(stats.total_duration_ms) : "0"
 
   return (
     <div className="flex h-[calc(100vh-5rem)] flex-col gap-4 md:h-[calc(100vh-3rem)]">
@@ -397,7 +416,7 @@ export default function Drives() {
           <h1 className="text-lg font-semibold text-slate-100">Drive Map</h1>
           {stats && (
             <div className="hidden items-center gap-4 text-xs text-slate-500 sm:flex">
-              <span>Drives: <span className="font-semibold text-blue-400">{stats.drives_count}</span></span>
+              <span>Drives: <span className="font-semibold text-blue-400">{displayCount}</span>{isFiltered && <span className="text-slate-600">/{stats.drives_count}</span>}</span>
               <span>Total: <span className="font-semibold text-blue-400">{totalDist} {distUnit}</span></span>
               <span>Time: <span className="font-semibold text-blue-400">{totalDur}</span></span>
             </div>
@@ -507,15 +526,39 @@ export default function Drives() {
                           <span>{formatDuration(d.durationMs)}</span>
                           <span>{avgSpd(d)}</span>
                         </div>
-                        {(d.tags ?? []).length > 0 && (
-                          <div className="mt-1.5 flex flex-wrap gap-1">
-                            {d.tags!.map((t) => (
-                              <span key={t} className="inline-flex items-center rounded-full bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-400">
-                                <Tag className="mr-0.5 h-2 w-2" />{t}
-                              </span>
-                            ))}
-                          </div>
-                        )}
+                        <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                          {(d.tags ?? []).map((t) => (
+                            <span key={t} className="inline-flex items-center rounded-full bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-400">
+                              <Tag className="mr-0.5 h-2 w-2" />{t}
+                            </span>
+                          ))}
+                          {listTagInputId === d.id ? (
+                            <input
+                              autoFocus
+                              value={listTagValue}
+                              onChange={(e) => setListTagValue(e.target.value)}
+                              onClick={(e) => e.stopPropagation()}
+                              onKeyDown={(e) => {
+                                e.stopPropagation()
+                                if (e.key === "Enter" && listTagValue.trim()) {
+                                  addTagToDrive(d.id, d.tags ?? [], listTagValue)
+                                  setListTagValue(""); setListTagInputId(null)
+                                }
+                                if (e.key === "Escape") { setListTagInputId(null); setListTagValue("") }
+                              }}
+                              onBlur={() => { setListTagInputId(null); setListTagValue("") }}
+                              placeholder="Tag..."
+                              className="w-16 rounded-full border border-blue-500/30 bg-white/5 px-1.5 py-0.5 text-[10px] text-slate-200 placeholder-slate-600 outline-none focus:border-blue-500/50"
+                            />
+                          ) : (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setListTagInputId(d.id); setListTagValue("") }}
+                              className="inline-flex items-center gap-0.5 rounded-full border border-dashed border-white/10 px-1.5 py-0.5 text-[10px] text-slate-600 transition-colors hover:border-blue-500/30 hover:text-blue-400"
+                            >
+                              <Plus className="h-2 w-2" />
+                            </button>
+                          )}
+                        </div>
                       </button>
                     </div>
                   )
@@ -593,15 +636,39 @@ export default function Drives() {
                         <span>{formatDuration(d.durationMs)}</span>
                         <span>{avgSpd(d)}</span>
                       </div>
-                      {(d.tags ?? []).length > 0 && (
-                        <div className="mt-1.5 flex flex-wrap gap-1">
-                          {d.tags!.map((t) => (
-                            <span key={t} className="inline-flex items-center rounded-full bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-400">
-                              <Tag className="mr-0.5 h-2 w-2" />{t}
-                            </span>
-                          ))}
-                        </div>
-                      )}
+                      <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                        {(d.tags ?? []).map((t) => (
+                          <span key={t} className="inline-flex items-center rounded-full bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-400">
+                            <Tag className="mr-0.5 h-2 w-2" />{t}
+                          </span>
+                        ))}
+                        {listTagInputId === d.id ? (
+                          <input
+                            autoFocus
+                            value={listTagValue}
+                            onChange={(e) => setListTagValue(e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
+                            onKeyDown={(e) => {
+                              e.stopPropagation()
+                              if (e.key === "Enter" && listTagValue.trim()) {
+                                addTagToDrive(d.id, d.tags ?? [], listTagValue)
+                                setListTagValue(""); setListTagInputId(null)
+                              }
+                              if (e.key === "Escape") { setListTagInputId(null); setListTagValue("") }
+                            }}
+                            onBlur={() => { setListTagInputId(null); setListTagValue("") }}
+                            placeholder="Tag..."
+                            className="w-16 rounded-full border border-blue-500/30 bg-white/5 px-1.5 py-0.5 text-[10px] text-slate-200 placeholder-slate-600 outline-none focus:border-blue-500/50"
+                          />
+                        ) : (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setListTagInputId(d.id); setListTagValue("") }}
+                            className="inline-flex items-center gap-0.5 rounded-full border border-dashed border-white/10 px-1.5 py-0.5 text-[10px] text-slate-600 transition-colors hover:border-blue-500/30 hover:text-blue-400"
+                          >
+                            <Plus className="h-2 w-2" />
+                          </button>
+                        )}
+                      </div>
                     </button>
                   </div>
                 )
@@ -635,12 +702,14 @@ export default function Drives() {
           {selectedDrive && (
             <div className="absolute inset-x-0 bottom-0 z-[1000] border-t border-white/10 bg-slate-950/90 px-4 py-3 backdrop-blur-md">
               {/* Tags row */}
-              <div className="mb-2 flex flex-wrap items-center gap-1.5">
-                <Tag className="h-3 w-3 text-slate-600" />
+              <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-white/5 bg-white/[0.03] px-3 py-2">
+                <span className="flex items-center gap-1.5 text-xs font-medium text-slate-400">
+                  <Tag className="h-3.5 w-3.5" /> Tags:
+                </span>
                 {(selectedDrive.tags ?? []).map((t) => (
-                  <span key={t} className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-medium text-blue-400">
+                  <span key={t} className="inline-flex items-center gap-1 rounded-full bg-blue-500/15 px-2.5 py-1 text-xs font-medium text-blue-400">
                     {t}
-                    <button onClick={() => removeTagFromDrive(selectedId!, selectedDrive.tags ?? [], t)} className="ml-0.5 text-blue-400/60 hover:text-blue-300"><X className="h-2.5 w-2.5" /></button>
+                    <button onClick={() => removeTagFromDrive(selectedId!, selectedDrive.tags ?? [], t)} className="ml-0.5 rounded-full p-0.5 text-blue-400/60 hover:bg-blue-500/20 hover:text-blue-300"><X className="h-3 w-3" /></button>
                   </span>
                 ))}
                 {showTagInput ? (
@@ -657,15 +726,15 @@ export default function Drives() {
                       if (e.key === "Escape") { setShowTagInput(false); setTagInput("") }
                     }}
                     onBlur={() => { setShowTagInput(false); setTagInput("") }}
-                    placeholder="Tag name..."
-                    className="w-20 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] text-slate-200 placeholder-slate-600 outline-none focus:border-blue-500/50"
+                    placeholder="Enter tag name..."
+                    className="w-28 rounded-full border border-blue-500/30 bg-white/5 px-3 py-1 text-xs text-slate-200 placeholder-slate-500 outline-none focus:border-blue-500/50"
                   />
                 ) : (
                   <button
                     onClick={() => setShowTagInput(true)}
-                    className="inline-flex items-center gap-0.5 rounded-full border border-dashed border-white/10 px-2 py-0.5 text-[10px] text-slate-500 transition-colors hover:border-blue-500/30 hover:text-blue-400"
+                    className="inline-flex items-center gap-1 rounded-full border border-dashed border-white/20 bg-white/[0.03] px-3 py-1 text-xs font-medium text-slate-400 transition-colors hover:border-blue-500/40 hover:bg-blue-500/10 hover:text-blue-400"
                   >
-                    <Plus className="h-2.5 w-2.5" /> Add Tag
+                    <Plus className="h-3.5 w-3.5" /> Add Tag
                   </button>
                 )}
               </div>
