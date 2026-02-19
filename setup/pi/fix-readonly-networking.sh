@@ -29,6 +29,7 @@ readlink -f /etc/resolv.conf 2>/dev/null | grep -q /mutable && _needs_fix=true
 grep -w -q "/var/lib/NetworkManager" /etc/fstab || _needs_fix=true
 grep -q "LABEL=mutable" /etc/fstab && ! grep "LABEL=mutable" /etc/fstab | grep -q "nofail" && _needs_fix=true
 grep -q "LABEL=backingfiles" /etc/fstab && ! grep "LABEL=backingfiles" /etc/fstab | grep -q "nofail" && _needs_fix=true
+[ ! -e /etc/tmpfiles.d/resolv-fallback.conf ] && _needs_fix=true
 
 if [ "$_needs_fix" = false ]; then
   log_progress "No fix needed: networking is already using tmpfs / root (not symlinks to /mutable)."
@@ -81,6 +82,16 @@ if [ -n "$_resolv_target" ]; then
     echo "nameserver 8.8.8.8" > /tmp/resolv.conf
     ln -sf /tmp/resolv.conf /etc/resolv.conf
   fi
+fi
+
+# ---- tmpfiles.d: seed /tmp/resolv.conf on every boot ----
+# /tmp is a tmpfs that is empty after reboot, so without this rule the
+# resolv.conf symlink dangles and DNS breaks until NM rewrites it (which
+# may never happen on a read-only root).
+if [ ! -e /etc/tmpfiles.d/resolv-fallback.conf ]; then
+  log_progress "Installing tmpfiles.d rule for fallback resolv.conf"
+  mkdir -p /etc/tmpfiles.d
+  echo 'f /tmp/resolv.conf 0644 root root - nameserver 8.8.8.8' > /etc/tmpfiles.d/resolv-fallback.conf
 fi
 
 # ---- fstab: tmpfs entries for networking (idempotent) ----

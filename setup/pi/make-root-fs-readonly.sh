@@ -192,9 +192,11 @@ fi
 sed -i "s/spool\s*0755/spool 1777/g" /usr/lib/tmpfiles.d/var.conf >/dev/null
 
 # Point resolv.conf at /tmp (a tmpfs that is always writable at boot).
-# NM and dhcpcd regenerate it when a network connection is established.
 # Previous versions symlinked to /mutable, but that broke DNS resolution
 # if the USB drive was slow to mount.
+# IMPORTANT: /tmp is wiped on every reboot (tmpfs), so we must also install
+# a tmpfiles.d rule below to seed /tmp/resolv.conf with a fallback nameserver
+# on every boot.  Without that seed file the symlink dangles and DNS breaks.
 read -r resolvconflocation <<< "$(df --output=fstype "$(readlink -f /etc/resolv.conf)" | tail -1)"
 if [ "$resolvconflocation" != "tmpfs" ]
 then
@@ -209,6 +211,16 @@ then
   echo "nameserver 8.8.8.8" > /tmp/resolv.conf
   ln -sf /tmp/resolv.conf /etc/resolv.conf
 fi
+
+# Ensure fallback DNS is available on every boot.
+# /tmp is a tmpfs that is empty after reboot, so /tmp/resolv.conf must be
+# recreated each time.  systemd-tmpfiles-setup.service runs after tmpfs
+# mounts but before NetworkManager, guaranteeing DNS works immediately.
+# NM or dhcpcd will overwrite this with DHCP-provided servers once
+# connected; if they don't, 8.8.8.8 keeps things working.
+log_progress "Installing tmpfiles.d rule for fallback resolv.conf"
+mkdir -p /etc/tmpfiles.d
+echo 'f /tmp/resolv.conf 0644 root root - nameserver 8.8.8.8' > /etc/tmpfiles.d/resolv-fallback.conf
 
 # Update /etc/fstab
 # make /boot read-only
