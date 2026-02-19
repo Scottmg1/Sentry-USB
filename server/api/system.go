@@ -75,11 +75,22 @@ func (h *handlers) blePair(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		h.hub.Broadcast("ble_status", map[string]string{"status": "pairing"})
 		vin = strings.ToUpper(vin)
-		output, err := shell.RunWithTimeout(120_000_000_000,
+
+		// Stop bluetoothd so tesla-control can get exclusive access to hci0.
+		// Without this, tesla-control fails with "can't down device: device or resource busy".
+		shell.Run("systemctl", "stop", "bluetooth")
+		defer shell.Run("systemctl", "start", "bluetooth")
+
+		output, err := shell.RunWithTimeout(120*time.Second,
 			"/root/bin/tesla-control", "-ble", "-vin", vin,
 			"add-key-request", "/root/.ble/key_public.pem", "owner", "cloud_key")
 		if err != nil {
-			h.hub.Broadcast("ble_status", map[string]string{"status": "error", "error": err.Error()})
+			errMsg := err.Error()
+			// Strip verbose prefix so the UI shows only the meaningful part
+			if idx := strings.Index(errMsg, "stderr: "); idx >= 0 {
+				errMsg = errMsg[idx+len("stderr: "):]
+			}
+			h.hub.Broadcast("ble_status", map[string]string{"status": "error", "error": errMsg})
 			return
 		}
 		h.hub.Broadcast("ble_status", map[string]string{"status": "waiting", "output": output})
