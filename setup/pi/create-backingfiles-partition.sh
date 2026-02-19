@@ -67,36 +67,45 @@ then
   PARTITION_PREFIX=$(partition_prefix_for "$DATA_DRIVE")
   P1="${DATA_DRIVE}${PARTITION_PREFIX}1"
   P2="${DATA_DRIVE}${PARTITION_PREFIX}2"
-  # Always fully wipe the external drive on setup. This prevents stale
-  # TeslaCam data (symlinks, snapshots) from surviving a re-setup.
+  # Reuse existing partitions if they already have the correct labels and
+  # filesystem types. This avoids a slow wipe+format cycle when the user
+  # re-runs the wizard to change settings. Stale TeslaCam data is cleaned
+  # separately by setup-sentryusb before creating backing files.
+  if [ /dev/disk/by-label/backingfiles -ef "$P2" ] && \
+     [ /dev/disk/by-label/mutable -ef "$P1" ] && \
+     blkid "$P2" | grep -q 'TYPE="xfs"' && \
+     blkid "$P1" | grep -q 'TYPE="ext4"'
+  then
+    log_progress "Existing backingfiles (xfs) and mutable (ext4) partitions found on $DATA_DRIVE. Keeping them."
+  else
+    # Unmount any partitions on the data drive before wiping, otherwise
+    # wipefs/parted/mkfs will hang waiting for exclusive device access.
+    log_progress "Unmounting partitions on $DATA_DRIVE..."
+    killall archiveloop 2>/dev/null || true
+    /root/bin/disable_gadget.sh 2>/dev/null || true
+    for mp in /mnt/cam /mnt/music /mnt/lightshow /mnt/boombox /backingfiles /mutable; do
+      umount "$mp" 2>/dev/null || true
+    done
+    # Also unmount by device in case the mount points differ
+    for part in "${P1}" "${P2}"; do
+      umount "$part" 2>/dev/null || true
+    done
+    sleep 1
 
-  # Unmount any partitions on the data drive before wiping, otherwise
-  # wipefs/parted/mkfs will hang waiting for exclusive device access.
-  log_progress "Unmounting partitions on $DATA_DRIVE..."
-  killall archiveloop 2>/dev/null || true
-  /root/bin/disable_gadget.sh 2>/dev/null || true
-  for mp in /mnt/cam /mnt/music /mnt/lightshow /mnt/boombox /backingfiles /mutable; do
-    umount "$mp" 2>/dev/null || true
-  done
-  # Also unmount by device in case the mount points differ
-  for part in "${P1}" "${P2}"; do
-    umount "$part" 2>/dev/null || true
-  done
-  sleep 1
+    log_progress "WARNING !!! This will delete EVERYTHING in $DATA_DRIVE."
+    wipefs -afq "$DATA_DRIVE"
+    parted "$DATA_DRIVE" --script mktable gpt
+    log_progress "$DATA_DRIVE fully erased. Creating partitions..."
+    parted -a optimal -m "$DATA_DRIVE" mkpart primary ext4 '0%' 2GB
+    parted -a optimal -m "$DATA_DRIVE" mkpart primary ext4 2GB '100%'
+    udevadm settle --timeout=10 2>/dev/null || sleep 2
+    log_progress "Backing files and mutable partitions created."
 
-  log_progress "WARNING !!! This will delete EVERYTHING in $DATA_DRIVE."
-  wipefs -afq "$DATA_DRIVE"
-  parted "$DATA_DRIVE" --script mktable gpt
-  log_progress "$DATA_DRIVE fully erased. Creating partitions..."
-  parted -a optimal -m "$DATA_DRIVE" mkpart primary ext4 '0%' 2GB
-  parted -a optimal -m "$DATA_DRIVE" mkpart primary ext4 2GB '100%'
-  udevadm settle --timeout=10 2>/dev/null || sleep 2
-  log_progress "Backing files and mutable partitions created."
-
-  log_progress "Formatting new partitions..."
-  # Force creation of filesystems even if previous filesystem appears to exist
-  mkfs.ext4 -F -L mutable "$P1"
-  mkfs.xfs -f -m reflink=1 -L backingfiles "$P2"
+    log_progress "Formatting new partitions..."
+    # Force creation of filesystems even if previous filesystem appears to exist
+    mkfs.ext4 -F -L mutable "$P1"
+    mkfs.xfs -f -m reflink=1 -L backingfiles "$P2"
+  fi
 
   update_fstab
   log_progress "Done."
