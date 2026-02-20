@@ -92,10 +92,10 @@ jobs:
           chmod +x stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-binary
 
           # Fix: Debian rotated archive signing keys; the keyring from
-          # debootstrap's bookworm package is stale.  Copy the host
-          # (trixie) keyring into the rootfs before apt-get update.
+          # debootstrap's bookworm package is stale.  Download the latest
+          # keyring from the host (trixie) and install into the rootfs.
           mkdir -p stage0/00-aaa-fix-keys
-          printf '#!/bin/bash -e\ninstall -m 644 /usr/share/keyrings/debian-archive-keyring.gpg "${ROOTFS_DIR}/usr/share/keyrings/debian-archive-keyring.gpg"\n' > stage0/00-aaa-fix-keys/00-run.sh
+          printf '#!/bin/bash -e\ncd /tmp\napt-get download debian-archive-keyring\ndpkg --root="${ROOTFS_DIR}" -i debian-archive-keyring*.deb\nrm -f debian-archive-keyring*.deb\n' > stage0/00-aaa-fix-keys/00-run.sh
           chmod +x stage0/00-aaa-fix-keys/00-run.sh
 
           ./build-docker.sh
@@ -162,10 +162,10 @@ jobs:
           chmod +x stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-binary
 
           # Fix: Debian rotated archive signing keys; the keyring from
-          # debootstrap's bookworm package is stale.  Copy the host
-          # (trixie) keyring into the rootfs before apt-get update.
+          # debootstrap's bookworm package is stale.  Download the latest
+          # keyring from the host (trixie) and install into the rootfs.
           mkdir -p stage0/00-aaa-fix-keys
-          printf '#!/bin/bash -e\ninstall -m 644 /usr/share/keyrings/debian-archive-keyring.gpg "${ROOTFS_DIR}/usr/share/keyrings/debian-archive-keyring.gpg"\n' > stage0/00-aaa-fix-keys/00-run.sh
+          printf '#!/bin/bash -e\ncd /tmp\napt-get download debian-archive-keyring\ndpkg --root="${ROOTFS_DIR}" -i debian-archive-keyring*.deb\nrm -f debian-archive-keyring*.deb\n' > stage0/00-aaa-fix-keys/00-run.sh
           chmod +x stage0/00-aaa-fix-keys/00-run.sh
 
           ./build-docker.sh
