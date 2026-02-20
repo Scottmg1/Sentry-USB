@@ -91,11 +91,24 @@ jobs:
           cp /tmp/bin/sentryusb-linux-arm64 stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-binary
           chmod +x stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-binary
 
-          # Fix: Debian rotated archive signing keys; the keyring from
-          # debootstrap's bookworm package is stale.  Download the latest
-          # keyring from the host (trixie) and install into the rootfs.
-          mkdir -p stage0/00-aaa-fix-keys
-          printf '#!/bin/bash -e\ncp /etc/apt/trusted.gpg.d/* "${ROOTFS_DIR}/etc/apt/trusted.gpg.d/"\ncp /usr/share/keyrings/debian-archive-keyring.gpg "${ROOTFS_DIR}/usr/share/keyrings/debian-archive-keyring.gpg"\n' > stage0/00-aaa-fix-keys/00-run.sh
+          # Fix: Debian rotated archive signing keys; the keyring baked into
+          # debootstrap AND the pi-gen Docker base image are both stale.
+          # Download the current debian-archive-keyring .deb directly from
+          # Debian's pool on this runner, then have the stage script copy it
+          # into the rootfs via the /pi-gen volume mount (no keyserver needed).
+          mkdir -p stage0/00-aaa-fix-keys/files
+          PKG=$(curl -fsSL "https://ftp.debian.org/debian/pool/main/d/debian-archive-keyring/" \
+                | grep -oP 'debian-archive-keyring_[^"]+_all\.deb' | sort -V | tail -1)
+          curl -fsSL "https://ftp.debian.org/debian/pool/main/d/debian-archive-keyring/${PKG}" \
+                -o /tmp/keyring.deb
+          dpkg -x /tmp/keyring.deb /tmp/keyring-extracted
+          cp /tmp/keyring-extracted/usr/share/keyrings/debian-archive-keyring.gpg \
+                stage0/00-aaa-fix-keys/files/
+          cat > stage0/00-aaa-fix-keys/00-run.sh << 'SCRIPT'
+#!/bin/bash -e
+cp /pi-gen/stage0/00-aaa-fix-keys/files/debian-archive-keyring.gpg \
+   "${ROOTFS_DIR}/usr/share/keyrings/debian-archive-keyring.gpg"
+SCRIPT
           chmod +x stage0/00-aaa-fix-keys/00-run.sh
 
           ./build-docker.sh
@@ -161,11 +174,24 @@ jobs:
           cp /tmp/bin/sentryusb-linux-armv7 stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-binary
           chmod +x stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-binary
 
-          # Fix: Debian rotated archive signing keys; the keyring from
-          # debootstrap's bookworm package is stale.  Download the latest
-          # keyring from the host (trixie) and install into the rootfs.
-          mkdir -p stage0/00-aaa-fix-keys
-          printf '#!/bin/bash -e\ncp /etc/apt/trusted.gpg.d/* "${ROOTFS_DIR}/etc/apt/trusted.gpg.d/"\ncp /usr/share/keyrings/debian-archive-keyring.gpg "${ROOTFS_DIR}/usr/share/keyrings/debian-archive-keyring.gpg"\n' > stage0/00-aaa-fix-keys/00-run.sh
+          # Fix: Debian rotated archive signing keys; the keyring baked into
+          # debootstrap AND the pi-gen Docker base image are both stale.
+          # Download the current debian-archive-keyring .deb directly from
+          # Debian's pool on this runner, then have the stage script copy it
+          # into the rootfs via the /pi-gen volume mount (no keyserver needed).
+          mkdir -p stage0/00-aaa-fix-keys/files
+          PKG=$(curl -fsSL "https://ftp.debian.org/debian/pool/main/d/debian-archive-keyring/" \
+                | grep -oP 'debian-archive-keyring_[^"]+_all\.deb' | sort -V | tail -1)
+          curl -fsSL "https://ftp.debian.org/debian/pool/main/d/debian-archive-keyring/${PKG}" \
+                -o /tmp/keyring.deb
+          dpkg -x /tmp/keyring.deb /tmp/keyring-extracted
+          cp /tmp/keyring-extracted/usr/share/keyrings/debian-archive-keyring.gpg \
+                stage0/00-aaa-fix-keys/files/
+          cat > stage0/00-aaa-fix-keys/00-run.sh << 'SCRIPT'
+#!/bin/bash -e
+cp /pi-gen/stage0/00-aaa-fix-keys/files/debian-archive-keyring.gpg \
+   "${ROOTFS_DIR}/usr/share/keyrings/debian-archive-keyring.gpg"
+SCRIPT
           chmod +x stage0/00-aaa-fix-keys/00-run.sh
 
           ./build-docker.sh
