@@ -4,7 +4,7 @@ import "leaflet/dist/leaflet.css"
 import {
   MapPin, Navigation, Clock, Gauge, Play,
   Download, Upload, Loader2, ChevronLeft, Search, List, X,
-  Tag, Plus,
+  Tag, Plus, Layers,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -79,6 +79,32 @@ function haversine(lat1: number, lon1: number, lat2: number, lon2: number) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
+type MapStyle = "dark" | "streets" | "google" | "satellite"
+
+const TILE_LAYERS: Record<MapStyle, { url: string; attribution: string; subdomains?: string; maxZoom?: number }> = {
+  dark: {
+    url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
+    subdomains: "abcd",
+    maxZoom: 20,
+  },
+  streets: {
+    url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    subdomains: "abc",
+    maxZoom: 19,
+  },
+  google: {
+    url: "https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",
+    attribution: '&copy; Google',
+    maxZoom: 20,
+  },
+  satellite: {
+    url: "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+    attribution: '&copy; Google',
+    maxZoom: 20,
+  },
+}
 
 // ── Component ──────────────────────────────────────────────────────
 
@@ -88,6 +114,7 @@ export default function Drives() {
   const overviewLayers = useRef<L.Polyline[]>([])
   const selectionLayers = useRef<L.Layer[]>([])
   const arrowMarker = useRef<L.Marker | null>(null)
+  const tileLayerRef = useRef<L.TileLayer | null>(null)
 
   const [drives, setDrives] = useState<DriveSummary[]>([])
   const [stats, setStats] = useState<DriveStats | null>(null)
@@ -95,6 +122,8 @@ export default function Drives() {
   const [selectedDrive, setSelectedDrive] = useState<DriveDetail | null>(null)
   const [search, setSearch] = useState("")
   const [metric, setMetric] = useState(false)
+  const [mapStyle, setMapStyle] = useState<MapStyle>("dark")
+  const [showLayerPicker, setShowLayerPicker] = useState(false)
 
   // Load unit from setup config (DRIVE_MAP_UNIT set in wizard)
   useEffect(() => {
@@ -131,14 +160,30 @@ export default function Drives() {
   useEffect(() => {
     if (!mapRef.current || mapInstance.current) return
     const map = L.map(mapRef.current, { zoomControl: true }).setView([39.8, -98.6], 5)
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
-      subdomains: "abcd",
-      maxZoom: 20,
+    const initCfg = TILE_LAYERS.dark
+    tileLayerRef.current = L.tileLayer(initCfg.url, {
+      attribution: initCfg.attribution,
+      subdomains: initCfg.subdomains || "abc",
+      maxZoom: initCfg.maxZoom || 20,
     }).addTo(map)
     mapInstance.current = map
     return () => { map.remove(); mapInstance.current = null }
   }, [])
+
+  // ── Swap tile layer on style change ──
+  const skipInitialTileSwap = useRef(true)
+  useEffect(() => {
+    if (skipInitialTileSwap.current) { skipInitialTileSwap.current = false; return }
+    const map = mapInstance.current
+    if (!map) return
+    if (tileLayerRef.current) map.removeLayer(tileLayerRef.current)
+    const cfg = TILE_LAYERS[mapStyle]
+    tileLayerRef.current = L.tileLayer(cfg.url, {
+      attribution: cfg.attribution,
+      subdomains: cfg.subdomains || "abc",
+      maxZoom: cfg.maxZoom || 20,
+    }).addTo(map)
+  }, [mapStyle])
 
   // ── Load data ──
   const loadDrives = useCallback(async () => {
@@ -688,6 +733,34 @@ export default function Drives() {
         {/* Map */}
         <div className="relative flex-1">
           <div ref={mapRef} className="h-full w-full" />
+
+          {/* Map style picker */}
+          <div className="absolute right-3 top-3 z-[1000]">
+            <div className="relative">
+              <button
+                onClick={() => setShowLayerPicker(!showLayerPicker)}
+                className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-slate-950/90 px-2.5 py-1.5 text-xs font-medium text-slate-300 backdrop-blur-sm transition-colors hover:bg-slate-900"
+              >
+                <Layers className="h-3.5 w-3.5" />
+              </button>
+              {showLayerPicker && (
+                <div className="absolute right-0 mt-1 w-36 rounded-lg border border-white/10 bg-slate-950/95 py-1 shadow-xl backdrop-blur-sm">
+                  {(["dark", "streets", "google", "satellite"] as MapStyle[]).map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => { setMapStyle(s); setShowLayerPicker(false) }}
+                      className={cn(
+                        "w-full px-3 py-1.5 text-left text-xs transition-colors hover:bg-white/5",
+                        mapStyle === s ? "font-semibold text-blue-400" : "text-slate-400"
+                      )}
+                    >
+                      {s === "dark" ? "Dark" : s === "streets" ? "Streets" : s === "google" ? "Google Maps" : "Satellite"}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
 
           {loading && (
             <div className="absolute inset-0 z-[1000] flex items-center justify-center bg-black/70">
