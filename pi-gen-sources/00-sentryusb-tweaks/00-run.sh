@@ -70,8 +70,8 @@ apt-get update -qq
 apt-get install -y dos2unix parted fdisk sudo curl
 
 # Remove unwanted packages, disable unwanted services, and disable swap
-apt-get remove -y --force-yes --purge triggerhappy userconf-pi dphys-swapfile firmware-libertas firmware-realtek firmware-atheros mkvtoolnix 2>/dev/null || true
-apt-get -y --force-yes autoremove
+apt-get remove -y --purge triggerhappy userconf-pi dphys-swapfile firmware-libertas firmware-realtek firmware-atheros mkvtoolnix 2>/dev/null || true
+apt-get -y autoremove
 systemctl disable keyboard-setup || true
 systemctl disable resize2fs_once || true
 systemctl disable dpkg-db-backup || true

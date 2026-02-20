@@ -11,4 +11,4 @@ DISABLE_FIRST_BOOT_USER_RENAME=1
 WPA_COUNTRY=US
 ENABLE_SSH=1
 STAGE_LIST="stage0 stage1 stage2 stage_sentryusb"
-RELEASE=bookworm
+RELEASE=trixie
