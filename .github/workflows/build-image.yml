@@ -104,7 +104,7 @@ jobs:
           dpkg -x /tmp/keyring.deb /tmp/keyring-extracted
           cp /tmp/keyring-extracted/usr/share/keyrings/debian-archive-keyring.gpg \
                 stage0/00-aaa-fix-keys/files/
-          printf '#!/bin/bash -e\ncp /pi-gen/stage0/00-aaa-fix-keys/files/debian-archive-keyring.gpg "${ROOTFS_DIR}/usr/share/keyrings/debian-archive-keyring.gpg"\n' > stage0/00-aaa-fix-keys/00-run.sh
+          printf '#!/bin/bash -e\ncp /pi-gen/stage0/00-aaa-fix-keys/files/debian-archive-keyring.gpg "${ROOTFS_DIR}/usr/share/keyrings/debian-archive-keyring.gpg"\ncp /pi-gen/stage0/00-aaa-fix-keys/files/debian-archive-keyring.gpg "${ROOTFS_DIR}/etc/apt/trusted.gpg.d/debian-archive-bookworm.gpg"\n' > stage0/00-aaa-fix-keys/00-run.sh
           chmod +x stage0/00-aaa-fix-keys/00-run.sh
 
           ./build-docker.sh
@@ -183,7 +183,7 @@ jobs:
           dpkg -x /tmp/keyring.deb /tmp/keyring-extracted
           cp /tmp/keyring-extracted/usr/share/keyrings/debian-archive-keyring.gpg \
                 stage0/00-aaa-fix-keys/files/
-          printf '#!/bin/bash -e\ncp /pi-gen/stage0/00-aaa-fix-keys/files/debian-archive-keyring.gpg "${ROOTFS_DIR}/usr/share/keyrings/debian-archive-keyring.gpg"\n' > stage0/00-aaa-fix-keys/00-run.sh
+          printf '#!/bin/bash -e\ncp /pi-gen/stage0/00-aaa-fix-keys/files/debian-archive-keyring.gpg "${ROOTFS_DIR}/usr/share/keyrings/debian-archive-keyring.gpg"\ncp /pi-gen/stage0/00-aaa-fix-keys/files/debian-archive-keyring.gpg "${ROOTFS_DIR}/etc/apt/trusted.gpg.d/debian-archive-bookworm.gpg"\n' > stage0/00-aaa-fix-keys/00-run.sh
           chmod +x stage0/00-aaa-fix-keys/00-run.sh
 
           ./build-docker.sh
