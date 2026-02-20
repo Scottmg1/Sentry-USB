@@ -238,6 +238,11 @@ func (h *handlers) runUpdate(w http.ResponseWriter, r *http.Request) {
 		os.WriteFile(installDir+"/version", []byte(versionTag+"\n"), 0644)
 		log.Printf("[update] Updated to %s (%s)", versionTag, suffix)
 
+		// Clear the stale update-check cache so the UI doesn't show "update available to vX.Y.Z"
+		// immediately after installing that same version. The next checkForUpdate call will
+		// rewrite it correctly.
+		os.Remove("/tmp/sentryusb-update-check.json")
+
 		// 8. Update shell scripts from the repo source
 		broadcast("updating_scripts", "Updating shell scripts...")
 		scriptRef := versionTag
