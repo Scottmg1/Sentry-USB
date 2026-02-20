@@ -11,6 +11,11 @@ import {
   Loader2,
   CheckCircle,
   AlertCircle,
+  Stethoscope,
+  ChevronDown,
+  ChevronRight,
+  AlertTriangle,
+  XCircle,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { SetupWizard } from "@/components/setup/SetupWizard"
@@ -241,6 +246,116 @@ function BlePairButton() {
         </p>
       </div>
     </button>
+  )
+}
+
+type HealthItem = { name: string; status: "pass" | "warn" | "fail"; detail?: string }
+type HealthCategory = { name: string; items: HealthItem[] }
+type HealthReport = { summary: string; categories: HealthCategory[] }
+
+function HealthCheckButton() {
+  const [loading, setLoading] = useState(false)
+  const [report, setReport] = useState<HealthReport | null>(null)
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+
+  async function runCheck() {
+    setLoading(true)
+    setReport(null)
+    try {
+      const res = await fetch("/api/system/health-check")
+      if (!res.ok) throw new Error("Health check failed")
+      const data = await res.json()
+      setReport(data)
+      // Auto-expand categories with issues
+      const exp: Record<string, boolean> = {}
+      for (const cat of data.categories) {
+        if (cat.items.some((i: HealthItem) => i.status !== "pass")) exp[cat.name] = true
+      }
+      setExpanded(exp)
+    } catch { setReport(null) }
+    setLoading(false)
+  }
+
+  const statusIcon = (s: string) => {
+    if (s === "pass") return <CheckCircle className="h-3.5 w-3.5 text-emerald-400" />
+    if (s === "warn") return <AlertTriangle className="h-3.5 w-3.5 text-amber-400" />
+    return <XCircle className="h-3.5 w-3.5 text-red-400" />
+  }
+
+  if (!report) {
+    return (
+      <button
+        onClick={runCheck}
+        disabled={loading}
+        className="glass-card glass-card-hover flex items-start gap-3 p-4 text-left transition-colors disabled:opacity-70"
+      >
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-500/15 text-blue-400">
+          {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Stethoscope className="h-5 w-5" />}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-slate-200">{loading ? "Running..." : "System Health Check"}</p>
+          <p className="mt-0.5 text-xs text-slate-500">Verify all files, services, and config are intact</p>
+        </div>
+      </button>
+    )
+  }
+
+  const failCount = report.categories.reduce((n, c) => n + c.items.filter(i => i.status === "fail").length, 0)
+  const warnCount = report.categories.reduce((n, c) => n + c.items.filter(i => i.status === "warn").length, 0)
+
+  return (
+    <div className="glass-card col-span-full overflow-hidden">
+      <div className="flex items-center justify-between border-b border-white/5 px-4 py-3">
+        <div className="flex items-center gap-2">
+          <Stethoscope className={cn("h-5 w-5", failCount > 0 ? "text-red-400" : warnCount > 0 ? "text-amber-400" : "text-emerald-400")} />
+          <span className="text-sm font-medium text-slate-200">Health Check</span>
+          <span className={cn(
+            "rounded-full px-2 py-0.5 text-xs font-medium",
+            failCount > 0 ? "bg-red-500/15 text-red-400" : warnCount > 0 ? "bg-amber-500/15 text-amber-400" : "bg-emerald-500/15 text-emerald-400"
+          )}>{report.summary}</span>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={runCheck} disabled={loading}
+            className="rounded-lg px-3 py-1 text-xs text-slate-400 hover:bg-white/5 hover:text-slate-200 disabled:opacity-50">
+            {loading ? "Running..." : "Re-run"}
+          </button>
+          <button onClick={() => setReport(null)}
+            className="rounded-lg px-3 py-1 text-xs text-slate-500 hover:bg-white/5 hover:text-slate-300">Close</button>
+        </div>
+      </div>
+      <div className="max-h-[60vh] overflow-y-auto px-4 py-2">
+        {report.categories.map(cat => {
+          const isOpen = expanded[cat.name] ?? false
+          const catFails = cat.items.filter(i => i.status === "fail").length
+          const catWarns = cat.items.filter(i => i.status === "warn").length
+          return (
+            <div key={cat.name} className="border-b border-white/5 last:border-0">
+              <button
+                onClick={() => setExpanded(p => ({ ...p, [cat.name]: !isOpen }))}
+                className="flex w-full items-center gap-2 py-2 text-left"
+              >
+                {isOpen ? <ChevronDown className="h-3.5 w-3.5 text-slate-500" /> : <ChevronRight className="h-3.5 w-3.5 text-slate-500" />}
+                <span className="flex-1 text-xs font-medium text-slate-300">{cat.name}</span>
+                {catFails > 0 && <span className="rounded bg-red-500/15 px-1.5 py-0.5 text-[10px] text-red-400">{catFails} fail</span>}
+                {catWarns > 0 && <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-400">{catWarns} warn</span>}
+                {catFails === 0 && catWarns === 0 && <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] text-emerald-400">all pass</span>}
+              </button>
+              {isOpen && (
+                <div className="mb-2 space-y-0.5 pl-5">
+                  {cat.items.map((item, i) => (
+                    <div key={i} className="flex items-start gap-2 py-0.5">
+                      {statusIcon(item.status)}
+                      <span className="text-xs text-slate-300">{item.name}</span>
+                      {item.detail && <span className="text-xs text-slate-600">— {item.detail}</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
   )
 }
 
@@ -619,6 +734,7 @@ export default function Settings() {
           />
           <SpeedTestButton />
           {piConfig?.uses_ble === "yes" && <BlePairButton />}
+          <HealthCheckButton />
         </div>
       </div>
 

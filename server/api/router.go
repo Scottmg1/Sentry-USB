@@ -46,6 +46,7 @@ func RegisterRoutes(mux *http.ServeMux, hub *ws.Hub) {
 	// Diagnostics
 	mux.HandleFunc("POST /api/diagnostics/refresh", h.refreshDiagnostics)
 	mux.HandleFunc("GET /api/diagnostics", h.getDiagnostics)
+	mux.HandleFunc("GET /api/system/health-check", h.healthCheck)
 
 	// System actions
 	mux.HandleFunc("POST /api/system/reboot", h.reboot)
