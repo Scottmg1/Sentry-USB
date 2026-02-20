@@ -74,7 +74,7 @@ function get_script () {
   while ! curl -o "$local_path/$name" https://raw.githubusercontent.com/"$REPO"/"$REPO_NAME"/"$BRANCH"/"$remote_path"/"$name"
   do
     setup_progress "get_script failed, retrying"
-    sntp -S time.google.com || true
+    sntp -S time.google.com 2>/dev/null || ntpdig -S time.google.com 2>/dev/null || true
     sleep 3
     IFS=". " read -r now _ < /proc/uptime
     if [ $((now - start_time)) -gt 60 ]
