@@ -91,13 +91,12 @@ jobs:
           cp /tmp/bin/sentryusb-linux-arm64 stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-binary
           chmod +x stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-binary
 
-          # Fix: Debian rotated signing keys; allow insecure repos just long
-          # enough to install the current debian-archive-keyring inside the
-          # chroot, then restore normal GPG checking before configure-apt runs.
+          # Fix: pi-gen arm64 branch targets Trixie; its debian.sources uses
+          # Signed-By: debian-archive-keyring.pgp, but bookworm's package only
+          # installs .gpg. Copy it so APT can find the Bookworm signing keys.
           mkdir -p stage0/00-aaa-fix-keys
           cp "$GITHUB_WORKSPACE/pi-gen-sources/fix-keys/00-run.sh" stage0/00-aaa-fix-keys/
-          cp "$GITHUB_WORKSPACE/pi-gen-sources/fix-keys/01-run-chroot.sh" stage0/00-aaa-fix-keys/
-          chmod +x stage0/00-aaa-fix-keys/00-run.sh stage0/00-aaa-fix-keys/01-run-chroot.sh
+          chmod +x stage0/00-aaa-fix-keys/00-run.sh
 
           ./build-docker.sh
 
@@ -162,13 +161,12 @@ jobs:
           cp /tmp/bin/sentryusb-linux-armv7 stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-binary
           chmod +x stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-binary
 
-          # Fix: Debian rotated signing keys; allow insecure repos just long
-          # enough to install the current debian-archive-keyring inside the
-          # chroot, then restore normal GPG checking before configure-apt runs.
+          # Fix: pi-gen arm64 branch targets Trixie; its debian.sources uses
+          # Signed-By: debian-archive-keyring.pgp, but bookworm's package only
+          # installs .gpg. Copy it so APT can find the Bookworm signing keys.
           mkdir -p stage0/00-aaa-fix-keys
           cp "$GITHUB_WORKSPACE/pi-gen-sources/fix-keys/00-run.sh" stage0/00-aaa-fix-keys/
-          cp "$GITHUB_WORKSPACE/pi-gen-sources/fix-keys/01-run-chroot.sh" stage0/00-aaa-fix-keys/
-          chmod +x stage0/00-aaa-fix-keys/00-run.sh stage0/00-aaa-fix-keys/01-run-chroot.sh
+          chmod +x stage0/00-aaa-fix-keys/00-run.sh
 
           ./build-docker.sh
 
