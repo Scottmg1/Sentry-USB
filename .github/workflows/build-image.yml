@@ -91,21 +91,13 @@ jobs:
           cp /tmp/bin/sentryusb-linux-arm64 stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-binary
           chmod +x stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-binary
 
-          # Fix: Debian rotated archive signing keys; the keyring baked into
-          # debootstrap AND the pi-gen Docker base image are both stale.
-          # Download the current debian-archive-keyring .deb directly from
-          # Debian's pool on this runner, then have the stage script copy it
-          # into the rootfs via the /pi-gen volume mount (no keyserver needed).
-          mkdir -p stage0/00-aaa-fix-keys/files
-          PKG=$(curl -fsSL "https://ftp.debian.org/debian/pool/main/d/debian-archive-keyring/" \
-                | grep -oP 'debian-archive-keyring_[^"]+_all\.deb' | sort -V | tail -1)
-          curl -fsSL "https://ftp.debian.org/debian/pool/main/d/debian-archive-keyring/${PKG}" \
-                -o /tmp/keyring.deb
-          dpkg -x /tmp/keyring.deb /tmp/keyring-extracted
-          cp /tmp/keyring-extracted/usr/share/keyrings/debian-archive-keyring.gpg \
-                stage0/00-aaa-fix-keys/files/
-          printf '#!/bin/bash -e\ncp /pi-gen/stage0/00-aaa-fix-keys/files/debian-archive-keyring.gpg "${ROOTFS_DIR}/usr/share/keyrings/debian-archive-keyring.gpg"\ncp /pi-gen/stage0/00-aaa-fix-keys/files/debian-archive-keyring.gpg "${ROOTFS_DIR}/etc/apt/trusted.gpg.d/debian-archive-bookworm.gpg"\n' > stage0/00-aaa-fix-keys/00-run.sh
-          chmod +x stage0/00-aaa-fix-keys/00-run.sh
+          # Fix: Debian rotated signing keys; allow insecure repos just long
+          # enough to install the current debian-archive-keyring inside the
+          # chroot, then restore normal GPG checking before configure-apt runs.
+          mkdir -p stage0/00-aaa-fix-keys
+          cp "$GITHUB_WORKSPACE/pi-gen-sources/fix-keys/00-run.sh" stage0/00-aaa-fix-keys/
+          cp "$GITHUB_WORKSPACE/pi-gen-sources/fix-keys/01-run-chroot.sh" stage0/00-aaa-fix-keys/
+          chmod +x stage0/00-aaa-fix-keys/00-run.sh stage0/00-aaa-fix-keys/01-run-chroot.sh
 
           ./build-docker.sh
 
@@ -170,21 +162,13 @@ jobs:
           cp /tmp/bin/sentryusb-linux-armv7 stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-binary
           chmod +x stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-binary
 
-          # Fix: Debian rotated archive signing keys; the keyring baked into
-          # debootstrap AND the pi-gen Docker base image are both stale.
-          # Download the current debian-archive-keyring .deb directly from
-          # Debian's pool on this runner, then have the stage script copy it
-          # into the rootfs via the /pi-gen volume mount (no keyserver needed).
-          mkdir -p stage0/00-aaa-fix-keys/files
-          PKG=$(curl -fsSL "https://ftp.debian.org/debian/pool/main/d/debian-archive-keyring/" \
-                | grep -oP 'debian-archive-keyring_[^"]+_all\.deb' | sort -V | tail -1)
-          curl -fsSL "https://ftp.debian.org/debian/pool/main/d/debian-archive-keyring/${PKG}" \
-                -o /tmp/keyring.deb
-          dpkg -x /tmp/keyring.deb /tmp/keyring-extracted
-          cp /tmp/keyring-extracted/usr/share/keyrings/debian-archive-keyring.gpg \
-                stage0/00-aaa-fix-keys/files/
-          printf '#!/bin/bash -e\ncp /pi-gen/stage0/00-aaa-fix-keys/files/debian-archive-keyring.gpg "${ROOTFS_DIR}/usr/share/keyrings/debian-archive-keyring.gpg"\ncp /pi-gen/stage0/00-aaa-fix-keys/files/debian-archive-keyring.gpg "${ROOTFS_DIR}/etc/apt/trusted.gpg.d/debian-archive-bookworm.gpg"\n' > stage0/00-aaa-fix-keys/00-run.sh
-          chmod +x stage0/00-aaa-fix-keys/00-run.sh
+          # Fix: Debian rotated signing keys; allow insecure repos just long
+          # enough to install the current debian-archive-keyring inside the
+          # chroot, then restore normal GPG checking before configure-apt runs.
+          mkdir -p stage0/00-aaa-fix-keys
+          cp "$GITHUB_WORKSPACE/pi-gen-sources/fix-keys/00-run.sh" stage0/00-aaa-fix-keys/
+          cp "$GITHUB_WORKSPACE/pi-gen-sources/fix-keys/01-run-chroot.sh" stage0/00-aaa-fix-keys/
+          chmod +x stage0/00-aaa-fix-keys/00-run.sh stage0/00-aaa-fix-keys/01-run-chroot.sh
 
           ./build-docker.sh
 
