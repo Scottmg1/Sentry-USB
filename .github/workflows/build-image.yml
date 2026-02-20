@@ -90,6 +90,18 @@ jobs:
           cp "$GITHUB_WORKSPACE/pi-gen-sources/pi-gen-config" config
           cp /tmp/bin/sentryusb-linux-arm64 stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-binary
           chmod +x stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-binary
+
+          # Fix: Debian rotated archive signing keys; the keyring from
+          # debootstrap's bookworm package is stale.  Copy the host
+          # (trixie) keyring into the rootfs before apt-get update.
+          mkdir -p stage0/00-aaa-fix-keys
+          cat > stage0/00-aaa-fix-keys/00-run.sh << 'FIXKEYS'
+#!/bin/bash -e
+install -m 644 /usr/share/keyrings/debian-archive-keyring.gpg \
+  "${ROOTFS_DIR}/usr/share/keyrings/debian-archive-keyring.gpg"
+FIXKEYS
+          chmod +x stage0/00-aaa-fix-keys/00-run.sh
+
           ./build-docker.sh
 
       - name: Compress image
@@ -152,6 +164,18 @@ jobs:
           cp "$GITHUB_WORKSPACE/pi-gen-sources/pi-gen-config-32bit" config
           cp /tmp/bin/sentryusb-linux-armv7 stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-binary
           chmod +x stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-binary
+
+          # Fix: Debian rotated archive signing keys; the keyring from
+          # debootstrap's bookworm package is stale.  Copy the host
+          # (trixie) keyring into the rootfs before apt-get update.
+          mkdir -p stage0/00-aaa-fix-keys
+          cat > stage0/00-aaa-fix-keys/00-run.sh << 'FIXKEYS'
+#!/bin/bash -e
+install -m 644 /usr/share/keyrings/debian-archive-keyring.gpg \
+  "${ROOTFS_DIR}/usr/share/keyrings/debian-archive-keyring.gpg"
+FIXKEYS
+          chmod +x stage0/00-aaa-fix-keys/00-run.sh
+
           ./build-docker.sh
 
       - name: Compress image
