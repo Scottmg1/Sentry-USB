@@ -111,7 +111,7 @@ Run the one-line installer as root:
 
 ```bash
 sudo -i
-curl -fsSL https://sentryusb.sentry-six.com | bash
+curl -fsSL https://usb.sentry-six.com | bash
 ```
 
 That's it — **just run the command and wait**. The installer will:
@@ -157,6 +157,57 @@ The install takes about 2–5 minutes. When it finishes, **open the web UI to co
 
 ---
 
+# Advanced: Headless Configuration (No Web UI)
+
+If you prefer to pre-configure SentryUSB without using the web UI — for example, for automated deployments or if you can't reach the web interface — you can place a `sentryusb.conf` file on the boot partition of the SD card before first boot.
+
+## How It Works
+
+1. Flash the SentryUSB image (Method A above)
+2. Before ejecting the SD card, mount the `boot` partition on your computer
+3. Create or edit `boot/sentryusb.conf` with your settings (see the [sample config](https://github.com/Scottmg1/Sentry-USB/blob/main-dev/pi-gen-sources/00-sentryusb-tweaks/files/sentryusb.conf.sample))
+4. Eject and boot the Pi — setup will run automatically using the conf file values
+
+> **Windows users**: Make sure the file is saved with the `.conf` extension (not `.conf.txt`). Disable "Hide extensions for known file types" in Explorer to verify.
+
+## Bash Quoting Rules for Config Values
+
+All values in `sentryusb.conf` must follow bash quoting rules:
+
+- **Simple passwords**: Enclose in single quotes:
+  ```bash
+  export WIFIPASS='mypassword'
+  ```
+- **Passwords with single quotes**: Use `$'...'` syntax and escape the quote:
+  ```bash
+  export WIFIPASS=$'pass\'word'
+  ```
+- **Passwords with backslashes**: Escape with an additional backslash:
+  ```bash
+  export WIFIPASS=$'pass\'wo\\rd'
+  ```
+- **SSIDs with spaces**: Quote or escape:
+  ```bash
+  export SSID='My WiFi Network'
+  ```
+- In addition to bash quoting, `&`, `/`, and `\` should be escaped with a preceding `\`.
+
+## Security Considerations
+
+The Pi stores sensitive information including your WiFi password and potentially Tesla account tokens. Please:
+
+1. **Use a strong AP password** if you enable the WiFi Access Point — at least 8 characters, ideally much longer. See [password strength tips](https://xkcd.com/936/).
+2. **Change the default Pi password** if you used the stock one:
+   ```bash
+   sudo -i
+   /root/bin/remountfs_rw
+   passwd pi
+   reboot
+   ```
+3. **If your Pi is lost or stolen**, immediately change your Tesla account password (if you configured keep-awake with Tesla credentials) and your home WiFi password.
+
+---
+
 # Plug Into Your Tesla
 
 1. Disconnect the Pi from its power supply
@@ -186,7 +237,7 @@ The install takes about 2–5 minutes. When it finishes, **open the web UI to co
 ```bash
 ssh pi@sentryusb.local
 sudo -i
-curl -fsSL https://sentryusb.sentry-six.com | bash
+curl -fsSL https://usb.sentry-six.com | bash
 ```
 
 # Troubleshooting

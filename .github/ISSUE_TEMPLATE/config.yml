@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: "⛔ Questions"
-    url: https://discord.gg/b4MHf2x
+    url: https://discord.gg/9QZEzVwdnt
     about: 'Please do not use GitHub for asking questions. If you simply have a question, then the Discord is the best place to ask it. You may also find answers to your questions in the FAQ (in the "Wiki" tab).'
   - name: "⛔ Check if your problem has been reported already"
-    url: https://github.com/marcone/teslausb/issues
+    url: https://github.com/Scottmg1/Sentry-USB/issues
     about: "Please check if the problem you're encountering has already been reported. Check both opened and closed issues, as well as the Wiki."

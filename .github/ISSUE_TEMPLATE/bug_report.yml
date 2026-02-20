@@ -5,8 +5,8 @@ body:
     attributes:
       value: |
         **Is this the right place for my bug report?**
-        If you simply have a question, please check the [FAQ](/marcone/teslausb/wiki/FAQ) first, and/or check the [troubleshooting steps](/marcone/teslausb/wiki/Troubleshooting). If those do not answer your question use [Discord](https://discord.gg/b4MHf2x).
-        If you you are reporting a problem with teslausb itself, this is the right place.
+        If you simply have a question, please check the [FAQ](/Scottmg1/Sentry-USB/wiki/FAQ) first, and/or check the [troubleshooting steps](/Scottmg1/Sentry-USB/wiki/Troubleshooting). If those do not answer your question use [Discord](https://discord.gg/9QZEzVwdnt).
+        If you are reporting a problem with SentryUSB itself, this is the right place.
         If the problem is a more general Linux or Raspberry Pi OS problem, then [the Raspberry Pi forums](https://www.raspberrypi.org/forums) may offer some help
 
   - type: textarea
@@ -42,9 +42,10 @@ body:
       description: Which OS did you install?
       multiple: false
       options:
-        - Prebuilt TeslaUSB image
+        - Prebuilt SentryUSB image
+        - Raspberry Pi OS (manual install)
         - Armbian
-        - other
+        - Other
     validations:
       required: true
 
@@ -80,7 +81,7 @@ body:
       label: Logs
       description: |
         If the web interface is working, use it to download diagnostics and copy/paste or attach them here.
-        If the web interface is not working but you can ssh in to the Pi, run `sudo /root/bin/setup-teslausb diagnose` on the Pi to obtain diagnostics and attach them here.
+        If the web interface is not working but you can ssh in to the Pi, run `sudo /root/bin/setup-sentryusb diagnose` on the Pi to obtain diagnostics and attach them here.
 
   - type: textarea
     id: additional

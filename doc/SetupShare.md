@@ -1,41 +1,62 @@
-# Hosting the archive on Windows File Shares, MacOS Sharing, or Samba on Linux
+# Archive to Windows File Shares, macOS Sharing, or Samba (CIFS/SMB)
 
-Set up a share to host the archive on a computer on your home network. These instructions assume that you created a share named "SailfishCam" on the server "Nautilus".
+Back up your Tesla dashcam clips to a shared folder on a computer or NAS on your home network using CIFS/SMB.
 
-It is recommended that you create a new user. Grant the user you'll be using read/write access to the share. These instructions will assume that the user you've created is named "sailfish" and that the password for this user is "pa$$w0rd".
+## Prerequisites
 
-Now, on the Pi:
+Before configuring SentryUSB, set up a file share on your archive server:
 
-1. Enter the root session (if you haven't already):
-   ```
+1. **Create a shared folder** on your Windows PC, Mac, or Linux/NAS device (e.g., a share named `SentryArchive`).
+2. **Create a user** with read/write access to the share (or use an existing one). Note the username and password.
+3. **Verify the server is reachable** from your Pi's WiFi network. You'll need either the server's hostname or IP address.
+
+> **Tip**: To find your server's IP address — on Windows run `ipconfig` in PowerShell; on macOS/Linux run `ifconfig` or `ip addr`.
+
+## Method A: Setup Wizard (Recommended)
+
+The easiest way to configure CIFS/SMB archiving is through the web UI:
+
+1. Open **http://sentryusb.local** in your browser
+2. Go to **Settings** → **Open Wizard**
+3. Navigate to the **Archive** step
+4. Select **CIFS / SMB**
+5. Fill in the fields:
+   - **Archive Server** — hostname or IP of your file server
+   - **Share Name** — name of the shared folder (e.g., `SentryArchive`)
+   - **Username** — the share user
+   - **Password** — the share password
+   - **Domain** — usually not needed; leave empty unless your network requires it
+   - **CIFS Version** — usually not needed; leave as default (`3.0`) unless you have an older server
+6. Continue through the remaining wizard steps and click **Apply & Run Setup**
+
+## Method B: Manual Configuration (SSH)
+
+For advanced users who prefer to edit the config file directly:
+
+1. SSH into the Pi:
+   ```bash
+   ssh pi@sentryusb.local
    sudo -i
    ```
-2. Try to ping your archive server from the Pi. In this example the server is named `nautilus`.
+
+2. Verify the archive server is reachable:
+   ```bash
+   ping -c 3 your-server-hostname
    ```
-   ping -c 3 nautilus
-   ```
-3. If the server can't be reached, ping its IP address (These instructions will assume that the IP address of the archive server is `192.168.0.41`.):
+   If the hostname doesn't resolve, use the IP address instead.
 
-   ```
-   ping 192.168.0.41
-   ```
-
-   To get the IP address of the archive machine:
-
-   - On Windows: Open a PowerShell session and type `ipconfig`. Get the IP address from the line labeled "IPv4 Address".
-   - On MacOS or Linux open a terminal and type ifconfig.
-
-   If you can't ping the archive server by IP address from the Pi, go do whatever you need to on your network to fix that.
-
-   If you can't reach the archive server by name but you can by IP address then use its IP address, below, for the `ARCHIVE_SERVER` variable.
-
-4. Run these commands, subsituting your values:
-   ```
+3. Edit `/root/sentryusb.conf` and add/update these variables:
+   ```bash
    export ARCHIVE_SYSTEM="cifs"
-   export ARCHIVE_SERVER="Nautilus"
-   export SHARE_NAME="SailfishCam"
-   export SHARE_USER="sailfish"
-   export SHARE_PASSWORD="pa$$w0rd"
+   export ARCHIVE_SERVER="your-server"
+   export SHARE_NAME="SentryArchive"
+   export SHARE_USER="username"
+   export SHARE_PASSWORD="password"
    ```
 
-Now stay in your `sudo -i` session and return to the section "Set up the USB storage functionality" in the [main instructions](/README.md).
+4. Run setup to apply:
+   ```bash
+   /root/bin/setup-sentryusb
+   ```
+
+See the [Raspberry Pi Setup Guide](RaspberryPiSetup.md) for full setup instructions.

@@ -25,6 +25,12 @@ Browser (React SPA)  ←→  Go API Server (single ARM binary)  ←→  Shell Sc
 - **Backend**: Go HTTP server with REST API + WebSocket for live updates
 - **Legacy**: Existing bash scripts preserved; Go shells out to them
 
+## Documentation
+
+- **[Wiki](https://github.com/Scottmg1/Sentry-USB/wiki)** — Getting Started, Setup Wizard Guide, Archive Methods, Notifications, Troubleshooting, FAQ, Developer Guide
+- **[Raspberry Pi Setup Guide](doc/RaspberryPiSetup.md)** — Detailed installation instructions
+- **[Build Guide](BUILD.md)** — Building from source
+
 ## Prerequisites
 
 - A Raspberry Pi (Zero W, Zero 2, Pi 4, or Pi 5) or compatible SBC with USB OTG
@@ -90,7 +96,7 @@ cd ../server && make build-armv7 # Cross-compile for Pi Zero
 ## Project Structure
 
 ```
-Sentry-USB/
+SentryUSB/
 ├── web/              # React frontend (Vite + TailwindCSS)
 │   └── src/
 │       ├── components/

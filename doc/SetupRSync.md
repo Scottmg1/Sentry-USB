@@ -1,70 +1,69 @@
-# Introduction
+# Archive with rsync (SSH-based File Sync)
 
-This guide will show you how to use [rsync](https://rsync.samba.org/) to archive your saved TeslaCam footage on a remote storage server.
+Back up your Tesla dashcam clips to a remote server using [rsync](https://rsync.samba.org/) over SSH.
 
-Since sftp/rsync accesses a computer through SSH the only requirement for hosting an SFTP/rsync server is to have a box running SSH. For example, you could use another Raspberry Pi connected to your local network with a USB storage drive plugged in. The official Raspberry Pi site has a good example on [how to mount an external drive](https://www.raspberrypi.org/documentation/configuration/external-storage.md).
+## Prerequisites
 
-You will need the username and host/IP of the storage server, as well as the path for the files to go in, and the storage server will need to allow SSH.
+- A server (Linux box, NAS, another Raspberry Pi, etc.) with SSH and rsync installed
+- The server's hostname or IP address, an SSH username, and a destination path
+- The server must allow SSH key-based authentication (you'll set up a keypair)
 
-This guide makes the following assumptions:
+## Method A: Setup Wizard + SSH Key Setup (Recommended)
 
-- You are running your own sftp/rsync server that you have admin rights to, or can at least add a public key to its `~/.ssh/authorized_keys` file.
-- The sftp/rsync server has rsync installed (raspbian automatically does)
+The wizard configures the rsync settings, but you still need to set up SSH key authentication manually.
 
-# Step 1: Authentication
+### Step 1: Configure rsync in the wizard
 
-Similar to sftp, rsync by default uses ssh to connect to a remote server and transfer files. This guide will use a generated ssh keypair, hence the first assumption above.
+1. Open **http://sentryusb.local** in your browser
+2. Go to **Settings** → **Open Wizard**
+3. Navigate to the **Archive** step
+4. Select **rsync**
+5. Fill in the fields:
+   - **Server** — hostname or IP of your archive server
+   - **Username** — the SSH user on the server
+   - **Remote Path** — destination directory (e.g., `/mnt/storage/SentryArchive/`)
+6. Continue through the remaining wizard steps and click **Apply & Run Setup**
 
-1. Enter the root session (if you haven't already):
+### Step 2: Set up SSH key authentication
 
-   ```
-   sudo -i
-   ```
+After the wizard completes and the Pi is set up, SSH in and create a keypair so rsync can authenticate without a password:
 
-1. Remount the file system as read-write:
-
-   ```
-   bin/remountfs_rw
-   ```
-
-1. Run these commands to to generate an ssh key for the `root` user:
-
-   ```
-   ssh-keygen
-   ```
-
-1. Copy the key to the storage server. This will also add the server to `.ssh/known_hosts`:
-   ```
-   ssh-copy-id user@archiveserver
-   ```
-
-# Step 2: Exports
-
-Run this command to cause the setup processes which you'll resume in the main instructions to use rsync:
-
-```
-export ARCHIVE_SYSTEM=rsync
-export RSYNC_USER=<sftp username>
-export RSYNC_SERVER=<sftp IP/host>
-export RSYNC_PATH=<destination path to save in>
+```bash
+ssh pi@sentryusb.local
+sudo -i
+/root/bin/remountfs_rw
+ssh-keygen          # Press Enter for all defaults (no passphrase)
+ssh-copy-id user@archiveserver
 ```
 
-Explanations for each:
+Replace `user@archiveserver` with your actual username and server. This copies the public key to the server and adds it to `known_hosts`.
 
-- `ARCHIVE_SYSTEM`: `rsync` for enabling rsync
-- `RSYNC_USER`: The user on the SFTP server
-- `RSYNC_SERVER`: The IP address/hostname of the destination machine
-- `RSYNC_PATH`: The path on the destination machine where the files will be saved
+> **Tip**: Additional SSH options (e.g., custom port) can be configured in `~/.ssh/config`. See the [ssh_config man page](https://linux.die.net/man/5/ssh_config).
 
-An example config is below:
+## Method B: Manual Configuration (SSH)
 
-```
-export ARCHIVE_SYSTEM=rsync
-export RSYNC_USER=pi
-export RSYNC_SERVER=192.168.1.254
-export RSYNC_PATH=/mnt/PIHDD/TeslaCam/
-```
+For advanced users who prefer to edit the config file directly:
 
-Additional options for rsync over ssh can be configured using `~/.ssh/config` such as port number. To see all available options visit [the man page](https://linux.die.net/man/5/ssh_config).
+1. SSH into the Pi and set up SSH keys (see Step 2 above)
 
-Stay in the `sudo -i` session return to the section "Set up the USB storage functionality" in the [main instructions](../README.md).
+2. Edit `/root/sentryusb.conf` and add/update these variables:
+   ```bash
+   export ARCHIVE_SYSTEM=rsync
+   export RSYNC_USER=pi
+   export RSYNC_SERVER=192.168.1.254
+   export RSYNC_PATH=/mnt/storage/SentryArchive/
+   ```
+
+   | Variable | Description |
+   |----------|-------------|
+   | `ARCHIVE_SYSTEM` | Must be `rsync` |
+   | `RSYNC_USER` | SSH username on the archive server |
+   | `RSYNC_SERVER` | Hostname or IP address of the server |
+   | `RSYNC_PATH` | Destination directory on the server |
+
+3. Run setup to apply:
+   ```bash
+   /root/bin/setup-sentryusb
+   ```
+
+See the [Raspberry Pi Setup Guide](RaspberryPiSetup.md) for full setup instructions.
