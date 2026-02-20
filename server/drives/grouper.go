@@ -118,20 +118,195 @@ func GroupIntoDrives(routes []Route) []Drive {
 	return drives
 }
 
-// parkThresholdSeconds is the minimum time in Park (seconds) for a clip to be
-// considered a drive boundary. Clips with >= this much park time split drives.
-const parkThresholdSeconds = 15.0
+// parkGapSeconds is the minimum Park duration (seconds) that splits drives.
+// Any Park period longer than this ends the current drive; if driving resumes
+// within the same clip it becomes a new drive.
+const parkGapSeconds = 2.0
 
 // splitByGearState splits a group of clips into sub-groups when the gear state
-// shows a Park period between driving segments. Clips with >= 15 seconds of
-// Park time (estimated from raw frame counts) are treated as boundaries.
-// Falls back to no splitting when no gear data is available.
+// shows a Park period >= parkGapSeconds between driving segments.
+// Uses GearRuns (raw frame transitions) for sub-clip precision when available.
+// Falls back to clip-level heuristic for legacy data without GearRuns.
 func splitByGearState(group []timedRoute) [][]timedRoute {
+	if len(group) == 0 {
+		return nil
+	}
+
+	// Check if any clip has gear run data (new format)
+	hasGearRuns := false
+	for _, clip := range group {
+		if len(clip.GearRuns) > 0 {
+			hasGearRuns = true
+			break
+		}
+	}
+	if !hasGearRuns {
+		return splitByGearStateLegacy(group)
+	}
+
+	// Sub-clip splitting: walk through each clip's gear runs and split at
+	// Park gaps that exceed the threshold.
+	var result [][]timedRoute
+	var current []timedRoute
+
+	for _, clip := range group {
+		if len(clip.GearRuns) == 0 {
+			// No gear data for this clip — include it in the current drive
+			current = append(current, clip)
+			continue
+		}
+
+		segments := splitClipAtParkGaps(clip)
+		for _, seg := range segments {
+			if seg.parked {
+				// Park boundary — finalize the current drive
+				if len(current) > 0 {
+					result = append(result, current)
+					current = nil
+				}
+			} else if len(seg.route.Points) > 0 {
+				current = append(current, seg.route)
+			}
+		}
+	}
+	if len(current) > 0 {
+		result = append(result, current)
+	}
+
+	// If everything was parked, return original group to avoid losing data
+	if len(result) == 0 {
+		return [][]timedRoute{group}
+	}
+	return result
+}
+
+// clipSegment represents a portion of a clip — either a driving segment
+// (with route data) or a park boundary marker.
+type clipSegment struct {
+	route  timedRoute
+	parked bool
+}
+
+// splitClipAtParkGaps analyses a clip's GearRuns and splits its deduped points
+// at any Park gap >= parkGapSeconds. Returns one or more segments.
+func splitClipAtParkGaps(clip timedRoute) []clipSegment {
+	totalRawFrames := 0
+	for _, run := range clip.GearRuns {
+		totalRawFrames += run.Frames
+	}
+	if totalRawFrames == 0 {
+		return []clipSegment{{route: clip, parked: false}}
+	}
+
+	secondsPerFrame := 60.0 / float64(totalRawFrames)
+	nPoints := len(clip.Points)
+
+	// Identify which raw segments are park gaps
+	type rawSeg struct {
+		startFrame int
+		endFrame   int // exclusive
+		parked     bool
+	}
+	var rawSegs []rawSeg
+	frame := 0
+	for _, run := range clip.GearRuns {
+		duration := float64(run.Frames) * secondsPerFrame
+		isParkGap := run.Gear == GearPark && duration >= parkGapSeconds
+		rawSegs = append(rawSegs, rawSeg{
+			startFrame: frame,
+			endFrame:   frame + run.Frames,
+			parked:     isParkGap,
+		})
+		frame += run.Frames
+	}
+
+	// Merge consecutive non-parked segments
+	var merged []rawSeg
+	for _, seg := range rawSegs {
+		if len(merged) > 0 && !merged[len(merged)-1].parked && !seg.parked {
+			merged[len(merged)-1].endFrame = seg.endFrame
+		} else {
+			merged = append(merged, seg)
+		}
+	}
+
+	// Check if any split is needed
+	hasParkGap := false
+	for _, seg := range merged {
+		if seg.parked {
+			hasParkGap = true
+			break
+		}
+	}
+	if !hasParkGap {
+		return []clipSegment{{route: clip, parked: false}}
+	}
+
+	// Map raw frame ranges to deduped point indices and build segments
+	var result []clipSegment
+	for _, seg := range merged {
+		if seg.parked {
+			result = append(result, clipSegment{parked: true})
+			continue
+		}
+
+		// Map frame range → point range (approximate linear interpolation)
+		startFrac := float64(seg.startFrame) / float64(totalRawFrames)
+		endFrac := float64(seg.endFrame) / float64(totalRawFrames)
+
+		startIdx := int(math.Round(startFrac * float64(nPoints)))
+		endIdx := int(math.Round(endFrac * float64(nPoints)))
+
+		if startIdx >= nPoints {
+			startIdx = nPoints - 1
+		}
+		if endIdx > nPoints {
+			endIdx = nPoints
+		}
+		if startIdx < 0 {
+			startIdx = 0
+		}
+		if endIdx <= startIdx {
+			continue
+		}
+
+		segPoints := make([]GPSPoint, endIdx-startIdx)
+		copy(segPoints, clip.Points[startIdx:endIdx])
+
+		var segGears []uint8
+		if len(clip.GearStates) >= endIdx {
+			segGears = make([]uint8, endIdx-startIdx)
+			copy(segGears, clip.GearStates[startIdx:endIdx])
+		}
+
+		// Compute timestamp offset for this segment within the clip
+		offsetDuration := time.Duration(startFrac * float64(60*time.Second))
+
+		result = append(result, clipSegment{
+			route: timedRoute{
+				Route: Route{
+					File:   clip.File,
+					Date:   clip.Date,
+					Points: segPoints,
+					GearStates: segGears,
+				},
+				timestamp: clip.timestamp.Add(offsetDuration),
+			},
+			parked: false,
+		})
+	}
+
+	return result
+}
+
+// splitByGearStateLegacy is the fallback for routes processed before GearRuns
+// were stored. Uses clip-level heuristic: clips that are majority Park are
+// treated as drive boundaries.
+func splitByGearStateLegacy(group []timedRoute) [][]timedRoute {
 	if len(group) <= 1 {
 		return [][]timedRoute{group}
 	}
 
-	// Check if any clip has gear data
 	hasGear := false
 	for _, clip := range group {
 		if len(clip.GearStates) > 0 {
@@ -147,8 +322,7 @@ func splitByGearState(group []timedRoute) [][]timedRoute {
 	var current []timedRoute
 
 	for _, clip := range group {
-		if clipIsMostlyParked(clip) {
-			// Park clip — finalize the current drive segment
+		if clipIsMostlyParkedLegacy(clip) {
 			if len(current) > 0 {
 				result = append(result, current)
 				current = nil
@@ -161,23 +335,18 @@ func splitByGearState(group []timedRoute) [][]timedRoute {
 		result = append(result, current)
 	}
 
-	// If everything was parked, return original group to avoid losing data
 	if len(result) == 0 {
 		return [][]timedRoute{group}
 	}
 	return result
 }
 
-// clipIsMostlyParked returns true if the clip has >= parkThresholdSeconds of Park time.
-// Uses raw (pre-dedup) frame counts for accurate time estimation.
-// Returns false if no gear data is available (legacy clips).
-func clipIsMostlyParked(clip timedRoute) bool {
-	// Use raw frame counts if available (accurate, pre-dedup)
+// clipIsMostlyParkedLegacy returns true if the clip is majority Park.
+// Used only for legacy routes without GearRuns.
+func clipIsMostlyParkedLegacy(clip timedRoute) bool {
 	if clip.RawFrameCount > 0 {
-		parkSeconds := float64(clip.RawParkCount) / float64(clip.RawFrameCount) * 60.0
-		return parkSeconds >= parkThresholdSeconds
+		return float64(clip.RawParkCount)/float64(clip.RawFrameCount) > 0.5
 	}
-	// Fallback for data processed without raw counts: use deduplicated gear states
 	if len(clip.GearStates) == 0 {
 		return false
 	}

@@ -18,6 +18,13 @@ const DefaultDataPath = "/mutable/drive-data.json"
 // Checked during Load() for migration.
 const legacyDataPath = "/root/drive-data.json"
 
+// GearRun represents a contiguous run of frames in the same gear state.
+// Computed from raw (pre-dedup) frame data for accurate intra-clip splitting.
+type GearRun struct {
+	Gear   uint8 `json:"gear"`
+	Frames int   `json:"frames"`
+}
+
 // Route represents GPS data extracted from a single front-camera clip.
 type Route struct {
 	File          string     `json:"file"`
@@ -26,6 +33,7 @@ type Route struct {
 	GearStates    []uint8    `json:"gearStates,omitempty"`
 	RawParkCount  int        `json:"rawParkCount,omitempty"`
 	RawFrameCount int        `json:"rawFrameCount,omitempty"`
+	GearRuns      []GearRun  `json:"gearRuns,omitempty"`
 }
 
 // StoreData is the persistent JSON structure.
@@ -134,7 +142,8 @@ func (s *Store) ProcessedSet() map[string]bool {
 // AddRoute adds a processed file and its route data.
 // gears is a parallel slice of gear states (same length as points); may be nil for legacy data.
 // rawParkCount/rawFrameCount are pre-dedup counts for accurate park time estimation.
-func (s *Store) AddRoute(relativePath, dateDir string, points []GPSPoint, gears []uint8, rawParkCount, rawFrameCount int) {
+// gearRuns stores contiguous gear transitions from raw data for intra-clip drive splitting.
+func (s *Store) AddRoute(relativePath, dateDir string, points []GPSPoint, gears []uint8, rawParkCount, rawFrameCount int, gearRuns []GearRun) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -147,6 +156,7 @@ func (s *Store) AddRoute(relativePath, dateDir string, points []GPSPoint, gears 
 			GearStates:    gears,
 			RawParkCount:  rawParkCount,
 			RawFrameCount: rawFrameCount,
+			GearRuns:      gearRuns,
 		})
 	}
 }

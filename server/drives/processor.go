@@ -139,10 +139,13 @@ func (p *Processor) ProcessDirectory(ctx context.Context, clipsDir string, throt
 				}
 			}
 
+			// Compute gear runs from raw data for intra-clip drive splitting
+			gearRuns := computeGearRuns(gears)
+
 			// Deduplicate consecutive identical points
 			deduped, dedupedGears := deduplicatePoints(points, gears)
 			if len(deduped) > 0 {
-				p.store.AddRoute(f.relativePath, f.dateDir, deduped, dedupedGears, rawParkCount, rawFrameCount)
+				p.store.AddRoute(f.relativePath, f.dateDir, deduped, dedupedGears, rawParkCount, rawFrameCount, gearRuns)
 				result.FilesWithGPS++
 				result.TotalPoints += len(deduped)
 			} else {
@@ -234,6 +237,28 @@ func discoverFrontCameraFiles(clipsDir string) ([]fileInfo, error) {
 	}
 
 	return files, nil
+}
+
+// computeGearRuns computes contiguous runs of gear states from raw frame data.
+// e.g. [Drive,Drive,Drive,Park,Park,Drive] → [{Drive,3},{Park,2},{Drive,1}]
+func computeGearRuns(gears []uint8) []GearRun {
+	if len(gears) == 0 {
+		return nil
+	}
+	var runs []GearRun
+	currentGear := gears[0]
+	count := 1
+	for i := 1; i < len(gears); i++ {
+		if gears[i] == currentGear {
+			count++
+		} else {
+			runs = append(runs, GearRun{Gear: currentGear, Frames: count})
+			currentGear = gears[i]
+			count = 1
+		}
+	}
+	runs = append(runs, GearRun{Gear: currentGear, Frames: count})
+	return runs
 }
 
 // deduplicatePoints removes consecutive identical GPS points, keeping gear states in sync.
