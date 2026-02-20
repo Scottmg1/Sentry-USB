@@ -1,7 +1,8 @@
 name: Build & Release Binaries
 
-on:
-  workflow_dispatch:
+# GitHub Actions disabled - use local build script instead (see BUILD_IMAGE.md)
+# on:
+#   workflow_dispatch:
 
 jobs:
   build:

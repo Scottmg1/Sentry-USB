@@ -1,19 +1,20 @@
 name: Build SentryUSB Image
 
-on:
-  workflow_dispatch:
-    inputs:
-      arch:
-        description: 'Target architecture'
-        required: true
-        default: 'both'
-        type: choice
-        options:
-          - both
-          - arm64
-          - armhf
-  release:
-    types: [published]
+# GitHub Actions disabled - use local build script instead (see BUILD_IMAGE.md)
+# on:
+#   workflow_dispatch:
+#     inputs:
+#       arch:
+#         description: 'Target architecture'
+#         required: true
+#         default: 'both'
+#         type: choice
+#         options:
+#           - both
+#           - arm64
+#           - armhf
+#   release:
+#     types: [published]
 
 jobs:
   build-binaries:
@@ -84,6 +85,9 @@ jobs:
           cp /tmp/bin/sentryusb-linux-arm64 stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-binary
           chmod +x stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-binary
 
+          # Trixie apt indices are much larger; increase export image margin
+          sed -i 's/200 \* 1024 \* 1024/800 * 1024 * 1024/' export-image/prerun.sh
+
           ./build-docker.sh
 
       - name: Compress image
@@ -153,6 +157,9 @@ jobs:
           cp "$GITHUB_WORKSPACE/pi-gen-sources/pi-gen-config-32bit" config
           cp /tmp/bin/sentryusb-linux-armv7 stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-binary
           chmod +x stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-binary
+
+          # Trixie apt indices are much larger; increase export image margin
+          sed -i 's/200 \* 1024 \* 1024/800 * 1024 * 1024/' export-image/prerun.sh
 
           ./build-docker.sh
 

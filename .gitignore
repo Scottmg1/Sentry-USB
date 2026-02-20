@@ -13,3 +13,5 @@ server/static/*
 # Node
 web/node_modules/
 web/dist/
+deploy/
+internal/
