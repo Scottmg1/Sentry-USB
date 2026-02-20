@@ -160,11 +160,14 @@ func (h *handlers) runSetup(w http.ResponseWriter, r *http.Request) {
 		if f, err := os.Create(setupStartedPaths[0]); err == nil {
 			f.Close()
 		}
-		// Remove cached setup scripts so fresh versions are downloaded
+		// Remove cached setup scripts so fresh versions are downloaded.
+		// NOTE: envsetup.sh is intentionally NOT deleted here — it is a
+		// runtime dependency for archiveloop.  Deleting it before setup
+		// completes leaves the system broken if setup fails or the Pi
+		// reboots mid-setup.  Setup will overwrite it with a fresh copy.
 		for _, script := range []string{
 			"/root/bin/setup-sentryusb",
 			"/root/bin/setup-teslausb",
-			"/root/bin/envsetup.sh",
 		} {
 			os.Remove(script)
 		}
