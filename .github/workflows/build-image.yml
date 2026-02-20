@@ -95,11 +95,7 @@ jobs:
           # debootstrap's bookworm package is stale.  Copy the host
           # (trixie) keyring into the rootfs before apt-get update.
           mkdir -p stage0/00-aaa-fix-keys
-          cat > stage0/00-aaa-fix-keys/00-run.sh << 'FIXKEYS'
-#!/bin/bash -e
-install -m 644 /usr/share/keyrings/debian-archive-keyring.gpg \
-  "${ROOTFS_DIR}/usr/share/keyrings/debian-archive-keyring.gpg"
-FIXKEYS
+          printf '#!/bin/bash -e\ninstall -m 644 /usr/share/keyrings/debian-archive-keyring.gpg "${ROOTFS_DIR}/usr/share/keyrings/debian-archive-keyring.gpg"\n' > stage0/00-aaa-fix-keys/00-run.sh
           chmod +x stage0/00-aaa-fix-keys/00-run.sh
 
           ./build-docker.sh
@@ -169,11 +165,7 @@ FIXKEYS
           # debootstrap's bookworm package is stale.  Copy the host
           # (trixie) keyring into the rootfs before apt-get update.
           mkdir -p stage0/00-aaa-fix-keys
-          cat > stage0/00-aaa-fix-keys/00-run.sh << 'FIXKEYS'
-#!/bin/bash -e
-install -m 644 /usr/share/keyrings/debian-archive-keyring.gpg \
-  "${ROOTFS_DIR}/usr/share/keyrings/debian-archive-keyring.gpg"
-FIXKEYS
+          printf '#!/bin/bash -e\ninstall -m 644 /usr/share/keyrings/debian-archive-keyring.gpg "${ROOTFS_DIR}/usr/share/keyrings/debian-archive-keyring.gpg"\n' > stage0/00-aaa-fix-keys/00-run.sh
           chmod +x stage0/00-aaa-fix-keys/00-run.sh
 
           ./build-docker.sh
