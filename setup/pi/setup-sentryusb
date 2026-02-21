@@ -347,12 +347,13 @@ function create_usb_drive_backing_files () {
   setup_progress "Creating backing disk files."
   copy_script tools/resize-image.sh /root/bin
   copy_script setup/pi/create-backingfiles.sh /tmp
-  /tmp/create-backingfiles.sh "$CAM_SIZE" "$MUSIC_SIZE" "$LIGHTSHOW_SIZE" "$BOOMBOX_SIZE" "$BACKINGFILES_MOUNTPOINT" "$USE_EXFAT"
+  /tmp/create-backingfiles.sh "$CAM_SIZE" "$MUSIC_SIZE" "$LIGHTSHOW_SIZE" "$BOOMBOX_SIZE" "$BACKINGFILES_MOUNTPOINT" "$USE_EXFAT" 50M
 
   update_backingfiles_fstab_entry $BACKINGFILES_MOUNTPOINT/cam_disk.bin /mnt/cam
   update_backingfiles_fstab_entry $BACKINGFILES_MOUNTPOINT/music_disk.bin /mnt/music
   update_backingfiles_fstab_entry $BACKINGFILES_MOUNTPOINT/lightshow_disk.bin /mnt/lightshow
   update_backingfiles_fstab_entry $BACKINGFILES_MOUNTPOINT/boombox_disk.bin /mnt/boombox
+  update_backingfiles_fstab_entry $BACKINGFILES_MOUNTPOINT/wraps_disk.bin /mnt/wraps
 
   # mount cam image and make sure the right directories exist
   umount /mnt/cam > /dev/null || true
@@ -401,6 +402,13 @@ function create_usb_drive_backing_files () {
       mkdir -p /mnt/boombox/Boombox
       touch /mnt/boombox/.metadata_never_index
       umount -l /mnt/boombox || setup_progress "failed to unmount /mnt/boombox"
+    fi
+
+    if [ -e /backingfiles/wraps_disk.bin ] && mount_with_retry /mnt/wraps
+    then
+      mkdir -p /mnt/wraps/Wraps
+      touch /mnt/wraps/.metadata_never_index
+      umount -l /mnt/wraps || setup_progress "failed to unmount /mnt/wraps"
     fi
 
   else

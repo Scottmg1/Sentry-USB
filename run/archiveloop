@@ -46,6 +46,7 @@ fi
 
 export CAM_MOUNT=/mnt/cam
 export MUSIC_MOUNT=/mnt/music
+export WRAPS_MOUNT=/mnt/wraps
 
 # read the setup variables and define other environment variables and functions
 source /root/bin/envsetup.sh
@@ -127,17 +128,49 @@ function sync_user_media_to_cam () {
     return
   fi
   log "Syncing user media to cam drive..."
+
+  # Sync Wraps to its own dedicated disk if available, otherwise to cam
+  if [ -e /backingfiles/wraps_disk.bin ] && [ -d "/mutable/Wraps" ] && [ -n "$(ls -A /mutable/Wraps 2>/dev/null)" ]
+  then
+    if ensure_mountpoint_is_mounted "$WRAPS_MOUNT"
+    then
+      mkdir -p "$WRAPS_MOUNT/Wraps"
+      rsync -a --delete "/mutable/Wraps/" "$WRAPS_MOUNT/Wraps/" >> "$LOG_FILE" 2>&1 \
+        || log "Failed to sync Wraps to wraps drive"
+      unmount_mount_point "$WRAPS_MOUNT"
+      log "Synced Wraps to dedicated wraps drive."
+    else
+      log "Could not mount wraps drive, falling back to cam drive for Wraps."
+      # Fall through to cam-based sync below
+      if ensure_mountpoint_is_mounted "$CAM_MOUNT"
+      then
+        mkdir -p "$CAM_MOUNT/Wraps"
+        rsync -a --delete "/mutable/Wraps/" "$CAM_MOUNT/Wraps/" >> "$LOG_FILE" 2>&1 \
+          || log "Failed to sync Wraps to cam drive"
+        unmount_mount_point "$CAM_MOUNT"
+      fi
+    fi
+  fi
+
+  # Sync LicensePlate (and Wraps if no dedicated wraps disk) to cam drive
   if ensure_mountpoint_is_mounted "$CAM_MOUNT"
   then
-    for dir in Wraps LicensePlate
-    do
-      if [ -d "/mutable/$dir" ] && [ -n "$(ls -A "/mutable/$dir" 2>/dev/null)" ]
+    if [ ! -e /backingfiles/wraps_disk.bin ]
+    then
+      # No dedicated wraps disk — sync Wraps to cam drive (legacy behavior)
+      if [ -d "/mutable/Wraps" ] && [ -n "$(ls -A /mutable/Wraps 2>/dev/null)" ]
       then
-        mkdir -p "$CAM_MOUNT/$dir"
-        rsync -a --delete "/mutable/$dir/" "$CAM_MOUNT/$dir/" >> "$LOG_FILE" 2>&1 \
-          || log "Failed to sync $dir to cam drive"
+        mkdir -p "$CAM_MOUNT/Wraps"
+        rsync -a --delete "/mutable/Wraps/" "$CAM_MOUNT/Wraps/" >> "$LOG_FILE" 2>&1 \
+          || log "Failed to sync Wraps to cam drive"
       fi
-    done
+    fi
+    if [ -d "/mutable/LicensePlate" ] && [ -n "$(ls -A /mutable/LicensePlate 2>/dev/null)" ]
+    then
+      mkdir -p "$CAM_MOUNT/LicensePlate"
+      rsync -a --delete "/mutable/LicensePlate/" "$CAM_MOUNT/LicensePlate/" >> "$LOG_FILE" 2>&1 \
+        || log "Failed to sync LicensePlate to cam drive"
+    fi
     unmount_mount_point "$CAM_MOUNT"
     log "Done syncing user media."
   else
@@ -377,7 +410,7 @@ function trim_free_space() {
 }
 
 function fix_errors_in_images () {
-  for i in cam music boombox lightshow
+  for i in cam music boombox lightshow wraps
   do
     img="/backingfiles/${i}_disk.bin"
     if [ -e "$img" ]

@@ -18,8 +18,9 @@ BOOMBOX_SIZE="$4"
 # strip trailing slash that shell autocomplete might have added
 BACKINGFILES_MOUNTPOINT="${5/%\//}"
 USE_EXFAT="$6"
+WRAPS_SIZE="${7:-0}"
 
-log_progress "cam: $CAM_SIZE, music: $MUSIC_SIZE, lightshow: $LIGHTSHOW_SIZE, boombox: $BOOMBOX_SIZE mountpoint: $BACKINGFILES_MOUNTPOINT, exfat: $USE_EXFAT"
+log_progress "cam: $CAM_SIZE, music: $MUSIC_SIZE, lightshow: $LIGHTSHOW_SIZE, boombox: $BOOMBOX_SIZE, wraps: $WRAPS_SIZE mountpoint: $BACKINGFILES_MOUNTPOINT, exfat: $USE_EXFAT"
 
 function first_partition_offset () {
   local filename="$1"
@@ -222,6 +223,7 @@ function release_all_images () {
   umount -d /mnt/music || true
   umount -d /mnt/lightshow || true
   umount -d /mnt/boombox || true
+  umount -d /mnt/wraps || true
   umount -d /backingfiles/snapshots/snap*/mnt || true
 }
 
@@ -289,16 +291,19 @@ CAM_DISK_FILE_NAME="$BACKINGFILES_MOUNTPOINT/cam_disk.bin"
 MUSIC_DISK_FILE_NAME="$BACKINGFILES_MOUNTPOINT/music_disk.bin"
 LIGHTSHOW_DISK_FILE_NAME="$BACKINGFILES_MOUNTPOINT/lightshow_disk.bin"
 BOOMBOX_DISK_FILE_NAME="$BACKINGFILES_MOUNTPOINT/boombox_disk.bin"
+WRAPS_DISK_FILE_NAME="$BACKINGFILES_MOUNTPOINT/wraps_disk.bin"
 
 CAM_DISK_SIZE="$(calc_size CAM_SIZE)"
 MUSIC_DISK_SIZE="$(calc_size MUSIC_SIZE)"
 LIGHTSHOW_DISK_SIZE="$(calc_size LIGHTSHOW_SIZE)"
 BOOMBOX_DISK_SIZE="$(calc_size BOOMBOX_SIZE)"
+WRAPS_DISK_SIZE="$(calc_size WRAPS_SIZE)"
 
 if image_matches_params "$CAM_DISK_FILE_NAME" "$CAM_DISK_SIZE" && \
    image_matches_params "$MUSIC_DISK_FILE_NAME" "$MUSIC_DISK_SIZE" && \
    image_matches_params "$LIGHTSHOW_DISK_FILE_NAME" "$LIGHTSHOW_DISK_SIZE" && \
-   image_matches_params "$BOOMBOX_DISK_FILE_NAME" "$BOOMBOX_DISK_SIZE"
+   image_matches_params "$BOOMBOX_DISK_FILE_NAME" "$BOOMBOX_DISK_SIZE" && \
+   image_matches_params "$WRAPS_DISK_FILE_NAME" "$WRAPS_DISK_SIZE"
 then
   log_progress "No need to update disk images"
   exit 0
@@ -322,11 +327,11 @@ function reduce_size () {
   adjusted=true
 }
 
-if [ "$((CAM_DISK_SIZE+MUSIC_DISK_SIZE+LIGHTSHOW_DISK_SIZE+BOOMBOX_DISK_SIZE))" -gt "$(available_space)" ]
+if [ "$((CAM_DISK_SIZE+MUSIC_DISK_SIZE+LIGHTSHOW_DISK_SIZE+BOOMBOX_DISK_SIZE+WRAPS_DISK_SIZE))" -gt "$(available_space)" ]
 then
   log_progress "Total requested size exceeds available space"
   
-  while [ "$((CAM_DISK_SIZE+MUSIC_DISK_SIZE+LIGHTSHOW_DISK_SIZE+BOOMBOX_DISK_SIZE))" -gt "$(available_space)" ]
+  while [ "$((CAM_DISK_SIZE+MUSIC_DISK_SIZE+LIGHTSHOW_DISK_SIZE+BOOMBOX_DISK_SIZE+WRAPS_DISK_SIZE))" -gt "$(available_space)" ]
   do
     adjusted=false
     reduce_size CAM_DISK_SIZE "30G"
@@ -339,7 +344,7 @@ then
       exit 1
     fi
   done
-  log_progress "Adjusted sizes to ${CAM_DISK_SIZE}K / ${MUSIC_DISK_SIZE}K / ${LIGHTSHOW_DISK_SIZE}K / ${BOOMBOX_DISK_SIZE}K"
+  log_progress "Adjusted sizes to ${CAM_DISK_SIZE}K / ${MUSIC_DISK_SIZE}K / ${LIGHTSHOW_DISK_SIZE}K / ${BOOMBOX_DISK_SIZE}K / ${WRAPS_DISK_SIZE}K"
 fi
 
 # If we get here, one or more of the images need to be created, deleted, or
@@ -354,7 +359,8 @@ for pair in \
   "cam:CAM:$CAM_DISK_SIZE:$CAM_DISK_FILE_NAME" \
   "music:MUSIC:$MUSIC_DISK_SIZE:$MUSIC_DISK_FILE_NAME" \
   "lightshow:LIGHTSHOW:$LIGHTSHOW_DISK_SIZE:$LIGHTSHOW_DISK_FILE_NAME" \
-  "boombox:BOOMBOX:$BOOMBOX_DISK_SIZE:$BOOMBOX_DISK_FILE_NAME"
+  "boombox:BOOMBOX:$BOOMBOX_DISK_SIZE:$BOOMBOX_DISK_FILE_NAME" \
+  "wraps:WRAPS:$WRAPS_DISK_SIZE:$WRAPS_DISK_FILE_NAME"
 do
   IFS=: read -r _name _label _size _file <<< "$pair"
   if image_matches_params "$_file" "$_size" &> /dev/null; then continue; fi
@@ -389,5 +395,7 @@ add_drive "music" "MUSIC" "$MUSIC_DISK_SIZE" "$MUSIC_DISK_FILE_NAME" "$USE_EXFAT
 add_drive "lightshow" "LIGHTSHOW" "$LIGHTSHOW_DISK_SIZE" "$LIGHTSHOW_DISK_FILE_NAME" "$USE_EXFAT"
 
 add_drive "boombox" "BOOMBOX" "$BOOMBOX_DISK_SIZE" "$BOOMBOX_DISK_FILE_NAME" "$USE_EXFAT"
+
+add_drive "wraps" "WRAPS" "$WRAPS_DISK_SIZE" "$WRAPS_DISK_FILE_NAME" "$USE_EXFAT"
 
 log_progress "done"

@@ -27,6 +27,7 @@ Content-type: application/json
    "has_music" : "$(exists /backingfiles/music_disk.bin)",
    "has_lightshow" : "$(exists /backingfiles/lightshow_disk.bin)",
    "has_boombox" : "$(exists /backingfiles/boombox_disk.bin)",
+   "has_wraps" : "$(exists /backingfiles/wraps_disk.bin)",
    "uses_ble" : "$(configured TESLA_BLE_VIN)"
 }
 EOF

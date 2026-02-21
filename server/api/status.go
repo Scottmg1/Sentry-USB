@@ -166,6 +166,7 @@ type piConfig struct {
 	HasMusic    string `json:"has_music"`
 	HasLightshow string `json:"has_lightshow"`
 	HasBoombox  string `json:"has_boombox"`
+	HasWraps    string `json:"has_wraps"`
 	UsesBLE     string `json:"uses_ble"`
 }
 
@@ -175,6 +176,7 @@ func (h *handlers) getConfig(w http.ResponseWriter, r *http.Request) {
 		HasMusic:    boolToYesNo(fileExists("/backingfiles/music_disk.bin")),
 		HasLightshow: boolToYesNo(fileExists("/backingfiles/lightshow_disk.bin")),
 		HasBoombox:  boolToYesNo(fileExists("/backingfiles/boombox_disk.bin")),
+		HasWraps:    boolToYesNo(fileExists("/backingfiles/wraps_disk.bin")),
 	}
 
 	// Check if BLE is configured

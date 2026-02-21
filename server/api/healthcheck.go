@@ -172,6 +172,7 @@ func checkDiskImages() healthCategory {
 		{"/backingfiles/music_disk.bin", "music_disk.bin", false},
 		{"/backingfiles/lightshow_disk.bin", "lightshow_disk.bin", false},
 		{"/backingfiles/boombox_disk.bin", "boombox_disk.bin", false},
+		{"/backingfiles/wraps_disk.bin", "wraps_disk.bin", false},
 	}
 
 	for _, img := range images {
@@ -286,7 +287,7 @@ func checkUSBGadget() healthCategory {
 	}
 
 	// Check LUNs
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 5; i++ {
 		lunPath := fmt.Sprintf("%s/functions/mass_storage.0/lun.%d/file", gadgetRoot, i)
 		data, err := os.ReadFile(lunPath)
 		if err != nil {
