@@ -13,10 +13,10 @@ const STAGE_MARKERS: [RegExp, number][] = [
   [/Creating backing disk/, 60],
   [/create-backingfiles/, 65],
   [/archiveloop|archive/, 75],
-  [/rebooting for changes/, 85],
   // Markers for the final setup run (after all early reboots)
-  [/calling configure\.sh/, 88],
-  [/make-root-fs-readonly:/, 92],
+  [/calling configure\.sh/, 80],
+  [/configure-web\.sh|configure-ssh\.sh/, 85],
+  [/make-root-fs-readonly:/, 90],
   [/Running post-setup tasks/, 95],
   [/All done\./, 98],
   [/SETUP_FINISHED|setup completed/i, 100],

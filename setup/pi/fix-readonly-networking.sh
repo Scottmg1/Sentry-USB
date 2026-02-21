@@ -75,8 +75,9 @@ for d in /var/lib/dhcp /var/lib/dhcpcd; do
 done
 
 # ---- resolv.conf: point to /tmp (always writable) ----
-# Also redirect away from systemd-resolved's stub, since dns=default
-# (configured below) conflicts with systemd-resolved.
+# Also redirect away from systemd-resolved's stub (/run/systemd/resolve/...)
+# because we configure NM with dns=none below and use a dispatcher script
+# to populate resolv.conf; systemd-resolved would conflict with that.
 _resolv_target=$(readlink -f /etc/resolv.conf 2>/dev/null || true)
 if [ "$_resolv_target" != "/tmp/resolv.conf" ]; then
   log_progress "Redirecting resolv.conf to /tmp (was: ${_resolv_target:-empty})"
@@ -102,28 +103,52 @@ if [ ! -e /etc/tmpfiles.d/resolv-fallback.conf ]; then
   echo 'f /tmp/resolv.conf 0644 root root -' > /etc/tmpfiles.d/resolv-fallback.conf
 fi
 
-# ---- NetworkManager: write DNS directly to resolv.conf ----
-# By default on modern Pi OS, NM routes DNS through systemd-resolved and never
-# writes to /etc/resolv.conf directly. Since we symlink resolv.conf to
-# /tmp/resolv.conf, NM must use dns=default so the DHCP-provided nameservers
-# (e.g. PiHole) actually land in the file.
-if [ ! -e /etc/NetworkManager/conf.d/sentryusb-dns.conf ]; then
-  log_progress "Configuring NetworkManager to write DNS directly to resolv.conf"
-  mkdir -p /etc/NetworkManager/conf.d
-  cat > /etc/NetworkManager/conf.d/sentryusb-dns.conf << 'EOF'
+# ---- NetworkManager: dns=none + dispatcher to write resolv.conf ----
+# NM's atomic-write for resolv.conf (temp file + rename in /etc/) always fails
+# on a read-only root because /etc/ is not writable.  Use dns=none so NM does
+# not attempt to write resolv.conf itself, and install a dispatcher script that
+# writes DHCP-provided DNS servers directly to /tmp/resolv.conf instead.
+log_progress "Configuring NetworkManager DNS handling (dns=none + dispatcher)"
+mkdir -p /etc/NetworkManager/conf.d
+cat > /etc/NetworkManager/conf.d/sentryusb-dns.conf << 'EOF'
 [main]
-dns=default
+dns=none
 EOF
-fi
 
-# ---- Disable systemd-resolved (conflicts with dns=default) ----
+# ---- Install NM dispatcher to populate /tmp/resolv.conf ----
+log_progress "Installing NetworkManager dispatcher for resolv.conf"
+mkdir -p /etc/NetworkManager/dispatcher.d
+cat > /etc/NetworkManager/dispatcher.d/50-write-resolv-conf << 'DISPATCHER'
+#!/bin/bash
+# Populate /tmp/resolv.conf with DHCP-provided DNS servers.
+# Required because the root filesystem is read-only and NM cannot
+# atomically write to /etc/resolv.conf (it needs a writable /etc/).
+# /etc/resolv.conf is a symlink to /tmp/resolv.conf.
+case "$2" in
+  up|dhcp4-change)
+    _servers="${DHCP4_DOMAIN_NAME_SERVERS:-${IP4_NAMESERVERS:-}}"
+    if [ -n "$_servers" ]; then
+      {
+        for _ns in $_servers; do
+          echo "nameserver $_ns"
+        done
+        _domain="${DHCP4_DOMAIN_NAME:-}"
+        [ -n "$_domain" ] && echo "search $_domain"
+      } > /tmp/resolv.conf
+    fi
+    ;;
+esac
+DISPATCHER
+chmod 0755 /etc/NetworkManager/dispatcher.d/50-write-resolv-conf
+
+# ---- Disable systemd-resolved (conflicts with our resolv.conf management) ----
 if systemctl is-active --quiet systemd-resolved 2>/dev/null; then
-  log_progress "Disabling systemd-resolved (NM dns=default handles DNS directly)"
+  log_progress "Disabling systemd-resolved (dispatcher handles DNS directly)"
   systemctl stop systemd-resolved 2>/dev/null || true
   systemctl disable systemd-resolved 2>/dev/null || true
 fi
 
-# ---- Restart NM so dns=default takes effect ----
+# ---- Restart NM so dns=none takes effect and the dispatcher is loaded ----
 if systemctl is-active --quiet NetworkManager 2>/dev/null; then
   log_progress "Restarting NetworkManager to apply DNS configuration"
   systemctl restart NetworkManager 2>/dev/null || true
