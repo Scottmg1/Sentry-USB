@@ -34,12 +34,12 @@ export function MobileNav({ open, onClose }: MobileNavProps) {
     <>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 z-40 bg-black/60"
+        className="fixed inset-0 z-[600] bg-black/60"
         onClick={onClose}
       />
 
       {/* Drawer */}
-      <div className="glass-sidebar fixed left-0 top-0 z-50 flex h-full w-64 flex-col">
+      <div className="glass-sidebar fixed left-0 top-0 z-[700] flex h-full w-64 flex-col">
         <div className="flex h-16 items-center justify-between px-4">
           <div className="flex items-center gap-3">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-500/20">

@@ -310,15 +310,15 @@ WantedBy=multi-user.target
 BTUNIT
 systemctl enable rfkill-unblock-bluetooth.service 2>/dev/null || true
 
-# Restart NM so dns=none takes effect and the dispatcher is loaded.
+# Reload NM config so dns=none and the new dispatcher are picked up.
+# Use "nmcli general reload" instead of a full restart — a restart would
+# drop WiFi and kill SSH sessions mid-upgrade.  The full effect (dns=none
+# managing resolv.conf) takes hold after the reboot that always follows.
 if systemctl is-active --quiet NetworkManager 2>/dev/null
 then
-  log_progress "Restarting NetworkManager to apply DNS configuration"
-  systemctl restart NetworkManager 2>/dev/null || true
+  log_progress "Reloading NetworkManager configuration"
+  nmcli general reload 2>/dev/null || true
 fi
-
-# Re-unblock bluetooth after NM restart in case it re-blocked.
-rfkill unblock bluetooth 2>/dev/null || true
 
 # Update /etc/fstab
 # make /boot read-only

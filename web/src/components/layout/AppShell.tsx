@@ -31,7 +31,7 @@ export function AppShell() {
         )}
       >
         {/* Mobile header */}
-        <div className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-white/5 bg-slate-950/80 px-4 backdrop-blur-md md:hidden">
+        <div className="sticky top-0 z-[500] flex h-14 items-center gap-3 border-b border-white/5 bg-slate-950/80 px-4 backdrop-blur-md md:hidden">
           <button
             onClick={() => setMobileNavOpen(true)}
             className="rounded-lg p-1.5 text-slate-400 hover:bg-white/5 hover:text-slate-200"

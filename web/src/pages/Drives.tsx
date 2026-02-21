@@ -596,7 +596,7 @@ export default function Drives() {
               Process
             </button>
             {showProcessMenu && !processing && (
-              <div className="absolute right-0 z-50 mt-1 w-56 rounded-lg border border-white/10 bg-slate-950/95 py-1 shadow-xl backdrop-blur-sm">
+              <div className="absolute right-0 z-[1100] mt-1 w-56 rounded-lg border border-white/10 bg-slate-950/95 py-1 shadow-xl backdrop-blur-sm">
                 <button
                   onClick={() => triggerProcess("new")}
                   disabled={archiving}
@@ -1020,7 +1020,7 @@ export default function Drives() {
         </div>
 
         {/* Map */}
-        <div className="relative flex-1">
+        <div className="relative isolate flex-1">
           <div ref={mapRef} className="h-full w-full" />
 
           {/* Map style picker */}
