@@ -100,6 +100,81 @@ EOF
 }
 
 
+function nm_write_ap_file () {
+  # Write the AP connection profile directly to disk, bypassing NM's
+  # keyfile plugin.  This works even when NM was started on a read-only
+  # root (the plugin refuses "nmcli con add", but the filesystem is
+  # writable after remountfs_rw).  Uses "nmcli con reload" instead of a
+  # full NM restart, so WiFi stays up and SSH sessions survive.
+  log_progress "Writing AP connection file directly (NM keyfile workaround)"
+  local _ssid="$AP_SSID"
+  local _psk="$AP_PASS"
+  local _ip="${AP_IP:-192.168.66.1}"
+  local _file="/etc/NetworkManager/system-connections/SENTRYUSB_AP.nmconnection"
+
+  nm_get_wifi_client_device || return 1
+
+  if ! iw dev ap0 info &> /dev/null; then
+    iw dev "$WLAN" interface add ap0 type __ap || return 1
+  fi
+  iw "$WLAN" set power_save off || return 1
+  iw ap0 set power_save off || return 1
+
+  nmcli con delete SENTRYUSB_AP &> /dev/null || true
+  nmcli con delete TESLAUSB_AP &> /dev/null || true
+
+  mkdir -p /etc/NetworkManager/system-connections
+  cat > "$_file" << EOF
+[connection]
+id=SENTRYUSB_AP
+type=wifi
+interface-name=ap0
+autoconnect=true
+
+[wifi]
+mode=ap
+ssid=$_ssid
+
+[wifi-security]
+key-mgmt=wpa-psk
+psk=$_psk
+
+[ipv4]
+address1=$_ip/24
+method=shared
+
+[ipv6]
+method=disabled
+EOF
+  chmod 0600 "$_file"
+
+  # Tell NM to pick up the new file without a full restart
+  nmcli con reload 2>/dev/null || true
+
+  # Install the dispatcher script for ap0
+  rm -f /etc/network/if-up.d/sentryusb-ap
+  mkdir -p /etc/NetworkManager/dispatcher.d
+  cat > /etc/NetworkManager/dispatcher.d/10-sentryusb-ap << EOF2
+#!/bin/bash
+# Recreate ap0 virtual interface when the wifi client comes up.
+# Created by SentryUSB configure-ap.sh
+
+IFACE="\$1"
+ACTION="\$2"
+
+if [ "\$IFACE" = "$WLAN" ] && [ "\$ACTION" = "up" ]
+then
+  if ! iw dev ap0 info &> /dev/null; then
+    iw dev $WLAN interface add ap0 type __ap || true
+  fi
+  iw $WLAN set power_save off 2>/dev/null || true
+  iw ap0 set power_save off 2>/dev/null || true
+  nmcli con up SENTRYUSB_AP 2>/dev/null || true
+fi
+EOF2
+  chmod 755 /etc/NetworkManager/dispatcher.d/10-sentryusb-ap || return 1
+}
+
 if systemctl --quiet is-enabled NetworkManager.service
 then
   # force-install iw because otherwise it will get autoremoved when
@@ -107,12 +182,11 @@ then
   apt-get -y --force-yes install iw || exit 1
   if ! nm_add_ap
   then
-    # Network Manager won't allow adding connections when started with a
-    # read-only root fs, even if the root fs is not writeable, so try
-    # again after restarting Network Manager
-    log_progress "Retrying after restarting Network Manager"
-    systemctl restart NetworkManager.service
-    if ! nm_add_ap
+    # NM won't allow adding connections when its keyfile plugin started
+    # on a read-only root fs.  Instead of a full NM restart (which drops
+    # WiFi and kills SSH sessions), write the connection file directly
+    # and reload.
+    if ! nm_write_ap_file
     then
       log_progress "STOP: Failed to configure AP"
       exit 1
