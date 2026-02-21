@@ -58,6 +58,12 @@ export interface DriveStats {
   total_distance_km: number
   total_distance_mi: number
   total_duration_ms: number
+  fsd_engaged_ms: number
+  fsd_distance_km: number
+  fsd_distance_mi: number
+  fsd_percent: number
+  fsd_disengagements: number
+  fsd_accel_pushes: number
 }
 
 export interface DriveStatus {
@@ -67,6 +73,35 @@ export interface DriveStatus {
   phase?: string
   current?: number
   total?: number
+  archiving?: boolean
+}
+
+export interface FSDDayStats {
+  date: string
+  dayName: string
+  disengagements: number
+  accelPushes: number
+  fsdPercent: number
+  drives: number
+}
+
+export interface FSDAnalytics {
+  period: string
+  period_start: string
+  total_drives: number
+  fsd_sessions: number
+  fsd_percent: number
+  today_percent: number
+  best_day: string
+  best_day_percent: number
+  fsd_engaged_ms: number
+  fsd_distance_km: number
+  fsd_distance_mi: number
+  total_distance_km: number
+  total_distance_mi: number
+  disengagements: number
+  accel_pushes: number
+  daily: FSDDayStats[]
 }
 
 export interface ClipGroup {
@@ -93,6 +128,17 @@ export const api = {
     request<{ success: boolean }>("/setup/run", { method: "POST" }),
   getDriveStats: () => request<DriveStats>("/drives/stats"),
   getDriveStatus: () => request<DriveStatus>("/drives/status"),
+  getFSDAnalytics: (period?: string) =>
+    request<FSDAnalytics>(`/drives/fsd-analytics${period ? `?period=${period}` : ""}`),
+  processNewDrives: (throttleMs = 15) =>
+    request<{ status: string }>("/drives/process", {
+      method: "POST",
+      body: JSON.stringify({ throttle_ms: throttleMs }),
+    }),
+  reprocessAllDrives: () =>
+    request<{ status: string }>("/drives/reprocess", { method: "POST" }),
+  reprocessFromArchive: () =>
+    request<{ status: string }>("/drives/reprocess-archive", { method: "POST" }),
   getClips: () => request<ClipGroup[]>("/clips"),
   listFiles: (path: string) =>
     request<FileEntry[]>(`/files/ls?path=${encodeURIComponent(path)}`),

@@ -122,7 +122,7 @@ func (p *Processor) ProcessDirectory(ctx context.Context, clipsDir string, throt
 		default:
 		}
 
-		points, gears, err := ExtractGPSFromFile(f.fullPath)
+		points, gears, apStates, speeds, err := ExtractGPSFromFile(f.fullPath)
 		if err != nil {
 			result.Errors++
 			if len(result.ErrorMessages) < 10 {
@@ -143,9 +143,9 @@ func (p *Processor) ProcessDirectory(ctx context.Context, clipsDir string, throt
 			gearRuns := computeGearRuns(gears)
 
 			// Deduplicate consecutive identical points
-			deduped, dedupedGears := deduplicatePoints(points, gears)
+			deduped, dedupedGears, dedupedAP, dedupedSpeeds := deduplicatePoints(points, gears, apStates, speeds)
 			if len(deduped) > 0 {
-				p.store.AddRoute(f.relativePath, f.dateDir, deduped, dedupedGears, rawParkCount, rawFrameCount, gearRuns)
+				p.store.AddRoute(f.relativePath, f.dateDir, deduped, dedupedGears, dedupedAP, dedupedSpeeds, rawParkCount, rawFrameCount, gearRuns)
 				result.FilesWithGPS++
 				result.TotalPoints += len(deduped)
 			} else {
@@ -261,16 +261,27 @@ func computeGearRuns(gears []uint8) []GearRun {
 	return runs
 }
 
-// deduplicatePoints removes consecutive identical GPS points, keeping gear states in sync.
-func deduplicatePoints(points []GPSPoint, gears []uint8) ([]GPSPoint, []uint8) {
+// deduplicatePoints removes consecutive identical GPS points, keeping all parallel slices in sync.
+func deduplicatePoints(points []GPSPoint, gears []uint8, apStates []uint8, speeds []float32) ([]GPSPoint, []uint8, []uint8, []float32) {
 	if len(points) == 0 {
-		return nil, nil
+		return nil, nil, nil, nil
 	}
 	hasGears := len(gears) == len(points)
+	hasAP := len(apStates) == len(points)
+	hasSpeeds := len(speeds) == len(points)
+
 	deduped := []GPSPoint{points[0]}
 	var dedupedGears []uint8
+	var dedupedAP []uint8
+	var dedupedSpeeds []float32
 	if hasGears {
 		dedupedGears = []uint8{gears[0]}
+	}
+	if hasAP {
+		dedupedAP = []uint8{apStates[0]}
+	}
+	if hasSpeeds {
+		dedupedSpeeds = []float32{speeds[0]}
 	}
 	for i := 1; i < len(points); i++ {
 		if points[i][0] != points[i-1][0] || points[i][1] != points[i-1][1] {
@@ -278,7 +289,13 @@ func deduplicatePoints(points []GPSPoint, gears []uint8) ([]GPSPoint, []uint8) {
 			if hasGears {
 				dedupedGears = append(dedupedGears, gears[i])
 			}
+			if hasAP {
+				dedupedAP = append(dedupedAP, apStates[i])
+			}
+			if hasSpeeds {
+				dedupedSpeeds = append(dedupedSpeeds, speeds[i])
+			}
 		}
 	}
-	return deduped, dedupedGears
+	return deduped, dedupedGears, dedupedAP, dedupedSpeeds
 }

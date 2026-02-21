@@ -24,7 +24,15 @@ type Drive struct {
 	ClipCount   int        `json:"clipCount"`
 	PointCount  int        `json:"pointCount"`
 	Points      [][4]float64 `json:"points"` // [lat, lng, timeMs, speedMps]
+	FSDStates   []uint8      `json:"fsdStates,omitempty"` // parallel to Points: 0=manual, >0=FSD engaged
 	Tags        []string     `json:"tags,omitempty"`
+	// FSD analytics per drive
+	FSDEngagedMs      int64   `json:"fsdEngagedMs"`
+	FSDDisengagements int     `json:"fsdDisengagements"`
+	FSDAccelPushes    int     `json:"fsdAccelPushes"`
+	FSDPercent        float64 `json:"fsdPercent"`
+	FSDDistanceKm     float64 `json:"fsdDistanceKm"`
+	FSDDistanceMi     float64 `json:"fsdDistanceMi"`
 }
 
 // DriveSummary is a lighter version of Drive without full point data (for list views).
@@ -45,6 +53,13 @@ type DriveSummary struct {
 	StartPoint  *[2]float64 `json:"startPoint"`
 	EndPoint    *[2]float64 `json:"endPoint"`
 	Tags        []string    `json:"tags,omitempty"`
+	// FSD analytics summary
+	FSDEngagedMs      int64   `json:"fsdEngagedMs"`
+	FSDDisengagements int     `json:"fsdDisengagements"`
+	FSDAccelPushes    int     `json:"fsdAccelPushes"`
+	FSDPercent        float64 `json:"fsdPercent"`
+	FSDDistanceKm     float64 `json:"fsdDistanceKm"`
+	FSDDistanceMi     float64 `json:"fsdDistanceMi"`
 }
 
 // driveGapMs is the time gap threshold to split clips into separate drives (5 minutes).
@@ -279,16 +294,30 @@ func splitClipAtParkGaps(clip timedRoute) []clipSegment {
 			copy(segGears, clip.GearStates[startIdx:endIdx])
 		}
 
+		var segAP []uint8
+		if len(clip.AutopilotStates) >= endIdx {
+			segAP = make([]uint8, endIdx-startIdx)
+			copy(segAP, clip.AutopilotStates[startIdx:endIdx])
+		}
+
+		var segSpeeds []float32
+		if len(clip.Speeds) >= endIdx {
+			segSpeeds = make([]float32, endIdx-startIdx)
+			copy(segSpeeds, clip.Speeds[startIdx:endIdx])
+		}
+
 		// Compute timestamp offset for this segment within the clip
 		offsetDuration := time.Duration(startFrac * float64(60*time.Second))
 
 		result = append(result, clipSegment{
 			route: timedRoute{
 				Route: Route{
-					File:   clip.File,
-					Date:   clip.Date,
-					Points: segPoints,
-					GearStates: segGears,
+					File:            clip.File,
+					Date:            clip.Date,
+					Points:          segPoints,
+					GearStates:      segGears,
+					AutopilotStates: segAP,
+					Speeds:          segSpeeds,
 				},
 				timestamp: clip.timestamp.Add(offsetDuration),
 			},
@@ -389,19 +418,25 @@ func GroupSummaries(routes []Route) []DriveSummary {
 	summaries := make([]DriveSummary, len(drives))
 	for i, d := range drives {
 		s := DriveSummary{
-			ID:          d.ID,
-			Date:        d.Date,
-			StartTime:   d.StartTime,
-			EndTime:     d.EndTime,
-			DurationMs:  d.DurationMs,
-			DistanceMi:  d.DistanceMi,
-			DistanceKm:  d.DistanceKm,
-			AvgSpeedMph: d.AvgSpeedMph,
-			MaxSpeedMph: d.MaxSpeedMph,
-			AvgSpeedKmh: d.AvgSpeedKmh,
-			MaxSpeedKmh: d.MaxSpeedKmh,
-			ClipCount:   d.ClipCount,
-			PointCount:  d.PointCount,
+			ID:                d.ID,
+			Date:              d.Date,
+			StartTime:         d.StartTime,
+			EndTime:           d.EndTime,
+			DurationMs:        d.DurationMs,
+			DistanceMi:        d.DistanceMi,
+			DistanceKm:        d.DistanceKm,
+			AvgSpeedMph:       d.AvgSpeedMph,
+			MaxSpeedMph:       d.MaxSpeedMph,
+			AvgSpeedKmh:       d.AvgSpeedKmh,
+			MaxSpeedKmh:       d.MaxSpeedKmh,
+			ClipCount:         d.ClipCount,
+			PointCount:        d.PointCount,
+			FSDEngagedMs:      d.FSDEngagedMs,
+			FSDDisengagements: d.FSDDisengagements,
+			FSDAccelPushes:    d.FSDAccelPushes,
+			FSDPercent:        d.FSDPercent,
+			FSDDistanceKm:     d.FSDDistanceKm,
+			FSDDistanceMi:     d.FSDDistanceMi,
 		}
 		if len(d.Points) > 0 {
 			start := [2]float64{d.Points[0][0], d.Points[0][1]}
@@ -420,10 +455,12 @@ func buildDriveStats(clips []timedRoute, idx int) Drive {
 	startTime := firstClip.timestamp
 	endTime := lastClip.timestamp.Add(time.Minute)
 
-	// Merge all points with interpolated timestamps
+	// Merge all points with interpolated timestamps and autopilot state
 	type annotatedPoint struct {
 		lat, lng float64
 		timeMs   float64
+		apState  uint8
+		seiSpeed float32
 	}
 	var allPoints []annotatedPoint
 
@@ -431,6 +468,8 @@ func buildDriveStats(clips []timedRoute, idx int) Drive {
 		clipStart := float64(clip.timestamp.UnixMilli())
 		n := len(clip.Points)
 		clipDurationMs := float64(60000)
+		hasAP := len(clip.AutopilotStates) == n
+		hasSpeeds := len(clip.Speeds) == n
 		for i := 0; i < n; i++ {
 			var t float64
 			if n > 1 {
@@ -438,11 +477,18 @@ func buildDriveStats(clips []timedRoute, idx int) Drive {
 			} else {
 				t = clipStart
 			}
-			allPoints = append(allPoints, annotatedPoint{
+			ap := annotatedPoint{
 				lat:    clip.Points[i][0],
 				lng:    clip.Points[i][1],
 				timeMs: t,
-			})
+			}
+			if hasAP {
+				ap.apState = clip.AutopilotStates[i]
+			}
+			if hasSpeeds {
+				ap.seiSpeed = clip.Speeds[i]
+			}
+			allPoints = append(allPoints, ap)
 		}
 	}
 
@@ -479,6 +525,8 @@ func buildDriveStats(clips []timedRoute, idx int) Drive {
 
 	// Build point data array: [lat, lng, timeMs, speedMps]
 	pointData := make([][4]float64, len(allPoints))
+	fsdStates := make([]uint8, len(allPoints))
+	hasFSDData := false
 	for i, p := range allPoints {
 		var speed float64
 		if i > 0 {
@@ -489,25 +537,94 @@ func buildDriveStats(clips []timedRoute, idx int) Drive {
 			}
 		}
 		pointData[i] = [4]float64{p.lat, p.lng, p.timeMs, math.Round(speed*100) / 100}
+		fsdStates[i] = p.apState
+		if p.apState != AutopilotOff {
+			hasFSDData = true
+		}
+	}
+
+	// Compute FSD analytics
+	var fsdEngagedMs int64
+	var fsdDisengagements int
+	var fsdAccelPushes int
+	var fsdDistanceM float64
+
+	if hasFSDData && len(allPoints) > 1 {
+		// Track FSD engagement transitions
+		// A disengagement = transition from engaged (>0) to off (0)
+		// An accel push = speed increase > 1 m/s while FSD engaged,
+		//   but not within 2 seconds of engaging (grace period)
+		var lastEngageTimeMs float64
+		const graceMs = 2000.0
+
+		for i := 1; i < len(allPoints); i++ {
+			prev := allPoints[i-1]
+			cur := allPoints[i]
+			dt := cur.timeMs - prev.timeMs
+			d := haversineM(prev.lat, prev.lng, cur.lat, cur.lng)
+
+			prevEngaged := prev.apState != AutopilotOff
+			curEngaged := cur.apState != AutopilotOff
+
+			// Track when FSD was engaged
+			if !prevEngaged && curEngaged {
+				lastEngageTimeMs = cur.timeMs
+			}
+
+			// Count engaged time and distance
+			if curEngaged {
+				fsdEngagedMs += int64(dt)
+				fsdDistanceM += d
+			}
+
+			// Detect disengagement
+			if prevEngaged && !curEngaged {
+				fsdDisengagements++
+			}
+
+			// Detect accelerator push: speed increase while FSD engaged, past grace period
+			if curEngaged && (cur.timeMs-lastEngageTimeMs) > graceMs {
+				speedDelta := float64(cur.seiSpeed) - float64(prev.seiSpeed)
+				if speedDelta > 1.0 {
+					fsdAccelPushes++
+				}
+			}
+		}
 	}
 
 	durationMs := endTime.Sub(startTime).Milliseconds()
+	var fsdPercent float64
+	if durationMs > 0 {
+		fsdPercent = math.Round(float64(fsdEngagedMs)/float64(durationMs)*1000) / 10
+	}
+
+	var fsdStateResult []uint8
+	if hasFSDData {
+		fsdStateResult = fsdStates
+	}
 
 	return Drive{
-		ID:          idx,
-		Date:        firstClip.Date,
-		StartTime:   startTime.Format("2006-01-02T15:04:05"),
-		EndTime:     endTime.Format("2006-01-02T15:04:05"),
-		DurationMs:  durationMs,
-		DistanceMi:  math.Round(totalDistanceM/1609.344*100) / 100,
-		DistanceKm:  math.Round(totalDistanceM/1000*100) / 100,
-		AvgSpeedMph: math.Round(avgSpeedMps*2.23694*100) / 100,
-		MaxSpeedMph: math.Round(maxSpeedMps*2.23694*100) / 100,
-		AvgSpeedKmh: math.Round(avgSpeedMps*3.6*100) / 100,
-		MaxSpeedKmh: math.Round(maxSpeedMps*3.6*100) / 100,
-		ClipCount:   len(clips),
-		PointCount:  len(allPoints),
-		Points:      pointData,
+		ID:                idx,
+		Date:              firstClip.Date,
+		StartTime:         startTime.Format("2006-01-02T15:04:05"),
+		EndTime:           endTime.Format("2006-01-02T15:04:05"),
+		DurationMs:        durationMs,
+		DistanceMi:        math.Round(totalDistanceM/1609.344*100) / 100,
+		DistanceKm:        math.Round(totalDistanceM/1000*100) / 100,
+		AvgSpeedMph:       math.Round(avgSpeedMps*2.23694*100) / 100,
+		MaxSpeedMph:       math.Round(maxSpeedMps*2.23694*100) / 100,
+		AvgSpeedKmh:       math.Round(avgSpeedMps*3.6*100) / 100,
+		MaxSpeedKmh:       math.Round(maxSpeedMps*3.6*100) / 100,
+		ClipCount:         len(clips),
+		PointCount:        len(allPoints),
+		Points:            pointData,
+		FSDStates:         fsdStateResult,
+		FSDEngagedMs:      fsdEngagedMs,
+		FSDDisengagements: fsdDisengagements,
+		FSDAccelPushes:    fsdAccelPushes,
+		FSDPercent:        fsdPercent,
+		FSDDistanceKm:     math.Round(fsdDistanceM/1000*100) / 100,
+		FSDDistanceMi:     math.Round(fsdDistanceM/1609.344*100) / 100,
 	}
 }
 

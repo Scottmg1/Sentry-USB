@@ -275,12 +275,21 @@ then
   systemctl disable systemd-resolved 2>/dev/null || true
 fi
 
+# Ensure Bluetooth is not soft-blocked before restarting NM.  The NM restart
+# can transiently block radios, and on a read-only root the rfkill state in
+# /var/lib/systemd/rfkill/ would be frozen with BT blocked, breaking BLE
+# (e.g. Tesla BLE key) on every subsequent boot.
+rfkill unblock bluetooth 2>/dev/null || true
+
 # Restart NM so dns=none takes effect and the dispatcher is loaded.
 if systemctl is-active --quiet NetworkManager 2>/dev/null
 then
   log_progress "Restarting NetworkManager to apply DNS configuration"
   systemctl restart NetworkManager 2>/dev/null || true
 fi
+
+# Re-unblock bluetooth after NM restart in case the restart re-blocked it.
+rfkill unblock bluetooth 2>/dev/null || true
 
 # Update /etc/fstab
 # make /boot read-only
@@ -349,6 +358,17 @@ if ! grep -w -q "/var/lib/dhcpcd" /etc/fstab
 then
   mkdir -p /var/lib/dhcpcd
   echo "tmpfs /var/lib/dhcpcd tmpfs nodev,nosuid 0 0" >> /etc/fstab
+fi
+
+# Put rfkill state on tmpfs so systemd-rfkill doesn't restore a stale
+# soft-block from when the root filesystem was made read-only.  Without
+# this, if Bluetooth happened to be blocked at that moment, it stays
+# blocked on every boot (causing "operation not possible due to RF-kill"
+# errors for BLE devices like Tesla BLE key).
+if ! grep -w -q "/var/lib/systemd/rfkill" /etc/fstab
+then
+  mkdir -p /var/lib/systemd/rfkill
+  echo "tmpfs /var/lib/systemd/rfkill tmpfs nodev,nosuid 0 0" >> /etc/fstab
 fi
 
 # work around 'mount' warning that's printed when /etc/fstab is

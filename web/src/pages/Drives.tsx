@@ -4,7 +4,7 @@ import "leaflet/dist/leaflet.css"
 import {
   MapPin, Navigation, Clock, Gauge, Play,
   Download, Upload, Loader2, ChevronLeft, Search, List, X,
-  Tag, Plus, Layers,
+  Tag, Plus, Layers, BarChart3, RefreshCw, Server, AlertTriangle,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -27,10 +27,17 @@ interface DriveSummary {
   startPoint: [number, number] | null
   endPoint: [number, number] | null
   tags?: string[]
+  fsdEngagedMs: number
+  fsdDisengagements: number
+  fsdAccelPushes: number
+  fsdPercent: number
+  fsdDistanceKm: number
+  fsdDistanceMi: number
 }
 
 interface DriveDetail extends Omit<DriveSummary, "startPoint" | "endPoint"> {
   points: [number, number, number, number][] // [lat, lng, timeMs, speedMps]
+  fsdStates?: number[] // parallel to points: 0=manual, >0=FSD engaged
   tags?: string[]
 }
 
@@ -46,6 +53,40 @@ interface DriveStats {
   total_distance_km: number
   total_distance_mi: number
   total_duration_ms: number
+  fsd_engaged_ms: number
+  fsd_distance_km: number
+  fsd_distance_mi: number
+  fsd_percent: number
+  fsd_disengagements: number
+  fsd_accel_pushes: number
+}
+
+interface FSDDayStats {
+  date: string
+  dayName: string
+  disengagements: number
+  accelPushes: number
+  fsdPercent: number
+  drives: number
+}
+
+interface FSDAnalytics {
+  period: string
+  period_start: string
+  total_drives: number
+  fsd_sessions: number
+  fsd_percent: number
+  today_percent: number
+  best_day: string
+  best_day_percent: number
+  fsd_engaged_ms: number
+  fsd_distance_km: number
+  fsd_distance_mi: number
+  total_distance_km: number
+  total_distance_mi: number
+  disengagements: number
+  accel_pushes: number
+  daily: FSDDayStats[]
 }
 
 // ── Helpers ────────────────────────────────────────────────────────
@@ -155,6 +196,11 @@ export default function Drives() {
   const [showTagInput, setShowTagInput] = useState(false)
   const [listTagInputId, setListTagInputId] = useState<number | null>(null)
   const [listTagValue, setListTagValue] = useState("")
+  const [showProcessMenu, setShowProcessMenu] = useState(false)
+  const [archiving, setArchiving] = useState(false)
+  const [showFSDPanel, setShowFSDPanel] = useState(false)
+  const [fsdAnalytics, setFsdAnalytics] = useState<FSDAnalytics | null>(null)
+  const [fsdPeriod, setFsdPeriod] = useState<"day" | "week" | "trip">("week")
 
   // ── Init map ──
   useEffect(() => {
@@ -296,9 +342,29 @@ export default function Drives() {
       const pts = data.points
       if (!pts || pts.length < 2) return
       const latlngs = pts.map((p) => [p[0], p[1]] as L.LatLngExpression)
+      const fsd = data.fsdStates
 
-      const route = L.polyline(latlngs, { color: "#3b82f6", weight: 4, opacity: 1, smoothFactor: 0, noClip: true }).addTo(map)
-      selectionLayers.current.push(route)
+      // Draw route with FSD coloring if available
+      if (fsd && fsd.length === pts.length) {
+        // Split into segments by FSD state
+        let segStart = 0
+        for (let i = 1; i <= pts.length; i++) {
+          const prevEngaged = fsd[i - 1] > 0
+          const curEngaged = i < pts.length ? fsd[i] > 0 : !prevEngaged
+          if (curEngaged !== prevEngaged || i === pts.length) {
+            const segPts = latlngs.slice(segStart, i)
+            if (segPts.length >= 2) {
+              const color = prevEngaged ? "#22c55e" : "#3b82f6" // green for FSD, blue for manual
+              const line = L.polyline(segPts, { color, weight: 4, opacity: 1, smoothFactor: 0, noClip: true }).addTo(map)
+              selectionLayers.current.push(line)
+            }
+            segStart = Math.max(i - 1, 0) // overlap by 1 point for continuity
+          }
+        }
+      } else {
+        const route = L.polyline(latlngs, { color: "#3b82f6", weight: 4, opacity: 1, smoothFactor: 0, noClip: true }).addTo(map)
+        selectionLayers.current.push(route)
+      }
 
       const startM = L.marker(latlngs[0], {
         icon: L.divIcon({ className: "", html: '<div style="width:10px;height:10px;border-radius:50%;background:#22c55e;border:2px solid #fff"></div>', iconSize: [10, 10], iconAnchor: [5, 5] }),
@@ -318,7 +384,10 @@ export default function Drives() {
       arrowMarker.current = arrow
       selectionLayers.current.push(arrow)
 
-      map.fitBounds(route.getBounds(), { padding: [60, 60] as L.PointExpression })
+      const allSelLines = selectionLayers.current.filter((l): l is L.Polyline => l instanceof L.Polyline)
+      if (allSelLines.length > 0) {
+        map.fitBounds(L.featureGroup(allSelLines).getBounds(), { padding: [60, 60] as L.PointExpression })
+      }
     } catch {
       // ignore
     }
@@ -343,15 +412,45 @@ export default function Drives() {
     arrowMarker.current.setLatLng([pt[0], pt[1]])
   }
 
-  // ── Process ──
-  async function triggerProcess() {
-    setProcessing(true)
-    setProcessMsg("Starting...")
+  // ── Check archive status ──
+  useEffect(() => {
+    async function checkArchive() {
+      try {
+        const s = await fetch("/api/drives/status")
+        const data = await s.json()
+        setArchiving(!!data.archiving)
+      } catch { /* ignore */ }
+    }
+    checkArchive()
+    const iv = setInterval(checkArchive, 5000)
+    return () => clearInterval(iv)
+  }, [])
+
+  // ── Load FSD analytics ──
+  async function loadFSDAnalytics(period: string) {
     try {
-      const res = await fetch("/api/drives/process", {
+      const res = await fetch(`/api/drives/fsd-analytics?period=${period}`)
+      const data: FSDAnalytics = await res.json()
+      setFsdAnalytics(data)
+    } catch { /* ignore */ }
+  }
+
+  useEffect(() => {
+    if (showFSDPanel) loadFSDAnalytics(fsdPeriod)
+  }, [showFSDPanel, fsdPeriod])
+
+  // ── Process ──
+  async function triggerProcess(mode: "new" | "reprocess" | "reprocess-archive" = "new") {
+    setProcessing(true)
+    setShowProcessMenu(false)
+    const modeLabel = mode === "new" ? "Processing new drives" : mode === "reprocess" ? "Reprocessing all drives" : "Reprocessing from archive"
+    setProcessMsg(`${modeLabel}...`)
+    try {
+      const url = mode === "new" ? "/api/drives/process" : mode === "reprocess" ? "/api/drives/reprocess" : "/api/drives/reprocess-archive"
+      const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ throttle_ms: 15 }),
+        body: mode === "new" ? JSON.stringify({ throttle_ms: 15 }) : "{}",
       })
       if (!res.ok) {
         const err = await res.json()
@@ -359,7 +458,7 @@ export default function Drives() {
         setProcessing(false)
         return
       }
-      setProcessMsg("Processing... check back shortly")
+      setProcessMsg(`${modeLabel}... check back shortly`)
       // Poll status
       const poll = setInterval(async () => {
         try {
@@ -480,11 +579,68 @@ export default function Drives() {
           )}
         </div>
         <div className="flex items-center gap-2">
-          {/* Process */}
-          <button onClick={triggerProcess} disabled={processing} className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-white/10 disabled:opacity-50">
-            {processing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
-            Process
-          </button>
+          {/* FSD Stats */}
+          {stats && stats.fsd_engaged_ms > 0 && (
+            <button onClick={() => setShowFSDPanel(!showFSDPanel)} className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400 transition-colors hover:bg-emerald-500/20">
+              <BarChart3 className="h-3 w-3" /> FSD Stats
+            </button>
+          )}
+          {/* Process dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setShowProcessMenu(!showProcessMenu)}
+              disabled={processing}
+              className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-white/10 disabled:opacity-50"
+            >
+              {processing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+              Process
+            </button>
+            {showProcessMenu && !processing && (
+              <div className="absolute right-0 z-50 mt-1 w-56 rounded-lg border border-white/10 bg-slate-950/95 py-1 shadow-xl backdrop-blur-sm">
+                <button
+                  onClick={() => triggerProcess("new")}
+                  disabled={archiving}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-300 transition-colors hover:bg-white/5 disabled:opacity-40"
+                >
+                  <Play className="h-3 w-3 text-blue-400" />
+                  <div>
+                    <p className="font-medium">Process New Drives</p>
+                    <p className="text-[10px] text-slate-500">Extract GPS from unprocessed clips</p>
+                  </div>
+                </button>
+                <button
+                  onClick={() => triggerProcess("reprocess")}
+                  disabled={archiving}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-300 transition-colors hover:bg-white/5 disabled:opacity-40"
+                >
+                  <RefreshCw className="h-3 w-3 text-amber-400" />
+                  <div>
+                    <p className="font-medium">Reprocess All Drives</p>
+                    <p className="text-[10px] text-slate-500">Re-extract existing clips on disk only</p>
+                  </div>
+                </button>
+                <button
+                  onClick={() => triggerProcess("reprocess-archive")}
+                  disabled={archiving}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-300 transition-colors hover:bg-white/5 disabled:opacity-40"
+                >
+                  <Server className="h-3 w-3 text-purple-400" />
+                  <div>
+                    <p className="font-medium">Reprocess from Archive</p>
+                    <p className="text-[10px] text-slate-500">Re-extract from archive server mount</p>
+                  </div>
+                </button>
+                {archiving && (
+                  <div className="flex items-center gap-1.5 border-t border-white/5 px-3 py-2 text-[10px] text-amber-400">
+                    <AlertTriangle className="h-3 w-3" /> Archive in progress — wait to process
+                  </div>
+                )}
+                <div className="border-t border-white/5 px-3 py-2 text-[10px] text-slate-600">
+                  Note: Clips removed from snapshots cannot be reprocessed.
+                </div>
+              </div>
+            )}
+          </div>
           {/* Download */}
           <a href="/api/drives/data/download" className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-white/10">
             <Download className="h-3 w-3" /> Export
@@ -498,6 +654,113 @@ export default function Drives() {
       </div>
 
       {processMsg && <p className="text-xs text-amber-400">{processMsg}</p>}
+
+      {/* FSD Analytics Panel */}
+      {showFSDPanel && fsdAnalytics && (
+        <div className="rounded-xl border border-white/10 bg-slate-950/95 p-4 backdrop-blur-sm">
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-bold text-slate-100">FSD Analytics</h2>
+              <p className="text-xs text-slate-500">
+                {fsdAnalytics.period === "day" ? "Today" : fsdAnalytics.period === "week" ? `${fsdAnalytics.period_start} — Today` : "All Time"}
+              </p>
+            </div>
+            <div className="flex items-center gap-1 rounded-full border border-white/10 bg-white/5 p-0.5">
+              {(["trip", "day", "week"] as const).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setFsdPeriod(p)}
+                  className={cn(
+                    "rounded-full px-3 py-1 text-xs font-medium transition-colors",
+                    fsdPeriod === p ? "bg-white/10 text-slate-100" : "text-slate-500 hover:text-slate-300"
+                  )}
+                >
+                  {p === "trip" ? "Trip" : p === "day" ? "Day" : "Week"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Percentage row */}
+          <div className="mb-4 grid grid-cols-3 gap-4 text-center">
+            <div>
+              <p className={cn("text-2xl font-bold", fsdAnalytics.today_percent >= 95 ? "text-emerald-400" : fsdAnalytics.today_percent >= 80 ? "text-amber-400" : "text-slate-300")}>
+                {fsdAnalytics.today_percent}%
+              </p>
+              <p className="text-xs text-slate-500">Today</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-slate-300">{fsdAnalytics.fsd_percent}%</p>
+              <p className="text-xs text-slate-500">{fsdAnalytics.period === "week" ? "Week" : fsdAnalytics.period === "day" ? "Day" : "All Time"}</p>
+            </div>
+            <div>
+              <p className={cn("text-2xl font-bold", fsdAnalytics.best_day_percent >= 100 ? "text-emerald-400" : "text-slate-300")}>
+                {fsdAnalytics.best_day_percent}%
+              </p>
+              <p className="text-xs text-slate-500">{fsdAnalytics.best_day ? new Date(fsdAnalytics.best_day + "T00:00:00").toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" }) : "—"} (Best)</p>
+            </div>
+          </div>
+
+          {/* Sessions & distance */}
+          <div className="mb-4">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-sm font-semibold text-slate-200">FSD Sessions</span>
+              <span className="text-lg font-bold text-slate-100">{fsdAnalytics.fsd_sessions}</span>
+            </div>
+            <div className="mb-3 h-2 w-full overflow-hidden rounded-full bg-slate-800">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-purple-500 to-purple-400"
+                style={{ width: `${Math.min(fsdAnalytics.fsd_percent, 100)}%` }}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div className="flex items-center gap-2">
+                <div className="h-2.5 w-2.5 rounded-sm bg-purple-500" />
+                <span className="text-slate-400">Total FSD Distance</span>
+                <span className="ml-auto font-semibold text-slate-200">{metric ? `${fsdAnalytics.fsd_distance_km} km` : `${fsdAnalytics.fsd_distance_mi} mi`}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="h-2.5 w-2.5 rounded-sm bg-slate-600" />
+                <span className="text-slate-400">Total Distance (incl. manual)</span>
+                <span className="ml-auto font-semibold text-slate-200">{metric ? `${fsdAnalytics.total_distance_km} km` : `${fsdAnalytics.total_distance_mi} mi`}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Disengagements chart */}
+          <div>
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-sm font-semibold text-slate-200">Disengagements</span>
+              <span className="text-lg font-bold text-red-400">{fsdAnalytics.disengagements}</span>
+            </div>
+            {fsdAnalytics.daily && fsdAnalytics.daily.length > 0 && (
+              <div className="flex items-end gap-1">
+                {fsdAnalytics.daily.map((day) => (
+                  <div key={day.date} className="flex flex-1 flex-col items-center gap-1">
+                    <div className="flex h-14 w-full items-end justify-center">
+                      <div
+                        className="w-full max-w-[40px] rounded-t bg-slate-700"
+                        style={{ height: `${Math.max(day.disengagements * 3, day.disengagements > 0 ? 8 : 0)}px` }}
+                      >
+                        {day.disengagements > 0 && (
+                          <p className="pt-0.5 text-center text-[10px] font-bold text-red-400">{day.disengagements}</p>
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-slate-500">{day.dayName}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+            {fsdAnalytics.accel_pushes > 0 && (
+              <div className="mt-3 flex items-center justify-between rounded-lg bg-amber-500/10 px-3 py-2 text-xs">
+                <span className="text-amber-400">Accelerator Pushes (while FSD active)</span>
+                <span className="font-bold text-amber-400">{fsdAnalytics.accel_pushes}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Main content: sidebar + map */}
       <div className="relative flex flex-1 gap-4 overflow-hidden rounded-xl border border-white/5">
@@ -570,13 +833,26 @@ export default function Drives() {
                           selectedId === d.id && "border-l-2 border-l-blue-500 bg-blue-500/10"
                         )}
                       >
-                        <p className="text-sm font-medium text-slate-200">
-                          {formatTime(d.startTime)} — {formatTime(d.endTime)}
-                        </p>
+                        <div className="flex items-start justify-between">
+                          <p className="text-sm font-medium text-slate-200">
+                            {formatTime(d.startTime)} — {formatTime(d.endTime)}
+                          </p>
+                          {d.fsdPercent > 0 && (
+                            <span className={cn(
+                              "ml-1 shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold",
+                              d.fsdPercent >= 95 ? "bg-emerald-500/15 text-emerald-400" : d.fsdPercent >= 50 ? "bg-blue-500/15 text-blue-400" : "bg-slate-700 text-slate-400"
+                            )}>
+                              {d.fsdPercent}% FSD
+                            </span>
+                          )}
+                        </div>
                         <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-500">
                           <span>{dist(d)}</span>
                           <span>{formatDuration(d.durationMs)}</span>
                           <span>{avgSpd(d)}</span>
+                          {d.fsdDisengagements > 0 && (
+                            <span className="text-red-400/70">{d.fsdDisengagements} disengage{d.fsdDisengagements !== 1 ? "s" : ""}</span>
+                          )}
                         </div>
                         <div className="mt-1.5 flex flex-wrap items-center gap-1">
                           {(d.tags ?? []).map((t) => (
@@ -680,13 +956,26 @@ export default function Drives() {
                         selectedId === d.id && "border-l-2 border-l-blue-500 bg-blue-500/10"
                       )}
                     >
-                      <p className="text-sm font-medium text-slate-200">
-                        {formatTime(d.startTime)} — {formatTime(d.endTime)}
-                      </p>
+                      <div className="flex items-start justify-between">
+                        <p className="text-sm font-medium text-slate-200">
+                          {formatTime(d.startTime)} — {formatTime(d.endTime)}
+                        </p>
+                        {d.fsdPercent > 0 && (
+                          <span className={cn(
+                            "ml-1 shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold",
+                            d.fsdPercent >= 95 ? "bg-emerald-500/15 text-emerald-400" : d.fsdPercent >= 50 ? "bg-blue-500/15 text-blue-400" : "bg-slate-700 text-slate-400"
+                          )}>
+                            {d.fsdPercent}% FSD
+                          </span>
+                        )}
+                      </div>
                       <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-500">
                         <span>{dist(d)}</span>
                         <span>{formatDuration(d.durationMs)}</span>
                         <span>{avgSpd(d)}</span>
+                        {d.fsdDisengagements > 0 && (
+                          <span className="text-red-400/70">{d.fsdDisengagements} disengage{d.fsdDisengagements !== 1 ? "s" : ""}</span>
+                        )}
                       </div>
                       <div className="mt-1.5 flex flex-wrap items-center gap-1">
                         {(d.tags ?? []).map((t) => (
@@ -827,6 +1116,34 @@ export default function Drives() {
                 <Stat label="Max" value={maxSpd(selectedDrive)} highlight />
               </div>
 
+              {/* FSD Stats row */}
+              {selectedDrive.fsdPercent > 0 && (
+                <div className="mb-2 flex flex-wrap items-center gap-x-5 gap-y-1 rounded-lg border border-emerald-500/10 bg-emerald-500/5 px-3 py-1.5">
+                  <div className="flex items-center gap-1.5 text-[11px]">
+                    <span className="font-bold text-emerald-400">{selectedDrive.fsdPercent}%</span>
+                    <span className="text-slate-500">FSD</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-[11px]">
+                    <span className="font-bold text-red-400">{selectedDrive.fsdDisengagements}</span>
+                    <span className="text-slate-500">Disengage{selectedDrive.fsdDisengagements !== 1 ? "s" : ""}</span>
+                  </div>
+                  {selectedDrive.fsdAccelPushes > 0 && (
+                    <div className="flex items-center gap-1.5 text-[11px]">
+                      <span className="font-bold text-amber-400">{selectedDrive.fsdAccelPushes}</span>
+                      <span className="text-slate-500">Accel Push{selectedDrive.fsdAccelPushes !== 1 ? "es" : ""}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-1.5 text-[11px]">
+                    <span className="text-slate-500">FSD Dist:</span>
+                    <span className="font-semibold text-emerald-400">{metric ? `${selectedDrive.fsdDistanceKm} km` : `${selectedDrive.fsdDistanceMi} mi`}</span>
+                  </div>
+                  <div className="ml-auto flex items-center gap-2 text-[10px] text-slate-600">
+                    <span className="flex items-center gap-1"><span className="inline-block h-1.5 w-3 rounded-full bg-emerald-500" /> FSD</span>
+                    <span className="flex items-center gap-1"><span className="inline-block h-1.5 w-3 rounded-full bg-blue-500" /> Manual</span>
+                  </div>
+                </div>
+              )}
+
               {/* Slider */}
               <div className="flex items-center gap-3">
                 <span className="min-w-[52px] text-[10px] tabular-nums text-slate-500">
@@ -851,6 +1168,13 @@ export default function Drives() {
                   <span>Speed: <span className="font-semibold text-blue-400">{mpsToDisplay(sliderPt[3])} {speedUnit}</span></span>
                   <span>Dist: <span className="font-semibold text-blue-400">{sliderDistDisplay} {distUnit}</span></span>
                   <span>Pt: <span className="font-semibold text-blue-400">{sliderIdx + 1}/{selectedDrive.points.length}</span></span>
+                  {selectedDrive.fsdStates && selectedDrive.fsdStates[sliderIdx] !== undefined && (
+                    <span>
+                      {selectedDrive.fsdStates[sliderIdx] > 0
+                        ? <span className="font-semibold text-emerald-400">FSD</span>
+                        : <span className="font-semibold text-slate-400">Manual</span>}
+                    </span>
+                  )}
                 </div>
               )}
             </div>

@@ -27,13 +27,15 @@ type GearRun struct {
 
 // Route represents GPS data extracted from a single front-camera clip.
 type Route struct {
-	File          string     `json:"file"`
-	Date          string     `json:"date"`
-	Points        []GPSPoint `json:"points"`
-	GearStates    []uint8    `json:"gearStates,omitempty"`
-	RawParkCount  int        `json:"rawParkCount,omitempty"`
-	RawFrameCount int        `json:"rawFrameCount,omitempty"`
-	GearRuns      []GearRun  `json:"gearRuns,omitempty"`
+	File            string     `json:"file"`
+	Date            string     `json:"date"`
+	Points          []GPSPoint `json:"points"`
+	GearStates      []uint8    `json:"gearStates,omitempty"`
+	AutopilotStates []uint8    `json:"autopilotStates,omitempty"`
+	Speeds          []float32  `json:"speeds,omitempty"`
+	RawParkCount    int        `json:"rawParkCount,omitempty"`
+	RawFrameCount   int        `json:"rawFrameCount,omitempty"`
+	GearRuns        []GearRun  `json:"gearRuns,omitempty"`
 }
 
 // StoreData is the persistent JSON structure.
@@ -141,22 +143,26 @@ func (s *Store) ProcessedSet() map[string]bool {
 
 // AddRoute adds a processed file and its route data.
 // gears is a parallel slice of gear states (same length as points); may be nil for legacy data.
+// apStates is a parallel slice of autopilot states (0=off, >0=engaged).
+// speeds is a parallel slice of speeds in m/s.
 // rawParkCount/rawFrameCount are pre-dedup counts for accurate park time estimation.
 // gearRuns stores contiguous gear transitions from raw data for intra-clip drive splitting.
-func (s *Store) AddRoute(relativePath, dateDir string, points []GPSPoint, gears []uint8, rawParkCount, rawFrameCount int, gearRuns []GearRun) {
+func (s *Store) AddRoute(relativePath, dateDir string, points []GPSPoint, gears []uint8, apStates []uint8, speeds []float32, rawParkCount, rawFrameCount int, gearRuns []GearRun) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	s.data.ProcessedFiles = append(s.data.ProcessedFiles, relativePath)
 	if len(points) > 0 {
 		s.data.Routes = append(s.data.Routes, Route{
-			File:          relativePath,
-			Date:          dateDir,
-			Points:        points,
-			GearStates:    gears,
-			RawParkCount:  rawParkCount,
-			RawFrameCount: rawFrameCount,
-			GearRuns:      gearRuns,
+			File:            relativePath,
+			Date:            dateDir,
+			Points:          points,
+			GearStates:      gears,
+			AutopilotStates: apStates,
+			Speeds:          speeds,
+			RawParkCount:    rawParkCount,
+			RawFrameCount:   rawFrameCount,
+			GearRuns:        gearRuns,
 		})
 	}
 }
@@ -272,6 +278,15 @@ func (s *Store) GetAllTagNames() []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// ClearProcessedForReprocess clears all processed files and routes so every
+// clip on disk is eligible for re-extraction.  Drive tags are preserved.
+func (s *Store) ClearProcessedForReprocess() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.data.ProcessedFiles = nil
+	s.data.Routes = nil
 }
 
 // ArchivePath returns the path where drive data is backed up on the archive mount.

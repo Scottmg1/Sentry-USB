@@ -338,6 +338,30 @@ export default function Dashboard() {
               </div>
             </div>
 
+            {driveStats.fsd_engaged_ms > 0 && (
+              <div className="mb-4 grid grid-cols-3 gap-3 rounded-lg border border-emerald-500/10 bg-emerald-500/5 p-3">
+                <div>
+                  <p className="text-xs text-emerald-400/70">FSD Usage</p>
+                  <p className="mt-0.5 text-lg font-semibold text-emerald-400">
+                    {driveStats.fsd_percent}%
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-red-400/70">Disengagements</p>
+                  <p className="mt-0.5 text-lg font-semibold text-red-400">
+                    {driveStats.fsd_disengagements}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-emerald-400/70">FSD Distance</p>
+                  <p className="mt-0.5 text-lg font-semibold text-emerald-400">
+                    {driveStats.fsd_distance_mi.toFixed(1)}{" "}
+                    <span className="text-sm font-normal text-emerald-400/60">mi</span>
+                  </p>
+                </div>
+              </div>
+            )}
+
             {archiveProgress && archiveProgress.total > 0 ? (
               <>
                 <div className="mb-1.5 flex items-center justify-between text-xs text-slate-500">

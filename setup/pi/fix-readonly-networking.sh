@@ -32,6 +32,7 @@ grep -w -q "/var/lib/NetworkManager" /etc/fstab || _needs_fix=true
 grep -q "LABEL=mutable" /etc/fstab && ! grep "LABEL=mutable" /etc/fstab | grep -q "nofail" && _needs_fix=true
 grep -q "LABEL=backingfiles" /etc/fstab && ! grep "LABEL=backingfiles" /etc/fstab | grep -q "nofail" && _needs_fix=true
 [ ! -e /etc/tmpfiles.d/resolv-fallback.conf ] && _needs_fix=true
+grep -w -q "/var/lib/systemd/rfkill" /etc/fstab || _needs_fix=true
 
 if [ "$_needs_fix" = false ]; then
   log_progress "No fix needed: networking is already using tmpfs / root (not symlinks to /mutable)."
@@ -148,17 +149,26 @@ if systemctl is-active --quiet systemd-resolved 2>/dev/null; then
   systemctl disable systemd-resolved 2>/dev/null || true
 fi
 
+# ---- Unblock Bluetooth before NM restart ----
+# NM restart can transiently soft-block radios; on a read-only root the
+# rfkill state would be frozen with BT blocked, breaking BLE (Tesla BLE key).
+rfkill unblock bluetooth 2>/dev/null || true
+
 # ---- Restart NM so dns=none takes effect and the dispatcher is loaded ----
 if systemctl is-active --quiet NetworkManager 2>/dev/null; then
   log_progress "Restarting NetworkManager to apply DNS configuration"
   systemctl restart NetworkManager 2>/dev/null || true
 fi
 
-# ---- fstab: tmpfs entries for networking (idempotent) ----
+# Re-unblock bluetooth after NM restart in case it re-blocked.
+rfkill unblock bluetooth 2>/dev/null || true
+
+# ---- fstab: tmpfs entries for networking + rfkill (idempotent) ----
 for spec in \
   "/var/lib/NetworkManager:nodev,nosuid,mode=0700" \
   "/var/lib/dhcp:nodev,nosuid" \
-  "/var/lib/dhcpcd:nodev,nosuid"
+  "/var/lib/dhcpcd:nodev,nosuid" \
+  "/var/lib/systemd/rfkill:nodev,nosuid"
 do
   _mountpoint="${spec%%:*}"
   _opts="${spec#*:}"
