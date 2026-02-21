@@ -285,11 +285,30 @@ then
   systemctl disable systemd-resolved 2>/dev/null || true
 fi
 
-# Ensure Bluetooth is not soft-blocked before restarting NM.  The NM restart
-# can transiently block radios, and on a read-only root the rfkill state in
-# /var/lib/systemd/rfkill/ would be frozen with BT blocked, breaking BLE
-# (e.g. Tesla BLE key) on every subsequent boot.
+# Ensure Bluetooth is not soft-blocked right now (for the rest of this setup).
 rfkill unblock bluetooth 2>/dev/null || true
+
+# Install a systemd service that unblocks Bluetooth at every boot.
+# On Raspberry Pi, the BT radio starts soft-blocked by default.  On a
+# read-only root the block is never cleared, breaking BLE (Tesla BLE key).
+# This oneshot runs early — before bluetooth.service and hciuart.service —
+# so the radio is ready when bluetoothd starts.
+log_progress "Installing Bluetooth rfkill-unblock boot service"
+cat > /etc/systemd/system/rfkill-unblock-bluetooth.service << 'BTUNIT'
+[Unit]
+Description=Unblock Bluetooth RF-kill
+DefaultDependencies=no
+Before=bluetooth.service hciuart.service
+After=sysinit.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/rfkill unblock bluetooth
+
+[Install]
+WantedBy=multi-user.target
+BTUNIT
+systemctl enable rfkill-unblock-bluetooth.service 2>/dev/null || true
 
 # Restart NM so dns=none takes effect and the dispatcher is loaded.
 if systemctl is-active --quiet NetworkManager 2>/dev/null
@@ -298,7 +317,7 @@ then
   systemctl restart NetworkManager 2>/dev/null || true
 fi
 
-# Re-unblock bluetooth after NM restart in case the restart re-blocked it.
+# Re-unblock bluetooth after NM restart in case it re-blocked.
 rfkill unblock bluetooth 2>/dev/null || true
 
 # Update /etc/fstab

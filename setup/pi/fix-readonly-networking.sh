@@ -149,10 +149,30 @@ if systemctl is-active --quiet systemd-resolved 2>/dev/null; then
   systemctl disable systemd-resolved 2>/dev/null || true
 fi
 
-# ---- Unblock Bluetooth before NM restart ----
-# NM restart can transiently soft-block radios; on a read-only root the
-# rfkill state would be frozen with BT blocked, breaking BLE (Tesla BLE key).
+# ---- Unblock Bluetooth + install boot service ----
 rfkill unblock bluetooth 2>/dev/null || true
+
+# Install a systemd service that unblocks Bluetooth at every boot.
+# On RPi the BT radio starts soft-blocked by default; on a read-only root
+# the block is never cleared, breaking BLE (Tesla BLE key).
+if [ ! -e /etc/systemd/system/rfkill-unblock-bluetooth.service ]; then
+  log_progress "Installing Bluetooth rfkill-unblock boot service"
+  cat > /etc/systemd/system/rfkill-unblock-bluetooth.service << 'BTUNIT'
+[Unit]
+Description=Unblock Bluetooth RF-kill
+DefaultDependencies=no
+Before=bluetooth.service hciuart.service
+After=sysinit.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/rfkill unblock bluetooth
+
+[Install]
+WantedBy=multi-user.target
+BTUNIT
+  systemctl enable rfkill-unblock-bluetooth.service 2>/dev/null || true
+fi
 
 # ---- Restart NM so dns=none takes effect and the dispatcher is loaded ----
 if systemctl is-active --quiet NetworkManager 2>/dev/null; then
