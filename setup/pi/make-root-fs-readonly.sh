@@ -19,6 +19,16 @@ fi
 
 log_progress "start"
 
+# Ensure the boot/firmware partition is writable.  During upgrades the old
+# remountfs_rw may only have remounted root (/), leaving the boot partition
+# (where cmdline.txt lives) read-only.  sed -i on CMDLINE_PATH would fail.
+for _mp in /sentryusb /teslausb /boot/firmware /boot; do
+  if findmnt "$_mp" > /dev/null 2>&1; then
+    mount "$_mp" -o remount,rw 2>/dev/null || true
+    break
+  fi
+done
+
 function append_cmdline_txt_param() {
   local toAppend="$1"
   # Don't add the option if it is already added.
