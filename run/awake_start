@@ -48,18 +48,22 @@ else
           if [[ ( "$BLE_response" != *"already closed"* ) && ( "$BLE_response" != *"cable connected"* ) ]]
           then
             # log error and retry
-            log "Tesla BLE: Failed to nudge the car. There may be an issue with the BLE communication."
+            log "Tesla BLE: Failed to nudge the car. Response: $BLE_response"
             if [ "$retry" -lt "3" ]
             then
-              log "Tesla BLE: Retrying after 30s in case the connection was poor."
+              log "Tesla BLE: Retrying after 30s (attempt $((retry+1))/3)..."
               retry=$((retry+1))
               sleep 30
               continue
             else
-              log "Tesla BLE: $BLE_response"
+              log "Tesla BLE: Giving up after 3 attempts."
               break
             fi
+          else
+            log "Tesla BLE: Nudge OK (charge port already closed/cable connected)."
           fi
+        else
+          log "Tesla BLE: Nudge successful."
         fi
 
       elif [[ -n "${KEEP_AWAKE_WEBHOOK_URL:+x}" ]]

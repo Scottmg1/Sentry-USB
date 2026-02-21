@@ -74,6 +74,7 @@ export default function Files() {
   const uploadRef = useRef<HTMLInputElement>(null)
   const [uploads, setUploads] = useState<UploadProgress[]>([])
   const [uploading, setUploading] = useState(false)
+  const [effectiveBase, setEffectiveBase] = useState("")
 
   // Fetch config to determine which tabs to show
   useEffect(() => {
@@ -118,7 +119,19 @@ export default function Files() {
         setError(data.error || "Failed to load directory")
         setFiles([])
       } else {
-        const data = await res.json()
+        const data: FileEntry[] = await res.json()
+        // Auto-navigate into the sole subfolder when at a drive's base path
+        // (Music/LightShow/Boombox disk images have a single root folder)
+        if (
+          activeDrive &&
+          path === activeDrive.base &&
+          data.length === 1 &&
+          data[0].is_dir
+        ) {
+          setEffectiveBase(data[0].path)
+          setCurrentPath(data[0].path)
+          return
+        }
         setFiles(data)
       }
     } catch {
@@ -139,13 +152,16 @@ export default function Files() {
   }
 
   function goUp() {
-    if (!activeDrive || currentPath === activeDrive.base) return
+    const base = effectiveBase || activeDrive?.base
+    if (!activeDrive || !base || currentPath === base) return
     const parent = currentPath.split("/").slice(0, -1).join("/")
-    setCurrentPath(parent || activeDrive.base)
+    if (parent.length < base.length) return
+    setCurrentPath(parent || base)
   }
 
   function switchDrive(drive: DriveTab) {
     setActiveDrive(drive)
+    setEffectiveBase("")
     setCurrentPath(drive.base)
   }
 
@@ -236,7 +252,8 @@ export default function Files() {
     )
   }
 
-  const relativePath = currentPath.replace(activeDrive.base, "") || "/"
+  const base = effectiveBase || activeDrive.base
+  const relativePath = currentPath.replace(base, "") || "/"
 
   return (
     <div className="flex h-[calc(100vh-120px)] flex-col space-y-4 md:h-[calc(100vh-96px)]">
@@ -353,7 +370,7 @@ export default function Files() {
       <div className="glass-card flex min-h-0 flex-1 flex-col overflow-hidden">
         <div className="flex items-center justify-between border-b border-white/5 px-3 py-2">
           <div className="flex items-center gap-2">
-            {currentPath !== activeDrive.base && (
+            {currentPath !== base && (
               <button
                 onClick={goUp}
                 className="rounded p-1 text-slate-500 hover:bg-white/5 hover:text-slate-300"
