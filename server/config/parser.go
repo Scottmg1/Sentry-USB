@@ -141,6 +141,13 @@ func unquote(s string) string {
 	if strings.HasPrefix(s, "$'") && strings.HasSuffix(s, "'") {
 		return s[2 : len(s)-1]
 	}
+	// Strip inline comments for unquoted values (e.g. "3480 # this number is in seconds")
+	for i := 1; i < len(s); i++ {
+		if s[i] == '#' && (s[i-1] == ' ' || s[i-1] == '\t') {
+			s = strings.TrimSpace(s[:i-1])
+			break
+		}
+	}
 	return s
 }
 
