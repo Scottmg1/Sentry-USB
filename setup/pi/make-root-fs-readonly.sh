@@ -194,21 +194,25 @@ sed -i "s/spool\s*0755/spool 1777/g" /usr/lib/tmpfiles.d/var.conf >/dev/null
 # Point resolv.conf at /tmp (a tmpfs that is always writable at boot).
 # Previous versions symlinked to /mutable, but that broke DNS resolution
 # if the USB drive was slow to mount.
+# Also redirect away from systemd-resolved's stub (/run/systemd/resolve/...)
+# because we configure NM with dns=default below, which writes directly to
+# resolv.conf and conflicts with systemd-resolved.
 # IMPORTANT: /tmp is wiped on every reboot (tmpfs), so we must also install
-# a tmpfiles.d rule below to seed /tmp/resolv.conf with a fallback nameserver
-# on every boot.  Without that seed file the symlink dangles and DNS breaks.
-read -r resolvconflocation <<< "$(df --output=fstype "$(readlink -f /etc/resolv.conf)" | tail -1)"
-if [ "$resolvconflocation" != "tmpfs" ]
+# a tmpfiles.d rule below to seed /tmp/resolv.conf on every boot.  Without
+# that seed file the symlink dangles and DNS breaks.
+_resolv_target=$(readlink -f /etc/resolv.conf 2>/dev/null || true)
+if [ "$_resolv_target" != "/tmp/resolv.conf" ]
 then
-  log_progress "Redirecting resolv.conf to /tmp"
-  rm -f "$(readlink -f /etc/resolv.conf)" 2>/dev/null || true
+  log_progress "Redirecting resolv.conf to /tmp (was: ${_resolv_target:-empty})"
+  # Seed /tmp/resolv.conf with current DHCP-provided DNS so name resolution
+  # keeps working for the remainder of setup (e.g. apt-get upgrade).
   > /tmp/resolv.conf
-  ln -sf /tmp/resolv.conf /etc/resolv.conf
-elif readlink -f /etc/resolv.conf 2>/dev/null | grep -q /mutable
-then
-  log_progress "Redirecting resolv.conf away from /mutable"
-  rm -f /etc/resolv.conf
-  > /tmp/resolv.conf
+  if command -v nmcli &>/dev/null; then
+    nmcli --terse --fields IP4.DNS dev show 2>/dev/null \
+      | sed -n 's/^IP4\.DNS\[.*\]:/nameserver /p' \
+      | head -3 >> /tmp/resolv.conf || true
+  fi
+  rm -f /etc/resolv.conf 2>/dev/null || true
   ln -sf /tmp/resolv.conf /etc/resolv.conf
 fi
 
@@ -232,6 +236,23 @@ cat > /etc/NetworkManager/conf.d/sentryusb-dns.conf << 'EOF'
 [main]
 dns=default
 EOF
+
+# Disable systemd-resolved — it conflicts with NM's dns=default because both
+# try to manage /etc/resolv.conf.  Without this, DNS breaks on distributions
+# where systemd-resolved is the default (e.g. Pi OS Bookworm).
+if systemctl is-active --quiet systemd-resolved 2>/dev/null
+then
+  log_progress "Disabling systemd-resolved (NM dns=default handles DNS directly)"
+  systemctl stop systemd-resolved 2>/dev/null || true
+  systemctl disable systemd-resolved 2>/dev/null || true
+fi
+
+# Restart NM so dns=default takes effect and resolv.conf is populated now.
+if systemctl is-active --quiet NetworkManager 2>/dev/null
+then
+  log_progress "Restarting NetworkManager to apply DNS configuration"
+  systemctl restart NetworkManager 2>/dev/null || true
+fi
 
 # Update /etc/fstab
 # make /boot read-only

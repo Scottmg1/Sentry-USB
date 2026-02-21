@@ -26,6 +26,8 @@ _needs_fix=false
 [ -L /etc/NetworkManager/system-connections ] && _needs_fix=true
 [ -L /var/lib/dhcp ] || [ -L /var/lib/dhcpcd ] && _needs_fix=true
 readlink -f /etc/resolv.conf 2>/dev/null | grep -q /mutable && _needs_fix=true
+readlink -f /etc/resolv.conf 2>/dev/null | grep -q /run/systemd/resolve && _needs_fix=true
+systemctl is-active --quiet systemd-resolved 2>/dev/null && _needs_fix=true
 grep -w -q "/var/lib/NetworkManager" /etc/fstab || _needs_fix=true
 grep -q "LABEL=mutable" /etc/fstab && ! grep "LABEL=mutable" /etc/fstab | grep -q "nofail" && _needs_fix=true
 grep -q "LABEL=backingfiles" /etc/fstab && ! grep "LABEL=backingfiles" /etc/fstab | grep -q "nofail" && _needs_fix=true
@@ -73,15 +75,19 @@ for d in /var/lib/dhcp /var/lib/dhcpcd; do
 done
 
 # ---- resolv.conf: point to /tmp (always writable) ----
+# Also redirect away from systemd-resolved's stub, since dns=default
+# (configured below) conflicts with systemd-resolved.
 _resolv_target=$(readlink -f /etc/resolv.conf 2>/dev/null || true)
-if [ -n "$_resolv_target" ]; then
-  _resolv_fstype=$(df --output=fstype "$_resolv_target" 2>/dev/null | tail -1 || true)
-  if [ "$_resolv_fstype" != "tmpfs" ] || echo "$_resolv_target" | grep -q /mutable; then
-    log_progress "Redirecting resolv.conf to /tmp"
-    rm -f /etc/resolv.conf 2>/dev/null || true
-    > /tmp/resolv.conf
-    ln -sf /tmp/resolv.conf /etc/resolv.conf
+if [ "$_resolv_target" != "/tmp/resolv.conf" ]; then
+  log_progress "Redirecting resolv.conf to /tmp (was: ${_resolv_target:-empty})"
+  > /tmp/resolv.conf
+  if command -v nmcli &>/dev/null; then
+    nmcli --terse --fields IP4.DNS dev show 2>/dev/null \
+      | sed -n 's/^IP4\.DNS\[.*\]:/nameserver /p' \
+      | head -3 >> /tmp/resolv.conf || true
   fi
+  rm -f /etc/resolv.conf 2>/dev/null || true
+  ln -sf /tmp/resolv.conf /etc/resolv.conf
 fi
 
 # ---- tmpfiles.d: seed /tmp/resolv.conf on every boot ----
@@ -108,6 +114,19 @@ if [ ! -e /etc/NetworkManager/conf.d/sentryusb-dns.conf ]; then
 [main]
 dns=default
 EOF
+fi
+
+# ---- Disable systemd-resolved (conflicts with dns=default) ----
+if systemctl is-active --quiet systemd-resolved 2>/dev/null; then
+  log_progress "Disabling systemd-resolved (NM dns=default handles DNS directly)"
+  systemctl stop systemd-resolved 2>/dev/null || true
+  systemctl disable systemd-resolved 2>/dev/null || true
+fi
+
+# ---- Restart NM so dns=default takes effect ----
+if systemctl is-active --quiet NetworkManager 2>/dev/null; then
+  log_progress "Restarting NetworkManager to apply DNS configuration"
+  systemctl restart NetworkManager 2>/dev/null || true
 fi
 
 # ---- fstab: tmpfs entries for networking (idempotent) ----
