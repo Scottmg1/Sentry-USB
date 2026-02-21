@@ -82,8 +82,11 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null)
   const [uptime, setUptime] = useState(0)
   const [driveStats, setDriveStats] = useState<DriveStats | null>(null)
-  const [archiving, setArchiving] = useState(false)
+  const [archiveProgress, setArchiveProgress] = useState<ProcessProgress | null>(null)
+  const [processing, setProcessing] = useState(false)
   const [processProgress, setProcessProgress] = useState<ProcessProgress | null>(null)
+
+  const active = archiveProgress !== null || processing
 
   useEffect(() => {
     let mounted = true
@@ -109,8 +112,17 @@ export default function Dashboard() {
         ])
         if (!mounted) return
         setDriveStats(stats)
-        setArchiving(driveStatus.running)
+        setProcessing(driveStatus.running)
         if (!driveStatus.running) setProcessProgress(null)
+
+        if (driveStatus.phase === "archiving" && driveStatus.total != null) {
+          setArchiveProgress({
+            current: driveStatus.current ?? 0,
+            total: driveStatus.total,
+          })
+        } else {
+          setArchiveProgress(null)
+        }
       } catch {
         // non-critical — drive stats may not be available
       }
@@ -119,26 +131,25 @@ export default function Dashboard() {
     fetchStatus()
     fetchDriveStats()
     const statusInterval = setInterval(fetchStatus, 4000)
-    const statsInterval = setInterval(fetchDriveStats, 8000)
+    const statsInterval = setInterval(fetchDriveStats, 5000)
 
     uptimeInterval = setInterval(() => {
       setUptime((prev) => prev + 1)
     }, 1000)
 
-    // Subscribe to real-time processing progress via WebSocket
+    // Subscribe to real-time GPS processing progress via WebSocket
     const unsubscribe = wsClient.subscribe("drive_process", (data) => {
       if (!mounted) return
       const msg = data as { status: string; current?: number; total?: number }
       if (msg.status === "started") {
-        setArchiving(true)
+        setProcessing(true)
         setProcessProgress(null)
       } else if (msg.status === "progress" && msg.current !== undefined && msg.total !== undefined) {
-        setArchiving(true)
+        setProcessing(true)
         setProcessProgress({ current: msg.current, total: msg.total })
       } else if (msg.status === "complete" || msg.status === "error") {
-        setArchiving(false)
+        setProcessing(false)
         setProcessProgress(null)
-        // Refresh stats after processing completes
         fetchDriveStats()
       }
     })
@@ -295,10 +306,10 @@ export default function Dashboard() {
               Clip Archive Progress
             </span>
           </div>
-          {archiving && (
+          {active && (
             <span className="flex items-center gap-1.5 text-xs text-emerald-400">
               <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
-              Processing
+              {archiveProgress ? "Archiving" : "Processing"}
             </span>
           )}
         </div>
@@ -307,7 +318,7 @@ export default function Dashboard() {
           <>
             <div className="mb-4 grid grid-cols-3 gap-3">
               <div>
-                <p className="text-xs text-slate-500">Clips Archived</p>
+                <p className="text-xs text-slate-500">Clips Processed</p>
                 <p className="mt-0.5 text-lg font-semibold text-slate-100">
                   {driveStats.processed_count.toLocaleString()}
                 </p>
@@ -327,11 +338,34 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {archiving && processProgress && processProgress.total > 0 ? (
+            {archiveProgress && archiveProgress.total > 0 ? (
               <>
                 <div className="mb-1.5 flex items-center justify-between text-xs text-slate-500">
                   <span>
-                    {processProgress.current.toLocaleString()} /{" "}
+                    Archiving: {archiveProgress.current.toLocaleString()} /{" "}
+                    {archiveProgress.total.toLocaleString()} files
+                  </span>
+                  <span>
+                    {Math.round(
+                      (archiveProgress.current / archiveProgress.total) * 100
+                    )}
+                    %
+                  </span>
+                </div>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all duration-500"
+                    style={{
+                      width: `${(archiveProgress.current / archiveProgress.total) * 100}%`,
+                    }}
+                  />
+                </div>
+              </>
+            ) : processing && processProgress && processProgress.total > 0 ? (
+              <>
+                <div className="mb-1.5 flex items-center justify-between text-xs text-slate-500">
+                  <span>
+                    Processing: {processProgress.current.toLocaleString()} /{" "}
                     {processProgress.total.toLocaleString()} files
                   </span>
                   <span>
@@ -350,7 +384,7 @@ export default function Dashboard() {
                   />
                 </div>
               </>
-            ) : archiving ? (
+            ) : active ? (
               <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
                 <div className="h-full w-2/5 animate-pulse rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400" />
               </div>

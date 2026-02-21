@@ -146,6 +146,7 @@ function sync_user_media_to_cam () {
 }
 
 function connect_usb_drives_to_host() {
+  clear_archive_status
   log "Connecting usb to host..."
   # Always ensure the USB gadget is fully torn down before touching the cam
   # disk image.  If clean_cam_mount was skipped (e.g. archive became
@@ -440,6 +441,30 @@ function intersect {
   mv /tmp/prune_tmp.$$ "$1"
 }
 
+function write_archive_status () {
+  echo "$1" > /tmp/archive_status.json.tmp
+  mv /tmp/archive_status.json.tmp /tmp/archive_status.json
+}
+
+function clear_archive_status () {
+  rm -f /tmp/archive_status.json /tmp/archive_status.json.tmp
+}
+
+function archive_progress_monitor () {
+  local total="$1"
+  local listfile="$2"
+  local overlay="$3"
+
+  while true; do
+    sleep 5
+    local done=0
+    while IFS= read -r line; do
+      [ -L "$overlay/$line" ] || done=$((done + 1))
+    done < "$listfile"
+    write_archive_status "{\"phase\":\"archiving\",\"current\":$done,\"total\":$total}"
+  done
+}
+
 function clean_cam_mount {
 
   local mode="${1:-}"
@@ -668,6 +693,10 @@ function archive_teslacam_clips () {
       echo "${TRIGGER_FILE_ANY}" >> "${triggerlist}"
     fi
 
+    write_archive_status "{\"phase\":\"archiving\",\"current\":0,\"total\":$total_count}"
+    archive_progress_monitor "$total_count" "${sentrylist}" "$overlaymerged" &
+    local progress_pid=$!
+
     if /root/bin/archive-clips.sh "$overlaymerged" "${sentrylist}" "${triggerdir}" "${triggerlist}"
     then
       message="Archiving completed successfully. "
@@ -687,6 +716,9 @@ function archive_teslacam_clips () {
         log "--- end rsync cmd log ---"
       fi
     fi
+
+    kill "$progress_pid" 2>/dev/null || true
+    wait "$progress_pid" 2>/dev/null || true
 
     local -i sentry_archived=0
     local -i trackmode_archived=0
@@ -808,6 +840,7 @@ function archive_clips () {
 
   touch /tmp/flag_post_archive  #Set post-archive flag for optional temperature logging
   /root/bin/post-archive-process.sh || log "ERROR: post-archive-process.sh failed (exit $?)"
+  clear_archive_status
   /root/bin/disconnect-archive.sh
 }
 

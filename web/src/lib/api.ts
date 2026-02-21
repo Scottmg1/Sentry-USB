@@ -64,6 +64,9 @@ export interface DriveStatus {
   running: boolean
   routes_count: number
   processed_count: number
+  phase?: string
+  current?: number
+  total?: number
 }
 
 export interface ClipGroup {

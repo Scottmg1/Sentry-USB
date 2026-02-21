@@ -258,11 +258,32 @@ func (dh *DriveHandlers) processFiles(w http.ResponseWriter, r *http.Request) {
 
 // GET /api/drives/status — check if processing is running
 func (dh *DriveHandlers) processingStatus(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	resp := map[string]interface{}{
 		"running":         dh.processor.IsRunning(),
 		"routes_count":    dh.store.RouteCount(),
 		"processed_count": dh.store.ProcessedCount(),
-	})
+	}
+
+	if archive := readArchiveStatus(); archive != nil {
+		for k, v := range archive {
+			resp[k] = v
+		}
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// readArchiveStatus reads the archive status file written by archiveloop.
+func readArchiveStatus() map[string]interface{} {
+	data, err := os.ReadFile("/tmp/archive_status.json")
+	if err != nil {
+		return nil
+	}
+	var status map[string]interface{}
+	if err := json.Unmarshal(data, &status); err != nil {
+		return nil
+	}
+	return status
 }
 
 // GET /api/drives/data/download — download the drive-data.json file
