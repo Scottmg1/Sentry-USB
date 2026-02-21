@@ -194,25 +194,25 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
   }, [phase])
 
-  // Poll during finalizing — wait for server to be reachable after final reboot
+  // Poll during finalizing — wait for server to go DOWN then come back UP.
+  // Without the wentDown gate, the first poll can succeed while the Pi is
+  // still shutting down (exec reboot takes a few seconds to kill the server),
+  // causing a premature "Setup Complete!" before the Pi has actually rebooted.
   useEffect(() => {
     if (phase !== "finalizing") return
-    let reachable = false
+    let wentDown = false
     const poll = setInterval(async () => {
       try {
         const res = await fetch("/api/setup/status")
-        if (res.ok) {
-          // Server is back up after final reboot
-          if (!reachable) {
-            reachable = true
-            setPhase("complete")
-            setSetupMessage("Setup completed successfully! Your device is ready.")
-            clearInterval(poll)
-          }
+        if (res.ok && wentDown) {
+          // Server is back up after confirmed reboot
+          setPhase("complete")
+          setSetupMessage("Setup completed successfully! Your device is ready.")
+          clearInterval(poll)
         }
       } catch {
-        // Still rebooting — keep waiting
-        reachable = false
+        // Server unreachable — Pi is rebooting
+        wentDown = true
         setSetupMessage("Waiting for SentryUSB to come back online after final reboot...")
       }
     }, 3000)
