@@ -128,7 +128,7 @@ export function StorageStep({ data, onChange }: StepProps) {
               type="text"
               value={data.MUSIC_SHARE_NAME ?? ""}
               onChange={(e) => onChange("MUSIC_SHARE_NAME", e.target.value)}
-              placeholder="e.g. Music or Media/Music"
+              placeholder={(data.ARCHIVE_SYSTEM ?? "cifs") === "rsync" ? "/mnt/user/music" : "e.g. Music or Media/Music"}
               className={`w-full rounded-lg border bg-white/5 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none transition focus:ring-1 ${
                 !(data.MUSIC_SHARE_NAME ?? "").trim()
                   ? "border-red-500/50 focus:border-red-500/50 focus:ring-red-500/25"
@@ -136,7 +136,9 @@ export function StorageStep({ data, onChange }: StepProps) {
               }`}
             />
             <p className="mt-1 text-xs text-slate-600">
-              The share name on your Archive Server where your music is stored (e.g. the share or subfolder path).
+              {(data.ARCHIVE_SYSTEM ?? "cifs") === "rsync"
+                ? "The absolute path to your music folder on the rsync server (e.g. /mnt/user/music)."
+                : "The share name on your Archive Server where your music is stored (e.g. the share or subfolder path)."}
             </p>
             {!(data.MUSIC_SHARE_NAME ?? "").trim() && (
               <div className="mt-2 flex items-start gap-2 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2">

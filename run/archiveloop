@@ -792,7 +792,8 @@ function archive_clips () {
     log "Archiving failed."
   fi
 
-  if timeout 5 [ -d "${MUSIC_ARCHIVE_MOUNT:-}" -a -d "$MUSIC_MOUNT" ]
+  if { timeout 5 [ -d "${MUSIC_ARCHIVE_MOUNT:-}" -a -d "$MUSIC_MOUNT" ]; } || \
+     { [ "${ARCHIVE_SYSTEM:-none}" = "rsync" ] && [ -n "${MUSIC_SHARE_NAME:-}" ] && [ -f /backingfiles/music_disk.bin ]; }
   then
     log "Copying music..."
     if copy_music_files
