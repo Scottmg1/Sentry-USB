@@ -86,15 +86,28 @@ fi
 
 # ---- tmpfiles.d: seed /tmp/resolv.conf on every boot ----
 # /tmp is a tmpfs that is empty after reboot, so without this rule the
-# resolv.conf symlink dangles and DNS breaks until NM rewrites it (which
-# may never happen on a read-only root).
-# Note: no fallback nameserver is written here — NM/dhcpcd will populate
+# resolv.conf symlink dangles and DNS breaks until NM rewrites it.
+# Note: no fallback nameserver is written here — NM will populate
 # the file with DHCP-provided DNS (e.g. PiHole). Hardcoding 8.8.8.8 would
 # bypass custom DNS setups on the user's network.
 if [ ! -e /etc/tmpfiles.d/resolv-fallback.conf ]; then
-  log_progress "Installing tmpfiles.d rule for fallback resolv.conf"
+  log_progress "Installing tmpfiles.d rule for resolv.conf"
   mkdir -p /etc/tmpfiles.d
   echo 'f /tmp/resolv.conf 0644 root root -' > /etc/tmpfiles.d/resolv-fallback.conf
+fi
+
+# ---- NetworkManager: write DNS directly to resolv.conf ----
+# By default on modern Pi OS, NM routes DNS through systemd-resolved and never
+# writes to /etc/resolv.conf directly. Since we symlink resolv.conf to
+# /tmp/resolv.conf, NM must use dns=default so the DHCP-provided nameservers
+# (e.g. PiHole) actually land in the file.
+if [ ! -e /etc/NetworkManager/conf.d/sentryusb-dns.conf ]; then
+  log_progress "Configuring NetworkManager to write DNS directly to resolv.conf"
+  mkdir -p /etc/NetworkManager/conf.d
+  cat > /etc/NetworkManager/conf.d/sentryusb-dns.conf << 'EOF'
+[main]
+dns=default
+EOF
 fi
 
 # ---- fstab: tmpfs entries for networking (idempotent) ----

@@ -223,6 +223,16 @@ log_progress "Installing tmpfiles.d rule for resolv.conf"
 mkdir -p /etc/tmpfiles.d
 echo 'f /tmp/resolv.conf 0644 root root -' > /etc/tmpfiles.d/resolv-fallback.conf
 
+# Tell NetworkManager to write DNS directly to /etc/resolv.conf rather than
+# routing through systemd-resolved. Without this, NM never populates
+# /tmp/resolv.conf (which resolv.conf symlinks to) and DNS never works.
+log_progress "Configuring NetworkManager to write DNS directly to resolv.conf"
+mkdir -p /etc/NetworkManager/conf.d
+cat > /etc/NetworkManager/conf.d/sentryusb-dns.conf << 'EOF'
+[main]
+dns=default
+EOF
+
 # Update /etc/fstab
 # make /boot read-only
 # make / read-only
