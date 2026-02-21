@@ -79,7 +79,7 @@ if [ -n "$_resolv_target" ]; then
   if [ "$_resolv_fstype" != "tmpfs" ] || echo "$_resolv_target" | grep -q /mutable; then
     log_progress "Redirecting resolv.conf to /tmp"
     rm -f /etc/resolv.conf 2>/dev/null || true
-    echo "nameserver 8.8.8.8" > /tmp/resolv.conf
+    > /tmp/resolv.conf
     ln -sf /tmp/resolv.conf /etc/resolv.conf
   fi
 fi
@@ -88,10 +88,13 @@ fi
 # /tmp is a tmpfs that is empty after reboot, so without this rule the
 # resolv.conf symlink dangles and DNS breaks until NM rewrites it (which
 # may never happen on a read-only root).
+# Note: no fallback nameserver is written here — NM/dhcpcd will populate
+# the file with DHCP-provided DNS (e.g. PiHole). Hardcoding 8.8.8.8 would
+# bypass custom DNS setups on the user's network.
 if [ ! -e /etc/tmpfiles.d/resolv-fallback.conf ]; then
   log_progress "Installing tmpfiles.d rule for fallback resolv.conf"
   mkdir -p /etc/tmpfiles.d
-  echo 'f /tmp/resolv.conf 0644 root root - nameserver 8.8.8.8' > /etc/tmpfiles.d/resolv-fallback.conf
+  echo 'f /tmp/resolv.conf 0644 root root -' > /etc/tmpfiles.d/resolv-fallback.conf
 fi
 
 # ---- fstab: tmpfs entries for networking (idempotent) ----

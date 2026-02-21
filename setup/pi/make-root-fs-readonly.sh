@@ -202,25 +202,26 @@ if [ "$resolvconflocation" != "tmpfs" ]
 then
   log_progress "Redirecting resolv.conf to /tmp"
   rm -f "$(readlink -f /etc/resolv.conf)" 2>/dev/null || true
-  echo "nameserver 8.8.8.8" > /tmp/resolv.conf
+  > /tmp/resolv.conf
   ln -sf /tmp/resolv.conf /etc/resolv.conf
 elif readlink -f /etc/resolv.conf 2>/dev/null | grep -q /mutable
 then
   log_progress "Redirecting resolv.conf away from /mutable"
   rm -f /etc/resolv.conf
-  echo "nameserver 8.8.8.8" > /tmp/resolv.conf
+  > /tmp/resolv.conf
   ln -sf /tmp/resolv.conf /etc/resolv.conf
 fi
 
-# Ensure fallback DNS is available on every boot.
+# Ensure /tmp/resolv.conf exists on every boot so the symlink doesn't dangle.
 # /tmp is a tmpfs that is empty after reboot, so /tmp/resolv.conf must be
 # recreated each time.  systemd-tmpfiles-setup.service runs after tmpfs
-# mounts but before NetworkManager, guaranteeing DNS works immediately.
-# NM or dhcpcd will overwrite this with DHCP-provided servers once
-# connected; if they don't, 8.8.8.8 keeps things working.
-log_progress "Installing tmpfiles.d rule for fallback resolv.conf"
+# mounts but before NetworkManager, guaranteeing the file exists immediately.
+# NM or dhcpcd will populate it with DHCP-provided DNS servers once connected.
+# No fallback nameserver is hardcoded here to avoid overriding custom DNS
+# setups (e.g. PiHole) on the user's network.
+log_progress "Installing tmpfiles.d rule for resolv.conf"
 mkdir -p /etc/tmpfiles.d
-echo 'f /tmp/resolv.conf 0644 root root - nameserver 8.8.8.8' > /etc/tmpfiles.d/resolv-fallback.conf
+echo 'f /tmp/resolv.conf 0644 root root -' > /etc/tmpfiles.d/resolv-fallback.conf
 
 # Update /etc/fstab
 # make /boot read-only
