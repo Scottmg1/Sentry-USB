@@ -5,6 +5,25 @@
 # Goal: produce an image where the user flashes, boots, and gets a web UI.
 
 touch "${ROOTFS_DIR}/boot/ssh"
+
+# Remove firstrun.sh so Raspberry Pi Imager can inject WiFi and other
+# customization. pi-gen writes this file (and a cmdline.txt boot hook) when
+# FIRST_USER_PASS is set, which causes Imager to treat the image as already
+# customized and lock its settings panel. The sentryusb user is created at
+# build time, resize2fs_once is disabled below, and WiFi is handled by
+# rc.local via sentryusb.conf — so firstrun.sh is not needed.
+rm -f "${ROOTFS_DIR}/boot/firmware/firstrun.sh"
+rm -f "${ROOTFS_DIR}/boot/firmware/userconf.txt"
+if [ -f "${ROOTFS_DIR}/boot/firmware/cmdline.txt" ]; then
+    sed -i \
+        -e 's| systemd\.run=/boot/firmware/firstrun\.sh||g' \
+        -e 's| systemd\.run=/boot/firstrun\.sh||g' \
+        -e 's| systemd\.run_success_action=reboot||g' \
+        -e 's| systemd\.unit=kernel-command-line\.target||g' \
+        -e 's| init=/usr/lib/raspberrypi-sys-mods/firstboot||g' \
+        "${ROOTFS_DIR}/boot/firmware/cmdline.txt"
+fi
+
 install -m 755 files/rc.local                             "${ROOTFS_DIR}/etc/"
 install -m 666 files/sentryusb.conf.sample                "${ROOTFS_DIR}/boot/firmware/sentryusb.conf"
 install -m 666 files/wpa_supplicant.conf.sample           "${ROOTFS_DIR}/boot/firmware"
