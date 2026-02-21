@@ -41,6 +41,15 @@ else
 fi
 chmod +x "${ROOTFS_DIR}/opt/sentryusb/sentryusb"
 
+# Write version file
+RELEASE_TAG=$(curl -fsSL --max-time 10 "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null \
+    | grep '"tag_name"' | head -1 \
+    | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/' || true)
+if [ -n "${RELEASE_TAG:-}" ]; then
+    echo "$RELEASE_TAG" > "${ROOTFS_DIR}/opt/sentryusb/version"
+    echo "Version: $RELEASE_TAG"
+fi
+
 # ── Install systemd service for the web UI ──
 cat > "${ROOTFS_DIR}/lib/systemd/system/sentryusb.service" << 'SERVICEEOF'
 [Unit]

@@ -274,6 +274,13 @@ if [ "$BINARY_INSTALLED" = false ]; then
         chmod +x "$INSTALL_DIR/$BINARY_NAME"
         BINARY_INSTALLED=true
         ok "Binary downloaded from latest release"
+        RELEASE_TAG=$(curl -fsSL --max-time 10 "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null \
+            | grep '"tag_name"' | head -1 \
+            | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/' || true)
+        if [ -n "${RELEASE_TAG:-}" ]; then
+            echo "$RELEASE_TAG" > "$INSTALL_DIR/version"
+            ok "Version $RELEASE_TAG"
+        fi
     else
         info "No stable release found, checking pre-releases..."
         ASSET_URL=$(curl -fsSL "https://api.github.com/repos/$REPO/releases" 2>/dev/null \
@@ -285,6 +292,11 @@ if [ "$BINARY_INSTALLED" = false ]; then
                 chmod +x "$INSTALL_DIR/$BINARY_NAME"
                 BINARY_INSTALLED=true
                 ok "Binary downloaded from pre-release"
+                RELEASE_TAG=$(echo "$ASSET_URL" | sed 's|.*/releases/download/\([^/]*\)/.*|\1|' || true)
+                if [ -n "${RELEASE_TAG:-}" ]; then
+                    echo "$RELEASE_TAG" > "$INSTALL_DIR/version"
+                    ok "Version $RELEASE_TAG"
+                fi
             fi
         fi
         if [ "$BINARY_INSTALLED" = false ]; then
@@ -342,6 +354,7 @@ if [ "$BINARY_INSTALLED" = false ]; then
         chmod +x "$INSTALL_DIR/$BINARY_NAME"
         BINARY_INSTALLED=true
         ok "Binary built and installed"
+        echo "dev" > "$INSTALL_DIR/version"
     else
         warn "Go build failed -- check output above"
     fi
