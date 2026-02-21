@@ -7,9 +7,11 @@ import {
   Camera,
   Activity,
   Cable,
+  Archive,
 } from "lucide-react"
 import { api } from "@/lib/api"
-import type { PiStatus } from "@/lib/api"
+import type { PiStatus, DriveStats } from "@/lib/api"
+import { wsClient } from "@/lib/ws"
 import { formatUptime, formatBytes, formatTemp } from "@/lib/utils"
 
 function StatCard({
@@ -70,10 +72,18 @@ function getWifiStrengthBars(strength: string): number {
   return 1
 }
 
+interface ProcessProgress {
+  current: number
+  total: number
+}
+
 export default function Dashboard() {
   const [status, setStatus] = useState<PiStatus | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [uptime, setUptime] = useState(0)
+  const [driveStats, setDriveStats] = useState<DriveStats | null>(null)
+  const [archiving, setArchiving] = useState(false)
+  const [processProgress, setProcessProgress] = useState<ProcessProgress | null>(null)
 
   useEffect(() => {
     let mounted = true
@@ -91,17 +101,54 @@ export default function Dashboard() {
       }
     }
 
+    async function fetchDriveStats() {
+      try {
+        const [stats, driveStatus] = await Promise.all([
+          api.getDriveStats(),
+          api.getDriveStatus(),
+        ])
+        if (!mounted) return
+        setDriveStats(stats)
+        setArchiving(driveStatus.running)
+        if (!driveStatus.running) setProcessProgress(null)
+      } catch {
+        // non-critical — drive stats may not be available
+      }
+    }
+
     fetchStatus()
+    fetchDriveStats()
     const statusInterval = setInterval(fetchStatus, 4000)
+    const statsInterval = setInterval(fetchDriveStats, 8000)
 
     uptimeInterval = setInterval(() => {
       setUptime((prev) => prev + 1)
     }, 1000)
 
+    // Subscribe to real-time processing progress via WebSocket
+    const unsubscribe = wsClient.subscribe("drive_process", (data) => {
+      if (!mounted) return
+      const msg = data as { status: string; current?: number; total?: number }
+      if (msg.status === "started") {
+        setArchiving(true)
+        setProcessProgress(null)
+      } else if (msg.status === "progress" && msg.current !== undefined && msg.total !== undefined) {
+        setArchiving(true)
+        setProcessProgress({ current: msg.current, total: msg.total })
+      } else if (msg.status === "complete" || msg.status === "error") {
+        setArchiving(false)
+        setProcessProgress(null)
+        // Refresh stats after processing completes
+        fetchDriveStats()
+      }
+    })
+
     return () => {
       mounted = false
       clearInterval(statusInterval)
+      clearInterval(statsInterval)
       clearInterval(uptimeInterval)
+      unsubscribe()
     }
   }, [])
 
@@ -237,6 +284,93 @@ export default function Dashboard() {
             style={{ width: `${usedPercent}%` }}
           />
         </div>
+      </div>
+
+      {/* Archive progress */}
+      <div className="glass-card p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Archive className="h-4 w-4 text-slate-400" />
+            <span className="text-sm font-medium text-slate-300">
+              Clip Archive Progress
+            </span>
+          </div>
+          {archiving && (
+            <span className="flex items-center gap-1.5 text-xs text-emerald-400">
+              <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+              Processing
+            </span>
+          )}
+        </div>
+
+        {driveStats ? (
+          <>
+            <div className="mb-4 grid grid-cols-3 gap-3">
+              <div>
+                <p className="text-xs text-slate-500">Clips Archived</p>
+                <p className="mt-0.5 text-lg font-semibold text-slate-100">
+                  {driveStats.processed_count.toLocaleString()}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500">Drives Found</p>
+                <p className="mt-0.5 text-lg font-semibold text-slate-100">
+                  {driveStats.drives_count.toLocaleString()}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500">Distance</p>
+                <p className="mt-0.5 text-lg font-semibold text-slate-100">
+                  {driveStats.total_distance_mi.toFixed(1)}{" "}
+                  <span className="text-sm font-normal text-slate-400">mi</span>
+                </p>
+              </div>
+            </div>
+
+            {archiving && processProgress && processProgress.total > 0 ? (
+              <>
+                <div className="mb-1.5 flex items-center justify-between text-xs text-slate-500">
+                  <span>
+                    {processProgress.current.toLocaleString()} /{" "}
+                    {processProgress.total.toLocaleString()} files
+                  </span>
+                  <span>
+                    {Math.round(
+                      (processProgress.current / processProgress.total) * 100
+                    )}
+                    %
+                  </span>
+                </div>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all duration-500"
+                    style={{
+                      width: `${(processProgress.current / processProgress.total) * 100}%`,
+                    }}
+                  />
+                </div>
+              </>
+            ) : archiving ? (
+              <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
+                <div className="h-full w-2/5 animate-pulse rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400" />
+              </div>
+            ) : (
+              <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-emerald-500/60 to-emerald-400/60"
+                  style={{
+                    width: driveStats.processed_count > 0 ? "100%" : "0%",
+                  }}
+                />
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="space-y-2">
+            <div className="h-4 w-1/2 animate-pulse rounded bg-slate-800" />
+            <div className="h-2 w-full animate-pulse rounded-full bg-slate-800" />
+          </div>
+        )}
       </div>
     </div>
   )

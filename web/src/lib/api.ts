@@ -51,6 +51,21 @@ export interface FileEntry {
   modified: string
 }
 
+export interface DriveStats {
+  drives_count: number
+  routes_count: number
+  processed_count: number
+  total_distance_km: number
+  total_distance_mi: number
+  total_duration_ms: number
+}
+
+export interface DriveStatus {
+  running: boolean
+  routes_count: number
+  processed_count: number
+}
+
 export interface ClipGroup {
   name: string
   clips: ClipEntry[]
@@ -73,6 +88,8 @@ export const api = {
     }),
   runSetup: () =>
     request<{ success: boolean }>("/setup/run", { method: "POST" }),
+  getDriveStats: () => request<DriveStats>("/drives/stats"),
+  getDriveStatus: () => request<DriveStatus>("/drives/status"),
   getClips: () => request<ClipGroup[]>("/clips"),
   listFiles: (path: string) =>
     request<FileEntry[]>(`/files/ls?path=${encodeURIComponent(path)}`),
