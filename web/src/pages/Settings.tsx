@@ -115,6 +115,19 @@ function BlePairButton() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Check if already paired on mount (quick check, no BLE probe)
+  useEffect(() => {
+    fetch("/api/system/ble-status?quick=true")
+      .then(r => r.json())
+      .then(data => {
+        if (data.status === "paired" || data.status === "keys_generated") {
+          setBleState("paired")
+          setBleMsg("Paired — click to re-pair")
+        }
+      })
+      .catch(() => {})
+  }, [])
+
   // Subscribe to WebSocket ble_status messages
   useEffect(() => {
     const unsub = wsClient.subscribe("ble_status", (data: unknown) => {
@@ -204,11 +217,16 @@ function BlePairButton() {
     setBleMsg("")
   }
 
+  function handlePairedClick() {
+    // Allow re-pairing from paired state
+    handlePair()
+  }
+
   const isActive = bleState !== "idle" && bleState !== "paired" && bleState !== "error"
 
   return (
     <button
-      onClick={bleState === "idle" ? handlePair : (bleState === "paired" || bleState === "error") ? handleReset : undefined}
+      onClick={bleState === "idle" ? handlePair : bleState === "paired" ? handlePairedClick : bleState === "error" ? handleReset : undefined}
       disabled={isActive}
       className="glass-card glass-card-hover flex items-start gap-3 p-4 text-left transition-colors disabled:opacity-70"
     >
@@ -233,7 +251,7 @@ function BlePairButton() {
       </div>
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-slate-200">
-          {bleState === "paired" ? "BLE Paired" : bleState === "error" ? "BLE Pairing Failed" : isActive ? "Pairing..." : "Pair BLE with Car"}
+          {bleState === "paired" ? "BLE Paired" : bleState === "error" ? "BLE Pairing Failed" : isActive ? "Pairing..." : "Pair BLE"}
         </p>
         <p className={cn(
           "mt-0.5 text-xs",
@@ -242,7 +260,7 @@ function BlePairButton() {
           bleState === "waiting" ? "text-amber-400 font-medium" :
           "text-slate-500"
         )}>
-          {bleMsg || "Initiate Bluetooth Low Energy pairing"}
+          {bleMsg || "Initiate Bluetooth Low Energy pairing with your car"}
         </p>
       </div>
     </button>

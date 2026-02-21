@@ -110,15 +110,20 @@ func (h *handlers) bleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Keys exist — verify the key is actually paired with the car
-	// by attempting to get session info from the vehicle
 	vin := readBLEVin()
 	if vin == "" {
-		// Keys exist but no VIN configured — report keys_generated
 		writeJSON(w, http.StatusOK, map[string]string{"status": "keys_generated"})
 		return
 	}
 
+	// ?quick=true skips the slow BLE session-info probe (up to 15s).
+	// Used on page load to avoid blocking the UI.
+	if r.URL.Query().Get("quick") == "true" {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "paired"})
+		return
+	}
+
+	// Full verification: attempt to get session info from the vehicle
 	_, err := shell.RunWithTimeout(15*time.Second,
 		"/root/bin/tesla-control", "-ble", "-vin", strings.ToUpper(vin),
 		"session-info", "/root/.ble/key_private.pem", "infotainment")
