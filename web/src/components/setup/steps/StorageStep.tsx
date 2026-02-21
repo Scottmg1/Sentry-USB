@@ -119,6 +119,33 @@ export function StorageStep({ data, onChange }: StepProps) {
           defaultVal=""
           hint="Optional. Leave empty for no music drive."
         />
+        {(data.MUSIC_SIZE ?? "").replace(/[^0-9]/g, "") && (
+          <div className="rounded-lg border border-white/5 bg-white/[0.02] p-4">
+            <div className="mb-2">
+              <label className="text-sm font-medium text-slate-300">Music Share Name</label>
+            </div>
+            <input
+              type="text"
+              value={data.MUSIC_SHARE_NAME ?? ""}
+              onChange={(e) => onChange("MUSIC_SHARE_NAME", e.target.value)}
+              placeholder="e.g. Music or Media/Music"
+              className={`w-full rounded-lg border bg-white/5 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none transition focus:ring-1 ${
+                !(data.MUSIC_SHARE_NAME ?? "").trim()
+                  ? "border-red-500/50 focus:border-red-500/50 focus:ring-red-500/25"
+                  : "border-white/10 focus:border-blue-500/50 focus:ring-blue-500/25"
+              }`}
+            />
+            <p className="mt-1 text-xs text-slate-600">
+              The share name on your Archive Server where your music is stored (e.g. the share or subfolder path).
+            </p>
+            {!(data.MUSIC_SHARE_NAME ?? "").trim() && (
+              <div className="mt-2 flex items-start gap-2 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-400" />
+                <p className="text-xs text-red-300">Required when a music drive size is set.</p>
+              </div>
+            )}
+          </div>
+        )}
         <SizeInput
           label="LightShow"
           field="LIGHTSHOW_SIZE"

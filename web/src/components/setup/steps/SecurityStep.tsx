@@ -3,11 +3,16 @@ import type { StepProps } from "../SetupWizard"
 import { SecretInput } from "../SecretInput"
 import { cn } from "@/lib/utils"
 
-function Field({ label, field, type = "text", placeholder, data, onChange, hint }: {
+function Field({ label, field, type = "text", placeholder, data, onChange, hint, error }: {
   label: string; field: string; type?: string; placeholder?: string
-  data: StepProps["data"]; onChange: StepProps["onChange"]; hint?: string
+  data: StepProps["data"]; onChange: StepProps["onChange"]; hint?: string; error?: boolean
 }) {
-  const inputCls = "w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none transition focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/25"
+  const inputCls = cn(
+    "w-full rounded-lg border bg-white/5 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none transition focus:ring-1",
+    error
+      ? "border-red-500/50 focus:border-red-500/50 focus:ring-red-500/25"
+      : "border-white/10 focus:border-blue-500/50 focus:ring-blue-500/25"
+  )
   return (
     <div>
       <label className="mb-1 block text-sm font-medium text-slate-300">{label}</label>
@@ -42,7 +47,8 @@ export function SecurityStep({ data, onChange }: StepProps) {
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Web Username" field="WEB_USERNAME" placeholder="pi" data={data} onChange={onChange}
             hint="Leave empty to disable web auth" />
-          <Field label="Web Password" field="WEB_PASSWORD" type="password" placeholder="password" data={data} onChange={onChange} />
+          <Field label="Web Password" field="WEB_PASSWORD" type="password" placeholder="password" data={data} onChange={onChange}
+            error={!!(data.WEB_USERNAME?.trim() && !data.WEB_PASSWORD?.trim())} />
         </div>
       </div>
 
@@ -75,9 +81,13 @@ export function SecurityStep({ data, onChange }: StepProps) {
               Disable SSH password authentication
             </span>
           </label>
-          <p className="text-xs text-slate-600">
-            Only enable this if you have set an SSH public key above.
-          </p>
+          {data.SSH_DISABLE_PASSWORD_AUTHENTICATION === "true" && !data.SSH_ROOT_PUBLIC_KEY?.trim() ? (
+            <p className="text-xs text-red-400">An SSH Public Key is required before disabling password authentication.</p>
+          ) : (
+            <p className="text-xs text-slate-600">
+              Only enable this if you have set an SSH public key above.
+            </p>
+          )}
         </div>
       </div>
     </div>

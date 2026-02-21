@@ -11,6 +11,7 @@ function Field({
   data,
   onChange,
   hint,
+  error,
 }: {
   label: string
   field: string
@@ -19,8 +20,14 @@ function Field({
   data: StepProps["data"]
   onChange: StepProps["onChange"]
   hint?: string
+  error?: boolean
 }) {
-  const inputCls = "w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none transition focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/25"
+  const inputCls = cn(
+    "w-full rounded-lg border bg-white/5 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none transition focus:ring-1",
+    error
+      ? "border-red-500/50 focus:border-red-500/50 focus:ring-red-500/25"
+      : "border-white/10 focus:border-blue-500/50 focus:ring-blue-500/25"
+  )
   return (
     <div>
       <label className="mb-1 block text-sm font-medium text-slate-300">
@@ -139,6 +146,7 @@ export function NetworkStep({ data, onChange, onBatchChange }: StepProps) {
               data={data}
               onChange={onChange}
               hint="Must be at least 8 characters"
+              error={(data.AP_PASS ?? "").length < 8}
             />
             <Field
               label="AP IP Address"

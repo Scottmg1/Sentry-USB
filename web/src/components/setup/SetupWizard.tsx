@@ -28,6 +28,98 @@ export interface StepProps {
   onBatchChange: (updates: Record<string, string>) => void
 }
 
+function networkError(data: SetupFormData): string | null {
+  if (data.AP_SSID && (data.AP_PASS ?? "").length < 8)
+    return "WiFi Access Point password must be at least 8 characters."
+  return null
+}
+
+function storageError(data: SetupFormData): string | null {
+  const musicSize = (data.MUSIC_SIZE ?? "").replace(/[^0-9]/g, "")
+  if (musicSize && !(data.MUSIC_SHARE_NAME ?? "").trim())
+    return "Music Share Name is required when a music drive size is set."
+  return null
+}
+
+function archiveError(data: SetupFormData): string | null {
+  const system = data.ARCHIVE_SYSTEM ?? "cifs"
+  if (system === "none") return null
+  if (system === "cifs") {
+    if (!data.ARCHIVE_SERVER?.trim()) return "Archive Server is required."
+    if (!data.SHARE_NAME?.trim()) return "Share Name is required."
+    if (!data.SHARE_USER?.trim()) return "Username is required."
+    if (!data.SHARE_PASSWORD?.trim()) return "Password is required."
+  } else if (system === "rsync") {
+    if (!data.RSYNC_SERVER?.trim()) return "Server is required."
+    if (!data.RSYNC_USER?.trim()) return "Username is required."
+    if (!data.RSYNC_PATH?.trim()) return "Remote Path is required."
+  } else if (system === "rclone") {
+    if (!data.RCLONE_DRIVE?.trim()) return "Remote Name is required."
+    if (!data.RCLONE_PATH?.trim()) return "Remote Path is required."
+  } else if (system === "nfs") {
+    if (!data.ARCHIVE_SERVER?.trim()) return "NFS Server is required."
+    if (!data.SHARE_NAME?.trim()) return "Export Path is required."
+  }
+  return null
+}
+
+function keepAwakeError(data: SetupFormData): string | null {
+  const method = data._KEEP_AWAKE_METHOD
+    || (data.TESLA_BLE_VIN ? "ble"
+      : data.TESLAFI_API_TOKEN ? "teslafi"
+      : data.TESSIE_API_TOKEN ? "tessie"
+      : data.KEEP_AWAKE_WEBHOOK_URL ? "webhook"
+      : "none")
+  if (method === "none") return null
+  if (method === "ble" && !data.TESLA_BLE_VIN?.trim()) return "Vehicle VIN is required for Bluetooth LE."
+  if (method === "teslafi" && !data.TESLAFI_API_TOKEN?.trim()) return "TeslaFi API Token is required."
+  if (method === "tessie" && !data.TESSIE_API_TOKEN?.trim()) return "Tessie API Token is required."
+  if (method === "tessie" && !data.TESSIE_VIN?.trim()) return "Vehicle VIN is required for Tessie."
+  if (method === "webhook" && !data.KEEP_AWAKE_WEBHOOK_URL?.trim()) return "Webhook URL is required."
+  if (!data.SENTRY_CASE) return "Sentry Mode behavior must be selected."
+  return null
+}
+
+function notificationsError(data: SetupFormData): string | null {
+  const requiredPerProvider: [string, string, string[]][] = [
+    ["Pushover", "PUSHOVER_ENABLED", ["PUSHOVER_USER_KEY", "PUSHOVER_APP_KEY"]],
+    ["Gotify", "GOTIFY_ENABLED", ["GOTIFY_DOMAIN", "GOTIFY_APP_TOKEN"]],
+    ["Discord", "DISCORD_ENABLED", ["DISCORD_WEBHOOK_URL"]],
+    ["Telegram", "TELEGRAM_ENABLED", ["TELEGRAM_CHAT_ID", "TELEGRAM_BOT_TOKEN"]],
+    ["IFTTT", "IFTTT_ENABLED", ["IFTTT_EVENT_NAME", "IFTTT_KEY"]],
+    ["Slack", "SLACK_ENABLED", ["SLACK_WEBHOOK_URL"]],
+    ["Signal", "SIGNAL_ENABLED", ["SIGNAL_URL", "SIGNAL_FROM_NUM", "SIGNAL_TO_NUM"]],
+    ["Matrix", "MATRIX_ENABLED", ["MATRIX_SERVER_URL", "MATRIX_USERNAME", "MATRIX_PASSWORD", "MATRIX_ROOM"]],
+    ["AWS SNS", "SNS_ENABLED", ["AWS_REGION", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SNS_TOPIC_ARN"]],
+    ["Webhook", "WEBHOOK_ENABLED", ["WEBHOOK_URL"]],
+  ]
+  for (const [label, enableField, fields] of requiredPerProvider) {
+    if (data[enableField] === "true" && fields.some(f => !data[f]?.trim()))
+      return `Complete all required fields for ${label}.`
+  }
+  return null
+}
+
+function securityError(data: SetupFormData): string | null {
+  if (data.WEB_USERNAME?.trim() && !data.WEB_PASSWORD?.trim())
+    return "Web Password is required when a Web Username is set."
+  if (data.SSH_DISABLE_PASSWORD_AUTHENTICATION === "true" && !data.SSH_ROOT_PUBLIC_KEY?.trim())
+    return "An SSH Public Key is required before disabling password authentication."
+  return null
+}
+
+function getStepError(stepIdx: number, data: SetupFormData): string | null {
+  switch (stepIdx) {
+    case 1: return networkError(data)
+    case 2: return storageError(data)
+    case 3: return archiveError(data)
+    case 4: return keepAwakeError(data)
+    case 5: return notificationsError(data)
+    case 6: return securityError(data)
+    default: return null
+  }
+}
+
 const steps: StepDef[] = [
   { id: "welcome", title: "Welcome", component: WelcomeStep },
   { id: "network", title: "Network", component: NetworkStep },
@@ -162,8 +254,15 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
   }, [phase])
 
   const StepComponent = steps[currentStep].component
+  const currentStepError = getStepError(currentStep, formData)
 
   async function handleApply() {
+    const firstInvalidIdx = steps.findIndex((_, i) => getStepError(i, formData) !== null)
+    if (firstInvalidIdx !== -1) {
+      setCurrentStep(firstInvalidIdx)
+      setSaveError(getStepError(firstInvalidIdx, formData))
+      return
+    }
     setSaving(true)
     setSaveError(null)
     try {
@@ -316,18 +415,30 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
             {steps.map((step, i) => (
               <button
                 key={step.id}
-                onClick={() => setCurrentStep(i)}
+                onClick={() => {
+                  if (i > currentStep) {
+                    for (let s = 0; s < i; s++) {
+                      if (getStepError(s, formData) !== null) {
+                        setCurrentStep(s)
+                        return
+                      }
+                    }
+                  }
+                  setCurrentStep(i)
+                }}
                 className="group flex-1"
                 title={step.title}
               >
                 <div
                   className={cn(
                     "h-1 rounded-full transition-all",
-                    i < currentStep
-                      ? "bg-blue-500"
-                      : i === currentStep
-                        ? "bg-blue-400"
-                        : "bg-slate-800"
+                    i === currentStep
+                      ? "bg-blue-400"
+                      : i < currentStep && getStepError(i, formData) !== null
+                        ? "bg-red-500/70"
+                        : i < currentStep
+                          ? "bg-blue-500"
+                          : "bg-slate-800"
                   )}
                 />
                 <p
@@ -356,6 +467,9 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
         <div className="shrink-0 border-t border-white/5 px-6 py-4">
           {saveError && (
             <p className="mb-2 text-sm text-red-400">{saveError}</p>
+          )}
+          {currentStepError && (
+            <p className="mb-2 text-sm text-red-400">{currentStepError}</p>
           )}
           <div className="flex items-center justify-between">
             <button
@@ -392,7 +506,8 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
             ) : (
               <button
                 onClick={() => setCurrentStep((s) => s + 1)}
-                className="flex items-center gap-1.5 rounded-lg bg-blue-500/20 px-4 py-2 text-sm font-medium text-blue-400 transition-colors hover:bg-blue-500/30"
+                disabled={!!currentStepError}
+                className="flex items-center gap-1.5 rounded-lg bg-blue-500/20 px-4 py-2 text-sm font-medium text-blue-400 transition-colors hover:bg-blue-500/30 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Next
                 <ChevronRight className="h-4 w-4" />

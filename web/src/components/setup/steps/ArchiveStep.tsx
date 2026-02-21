@@ -19,6 +19,7 @@ function Field({
   data,
   onChange,
   hint,
+  error,
 }: {
   label: string
   field: string
@@ -27,8 +28,14 @@ function Field({
   data: StepProps["data"]
   onChange: StepProps["onChange"]
   hint?: string
+  error?: boolean
 }) {
-  const inputCls = "w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none transition focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/25"
+  const inputCls = cn(
+    "w-full rounded-lg border bg-white/5 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none transition focus:ring-1",
+    error
+      ? "border-red-500/50 focus:border-red-500/50 focus:ring-red-500/25"
+      : "border-white/10 focus:border-blue-500/50 focus:ring-blue-500/25"
+  )
   return (
     <div>
       <label className="mb-1 block text-sm font-medium text-slate-300">
@@ -57,6 +64,10 @@ function Field({
 
 export function ArchiveStep({ data, onChange }: StepProps) {
   const system = data.ARCHIVE_SYSTEM ?? "cifs"
+
+  function req(field: string, systems: string[]): boolean {
+    return systems.includes(system) && !data[field]?.trim()
+  }
 
   return (
     <div className="space-y-6">
@@ -101,10 +112,10 @@ export function ArchiveStep({ data, onChange }: StepProps) {
       {/* Dynamic fields per archive system */}
       {system === "cifs" && (
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Archive Server" field="ARCHIVE_SERVER" placeholder="hostname or IP" data={data} onChange={onChange} />
-          <Field label="Share Name" field="SHARE_NAME" placeholder="share/path" data={data} onChange={onChange} />
-          <Field label="Username" field="SHARE_USER" placeholder="username" data={data} onChange={onChange} />
-          <Field label="Password" field="SHARE_PASSWORD" type="password" placeholder="password" data={data} onChange={onChange} />
+          <Field label="Archive Server" field="ARCHIVE_SERVER" placeholder="hostname or IP" data={data} onChange={onChange} error={req("ARCHIVE_SERVER", ["cifs"])} />
+          <Field label="Share Name" field="SHARE_NAME" placeholder="share/path" data={data} onChange={onChange} error={req("SHARE_NAME", ["cifs"])} />
+          <Field label="Username" field="SHARE_USER" placeholder="username" data={data} onChange={onChange} error={req("SHARE_USER", ["cifs"])} />
+          <Field label="Password" field="SHARE_PASSWORD" type="password" placeholder="password" data={data} onChange={onChange} error={req("SHARE_PASSWORD", ["cifs"])} />
           <Field label="Domain" field="SHARE_DOMAIN" placeholder="optional" data={data} onChange={onChange} hint="Usually not needed" />
           <Field label="CIFS Version" field="CIFS_VERSION" placeholder="3.0" data={data} onChange={onChange} hint="Usually not needed" />
         </div>
@@ -112,24 +123,24 @@ export function ArchiveStep({ data, onChange }: StepProps) {
 
       {system === "rsync" && (
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Server" field="RSYNC_SERVER" placeholder="hostname or IP" data={data} onChange={onChange} />
-          <Field label="Username" field="RSYNC_USER" placeholder="username" data={data} onChange={onChange} />
-          <Field label="Remote Path" field="RSYNC_PATH" placeholder="/path/on/server" data={data} onChange={onChange} />
+          <Field label="Server" field="RSYNC_SERVER" placeholder="hostname or IP" data={data} onChange={onChange} error={req("RSYNC_SERVER", ["rsync"])} />
+          <Field label="Username" field="RSYNC_USER" placeholder="username" data={data} onChange={onChange} error={req("RSYNC_USER", ["rsync"])} />
+          <Field label="Remote Path" field="RSYNC_PATH" placeholder="/path/on/server" data={data} onChange={onChange} error={req("RSYNC_PATH", ["rsync"])} />
         </div>
       )}
 
       {system === "rclone" && (
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Remote Name" field="RCLONE_DRIVE" placeholder="remotename" data={data} onChange={onChange} />
-          <Field label="Remote Path" field="RCLONE_PATH" placeholder="remotepath" data={data} onChange={onChange} />
+          <Field label="Remote Name" field="RCLONE_DRIVE" placeholder="remotename" data={data} onChange={onChange} error={req("RCLONE_DRIVE", ["rclone"])} />
+          <Field label="Remote Path" field="RCLONE_PATH" placeholder="remotepath" data={data} onChange={onChange} error={req("RCLONE_PATH", ["rclone"])} />
           <Field label="Archive Server" field="ARCHIVE_SERVER" placeholder="8.8.8.8" data={data} onChange={onChange} hint="For connectivity checks" />
         </div>
       )}
 
       {system === "nfs" && (
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="NFS Server" field="ARCHIVE_SERVER" placeholder="hostname or IP" data={data} onChange={onChange} />
-          <Field label="Export Path" field="SHARE_NAME" placeholder="/volume1/TeslaCam" data={data} onChange={onChange} hint="Exact export path on the NAS" />
+          <Field label="NFS Server" field="ARCHIVE_SERVER" placeholder="hostname or IP" data={data} onChange={onChange} error={req("ARCHIVE_SERVER", ["nfs"])} />
+          <Field label="Export Path" field="SHARE_NAME" placeholder="/volume1/TeslaCam" data={data} onChange={onChange} hint="Exact export path on the NAS" error={req("SHARE_NAME", ["nfs"])} />
         </div>
       )}
 

@@ -17,11 +17,16 @@ const sentryCases = [
   { id: "3", label: "Case 3: No Sentry Mode (periodic nudge)", desc: "Periodic keep-awake command without Sentry Mode. BLE/Tessie/Webhook only." },
 ]
 
-function Field({ label, field, type = "text", placeholder, data, onChange, hint }: {
+function Field({ label, field, type = "text", placeholder, data, onChange, hint, error }: {
   label: string; field: string; type?: string; placeholder?: string
-  data: StepProps["data"]; onChange: StepProps["onChange"]; hint?: string
+  data: StepProps["data"]; onChange: StepProps["onChange"]; hint?: string; error?: boolean
 }) {
-  const inputCls = "w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none transition focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/25"
+  const inputCls = cn(
+    "w-full rounded-lg border bg-white/5 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none transition focus:ring-1",
+    error
+      ? "border-red-500/50 focus:border-red-500/50 focus:ring-red-500/25"
+      : "border-white/10 focus:border-blue-500/50 focus:ring-blue-500/25"
+  )
   return (
     <div>
       <label className="mb-1 block text-sm font-medium text-slate-300">{label}</label>
@@ -108,19 +113,29 @@ export function KeepAwakeStep({ data, onChange, onBatchChange }: StepProps) {
       {/* Method-specific fields */}
       {method === "ble" && (
         <Field label="Vehicle VIN" field="TESLA_BLE_VIN" placeholder="5YJ3E1EA4JF000001" data={data} onChange={onChange}
-          hint="After setup, use the Pair BLE button in Settings to complete pairing." />
+          hint="After setup, use the Pair BLE button in Settings to complete pairing."
+          error={!data.TESLA_BLE_VIN?.trim()} />
       )}
       {method === "teslafi" && (
-        <Field label="TeslaFi API Token" field="TESLAFI_API_TOKEN" type="password" placeholder="Your TeslaFi API token" data={data} onChange={onChange} />
+        <Field label="TeslaFi API Token" field="TESLAFI_API_TOKEN" type="password" placeholder="Your TeslaFi API token" data={data} onChange={onChange}
+          error={!data.TESLAFI_API_TOKEN?.trim()} />
       )}
       {method === "tessie" && (
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Tessie API Token" field="TESSIE_API_TOKEN" type="password" placeholder="Your Tessie API token" data={data} onChange={onChange} />
-          <Field label="Vehicle VIN" field="TESSIE_VIN" placeholder="5YJ3E1EA4JF000001" data={data} onChange={onChange} />
+          <Field label="Tessie API Token" field="TESSIE_API_TOKEN" type="password" placeholder="Your Tessie API token" data={data} onChange={onChange}
+            error={!data.TESSIE_API_TOKEN?.trim()} />
+          <Field label="Vehicle VIN" field="TESSIE_VIN" placeholder="5YJ3E1EA4JF000001" data={data} onChange={onChange}
+            error={!data.TESSIE_VIN?.trim()} />
         </div>
       )}
       {method === "webhook" && (
-        <Field label="Webhook URL" field="KEEP_AWAKE_WEBHOOK_URL" type="password" placeholder="http://homeassistant.local/api/webhook/..." data={data} onChange={onChange} />
+        <Field label="Webhook URL" field="KEEP_AWAKE_WEBHOOK_URL" type="password" placeholder="http://homeassistant.local/api/webhook/..." data={data} onChange={onChange}
+          error={!data.KEEP_AWAKE_WEBHOOK_URL?.trim()} />
+      )}
+
+      {/* Sentry case required when a method is active */}
+      {method !== "none" && !data.SENTRY_CASE && (
+        <p className="text-xs text-red-400">Select a Sentry Mode behavior above to continue.</p>
       )}
     </div>
   )

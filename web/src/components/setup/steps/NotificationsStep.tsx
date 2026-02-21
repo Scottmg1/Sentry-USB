@@ -87,7 +87,7 @@ const providers: NotificationProvider[] = [
   },
 ]
 
-function ProviderCard({ provider, data, onChange }: { provider: NotificationProvider } & Pick<StepProps, "data" | "onChange">) {
+function ProviderCard({ provider, data, onChange, errorFields }: { provider: NotificationProvider; errorFields: Set<string> } & Pick<StepProps, "data" | "onChange">) {
   const enabled = data[provider.enableField] === "true"
   const [expanded, setExpanded] = useState(enabled)
 
@@ -119,7 +119,13 @@ function ProviderCard({ provider, data, onChange }: { provider: NotificationProv
       {expanded && (
         <div className="grid gap-3 border-t border-white/5 px-4 py-3 sm:grid-cols-2">
           {provider.fields.map((f) => {
-            const inputCls = "w-full rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-slate-100 placeholder-slate-600 outline-none transition focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/25"
+            const hasError = enabled && errorFields.has(f.key)
+            const inputCls = cn(
+              "w-full rounded-lg border bg-white/5 px-3 py-1.5 text-sm text-slate-100 placeholder-slate-600 outline-none transition focus:ring-1",
+              hasError
+                ? "border-red-500/50 focus:border-red-500/50 focus:ring-red-500/25"
+                : "border-white/10 focus:border-blue-500/50 focus:ring-blue-500/25"
+            )
             return (
               <div key={f.key}>
                 <label className="mb-1 block text-xs font-medium text-slate-400">{f.label}</label>
@@ -149,7 +155,29 @@ function ProviderCard({ provider, data, onChange }: { provider: NotificationProv
   )
 }
 
+const requiredByProvider: Record<string, string[]> = {
+  PUSHOVER_ENABLED: ["PUSHOVER_USER_KEY", "PUSHOVER_APP_KEY"],
+  GOTIFY_ENABLED: ["GOTIFY_DOMAIN", "GOTIFY_APP_TOKEN"],
+  DISCORD_ENABLED: ["DISCORD_WEBHOOK_URL"],
+  TELEGRAM_ENABLED: ["TELEGRAM_CHAT_ID", "TELEGRAM_BOT_TOKEN"],
+  IFTTT_ENABLED: ["IFTTT_EVENT_NAME", "IFTTT_KEY"],
+  SLACK_ENABLED: ["SLACK_WEBHOOK_URL"],
+  SIGNAL_ENABLED: ["SIGNAL_URL", "SIGNAL_FROM_NUM", "SIGNAL_TO_NUM"],
+  MATRIX_ENABLED: ["MATRIX_SERVER_URL", "MATRIX_USERNAME", "MATRIX_PASSWORD", "MATRIX_ROOM"],
+  SNS_ENABLED: ["AWS_REGION", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SNS_TOPIC_ARN"],
+  WEBHOOK_ENABLED: ["WEBHOOK_URL"],
+}
+
 export function NotificationsStep({ data, onChange }: StepProps) {
+  const missingFields = new Set<string>()
+  for (const p of providers) {
+    if (data[p.enableField] === "true") {
+      for (const key of (requiredByProvider[p.enableField] ?? [])) {
+        if (!data[key]?.trim()) missingFields.add(key)
+      }
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
@@ -177,7 +205,7 @@ export function NotificationsStep({ data, onChange }: StepProps) {
 
       <div className="space-y-2">
         {providers.map((p) => (
-          <ProviderCard key={p.id} provider={p} data={data} onChange={onChange} />
+          <ProviderCard key={p.id} provider={p} data={data} onChange={onChange} errorFields={missingFields} />
         ))}
       </div>
     </div>
