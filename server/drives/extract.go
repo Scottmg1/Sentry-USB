@@ -195,8 +195,8 @@ func stripEmulationBytes(data []byte) []byte {
 }
 
 // decodeSeiGPS decodes protobuf SeiMetadata to extract latitude (field 11),
-// longitude (field 12), gear_state (field 2), autopilot_state (field 4),
-// speed (field 3, float32), and accelerator_pedal_position (field 5, float32).
+// longitude (field 12), gear_state (field 2), autopilot_state (field 10),
+// vehicle_speed_mps (field 4, float32), and accelerator_pedal_position (field 5, float32).
 // Hand-parses protobuf wire format to avoid external dependencies.
 func decodeSeiGPS(data []byte) (lat, lon float64, gear uint8, apState uint8, speed float32, accelPos float32, ok bool) {
 	i := 0
@@ -219,7 +219,7 @@ func decodeSeiGPS(data []byte) (lat, lon float64, gear uint8, apState uint8, spe
 			i += vn
 			if fieldNum == 2 {
 				gear = uint8(val)
-			} else if fieldNum == 4 {
+			} else if fieldNum == 10 {
 				apState = uint8(val)
 			}
 		case 1: // 64-bit (fixed64, double)
@@ -244,7 +244,7 @@ func decodeSeiGPS(data []byte) (lat, lon float64, gear uint8, apState uint8, spe
 			if i+4 > len(data) {
 				return 0, 0, 0, 0, 0, 0, false
 			}
-			if fieldNum == 3 {
+			if fieldNum == 4 {
 				speed = decodeFloat32LE(data[i : i+4])
 			} else if fieldNum == 5 {
 				// accelerator_pedal_position — Tesla does not record FSD-commanded
