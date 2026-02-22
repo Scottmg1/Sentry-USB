@@ -22,22 +22,22 @@ const (
 const AutopilotOff = 0
 
 // ExtractGPSFromFile opens an MP4 file and extracts GPS points, gear states,
-// autopilot states, and speeds from SEI NAL units.
+// autopilot states, speeds, and accelerator pedal positions from SEI NAL units.
 // Memory-efficient: reads the mdat box in chunks rather than loading the entire file.
 // The returned slices are parallel to points (same length, same index).
-func ExtractGPSFromFile(path string) ([]GPSPoint, []uint8, []uint8, []float32, error) {
+func ExtractGPSFromFile(path string) ([]GPSPoint, []uint8, []uint8, []float32, []float32, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, err
 	}
 	defer f.Close()
 
 	mdatOffset, mdatSize, err := findMdatBox(f)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, err
 	}
 	if mdatSize == 0 {
-		return nil, nil, nil, nil, nil
+		return nil, nil, nil, nil, nil, nil
 	}
 
 	return extractFromMdat(f, mdatOffset, mdatSize)
@@ -90,12 +90,13 @@ func findMdatBox(f *os.File) (offset int64, size int64, err error) {
 
 // extractFromMdat reads through the mdat box parsing NAL units and extracting GPS from SEI.
 // Uses a 64KB read buffer to avoid loading large mdat sections into memory.
-func extractFromMdat(f *os.File, offset, size int64) ([]GPSPoint, []uint8, []uint8, []float32, error) {
+func extractFromMdat(f *os.File, offset, size int64) ([]GPSPoint, []uint8, []uint8, []float32, []float32, error) {
 	const bufSize = 64 * 1024
 	var points []GPSPoint
 	var gears []uint8
 	var apStates []uint8
 	var speeds []float32
+	var accelPositions []float32
 
 	end := offset + size
 	cursor := offset
@@ -107,7 +108,7 @@ func extractFromMdat(f *os.File, offset, size int64) ([]GPSPoint, []uint8, []uin
 			if err == io.EOF {
 				break
 			}
-			return points, gears, apStates, speeds, nil
+			return points, gears, apStates, speeds, accelPositions, nil
 		}
 		cursor += 4
 
@@ -128,7 +129,7 @@ func extractFromMdat(f *os.File, offset, size int64) ([]GPSPoint, []uint8, []uin
 		if nalType == 6 && nalSize <= bufSize {
 			nal := make([]byte, nalSize)
 			if _, err := f.ReadAt(nal, cursor); err == nil {
-				if lat, lon, gear, apState, speed, ok := parseTeslaSEI(nal); ok {
+				if lat, lon, gear, apState, speed, accelPos, ok := parseTeslaSEI(nal); ok {
 					points = append(points, GPSPoint{
 						math.Round(lat*1e6) / 1e6,
 						math.Round(lon*1e6) / 1e6,
@@ -136,6 +137,7 @@ func extractFromMdat(f *os.File, offset, size int64) ([]GPSPoint, []uint8, []uin
 					gears = append(gears, gear)
 					apStates = append(apStates, apState)
 					speeds = append(speeds, speed)
+					accelPositions = append(accelPositions, accelPos)
 				}
 			}
 		}
@@ -143,18 +145,18 @@ func extractFromMdat(f *os.File, offset, size int64) ([]GPSPoint, []uint8, []uin
 		cursor += nalSize
 	}
 
-	return points, gears, apStates, speeds, nil
+	return points, gears, apStates, speeds, accelPositions, nil
 }
 
-// parseTeslaSEI finds the Tesla magic bytes (0x42...0x69) in a SEI NAL and decodes GPS + gear + autopilot + speed.
-func parseTeslaSEI(nal []byte) (lat, lon float64, gear uint8, apState uint8, speed float32, ok bool) {
+// parseTeslaSEI finds the Tesla magic bytes (0x42...0x69) in a SEI NAL and decodes GPS + gear + autopilot + speed + accel.
+func parseTeslaSEI(nal []byte) (lat, lon float64, gear uint8, apState uint8, speed float32, accelPos float32, ok bool) {
 	// Skip NAL header, look for 0x42 sequence followed by 0x69
 	i := 3
 	for i < len(nal) && nal[i] == 0x42 {
 		i++
 	}
 	if i <= 3 || i+1 >= len(nal) || nal[i] != 0x69 {
-		return 0, 0, 0, 0, 0, false
+		return 0, 0, 0, 0, 0, 0, false
 	}
 
 	// Payload starts after 0x69, ends before trailing byte
@@ -194,9 +196,9 @@ func stripEmulationBytes(data []byte) []byte {
 
 // decodeSeiGPS decodes protobuf SeiMetadata to extract latitude (field 11),
 // longitude (field 12), gear_state (field 2), autopilot_state (field 4),
-// and speed (field 3, float32).
+// speed (field 3, float32), and accelerator_pedal_position (field 5, float32).
 // Hand-parses protobuf wire format to avoid external dependencies.
-func decodeSeiGPS(data []byte) (lat, lon float64, gear uint8, apState uint8, speed float32, ok bool) {
+func decodeSeiGPS(data []byte) (lat, lon float64, gear uint8, apState uint8, speed float32, accelPos float32, ok bool) {
 	i := 0
 	for i < len(data) {
 		tag, n := decodeVarint(data[i:])
@@ -212,7 +214,7 @@ func decodeSeiGPS(data []byte) (lat, lon float64, gear uint8, apState uint8, spe
 		case 0: // varint
 			val, vn := decodeVarint(data[i:])
 			if vn == 0 {
-				return 0, 0, 0, 0, 0, false
+				return 0, 0, 0, 0, 0, 0, false
 			}
 			i += vn
 			if fieldNum == 2 {
@@ -222,7 +224,7 @@ func decodeSeiGPS(data []byte) (lat, lon float64, gear uint8, apState uint8, spe
 			}
 		case 1: // 64-bit (fixed64, double)
 			if i+8 > len(data) {
-				return 0, 0, 0, 0, 0, false
+				return 0, 0, 0, 0, 0, 0, false
 			}
 			bits := binary.LittleEndian.Uint64(data[i : i+8])
 			val := math.Float64frombits(bits)
@@ -235,19 +237,23 @@ func decodeSeiGPS(data []byte) (lat, lon float64, gear uint8, apState uint8, spe
 		case 2: // length-delimited
 			length, vn := decodeVarint(data[i:])
 			if vn == 0 {
-				return 0, 0, 0, 0, 0, false
+				return 0, 0, 0, 0, 0, 0, false
 			}
 			i += vn + int(length)
 		case 5: // 32-bit (fixed32, float)
 			if i+4 > len(data) {
-				return 0, 0, 0, 0, 0, false
+				return 0, 0, 0, 0, 0, 0, false
 			}
 			if fieldNum == 3 {
 				speed = decodeFloat32LE(data[i : i+4])
+			} else if fieldNum == 5 {
+				// accelerator_pedal_position — Tesla does not record FSD-commanded
+				// input here, so any value > 0 while autopilot is active is the human.
+				accelPos = decodeFloat32LE(data[i : i+4])
 			}
 			i += 4
 		default:
-			return 0, 0, 0, 0, 0, false
+			return 0, 0, 0, 0, 0, 0, false
 		}
 	}
 
@@ -256,7 +262,7 @@ func decodeSeiGPS(data []byte) (lat, lon float64, gear uint8, apState uint8, spe
 		!(lat == 0 && lon == 0) &&
 		math.Abs(lat) <= 90 && math.Abs(lon) <= 180
 
-	return lat, lon, gear, apState, speed, ok
+	return lat, lon, gear, apState, speed, accelPos, ok
 }
 
 // decodeVarint reads a protobuf varint from data. Returns value and bytes consumed.

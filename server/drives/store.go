@@ -33,6 +33,7 @@ type Route struct {
 	GearStates      []uint8    `json:"gearStates,omitempty"`
 	AutopilotStates []uint8    `json:"autopilotStates,omitempty"`
 	Speeds          []float32  `json:"speeds,omitempty"`
+	AccelPositions  []float32  `json:"accelPositions,omitempty"`
 	RawParkCount    int        `json:"rawParkCount,omitempty"`
 	RawFrameCount   int        `json:"rawFrameCount,omitempty"`
 	GearRuns        []GearRun  `json:"gearRuns,omitempty"`
@@ -145,9 +146,10 @@ func (s *Store) ProcessedSet() map[string]bool {
 // gears is a parallel slice of gear states (same length as points); may be nil for legacy data.
 // apStates is a parallel slice of autopilot states (0=off, >0=engaged).
 // speeds is a parallel slice of speeds in m/s.
+// accelPositions is a parallel slice of accelerator pedal positions (0-1 or 0-100 scale per firmware).
 // rawParkCount/rawFrameCount are pre-dedup counts for accurate park time estimation.
 // gearRuns stores contiguous gear transitions from raw data for intra-clip drive splitting.
-func (s *Store) AddRoute(relativePath, dateDir string, points []GPSPoint, gears []uint8, apStates []uint8, speeds []float32, rawParkCount, rawFrameCount int, gearRuns []GearRun) {
+func (s *Store) AddRoute(relativePath, dateDir string, points []GPSPoint, gears []uint8, apStates []uint8, speeds []float32, accelPositions []float32, rawParkCount, rawFrameCount int, gearRuns []GearRun) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -160,6 +162,7 @@ func (s *Store) AddRoute(relativePath, dateDir string, points []GPSPoint, gears 
 			GearStates:      gears,
 			AutopilotStates: apStates,
 			Speeds:          speeds,
+			AccelPositions:  accelPositions,
 			RawParkCount:    rawParkCount,
 			RawFrameCount:   rawFrameCount,
 			GearRuns:        gearRuns,

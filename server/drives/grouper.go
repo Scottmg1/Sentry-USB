@@ -306,6 +306,12 @@ func splitClipAtParkGaps(clip timedRoute) []clipSegment {
 			copy(segSpeeds, clip.Speeds[startIdx:endIdx])
 		}
 
+		var segAccel []float32
+		if len(clip.AccelPositions) >= endIdx {
+			segAccel = make([]float32, endIdx-startIdx)
+			copy(segAccel, clip.AccelPositions[startIdx:endIdx])
+		}
+
 		// Compute timestamp offset for this segment within the clip
 		offsetDuration := time.Duration(startFrac * float64(60*time.Second))
 
@@ -318,6 +324,7 @@ func splitClipAtParkGaps(clip timedRoute) []clipSegment {
 					GearStates:      segGears,
 					AutopilotStates: segAP,
 					Speeds:          segSpeeds,
+					AccelPositions:  segAccel,
 				},
 				timestamp: clip.timestamp.Add(offsetDuration),
 			},
@@ -460,7 +467,9 @@ func buildDriveStats(clips []timedRoute, idx int) Drive {
 		lat, lng float64
 		timeMs   float64
 		apState  uint8
+		gear     uint8
 		seiSpeed float32
+		accelPos float32
 	}
 	var allPoints []annotatedPoint
 
@@ -469,7 +478,9 @@ func buildDriveStats(clips []timedRoute, idx int) Drive {
 		n := len(clip.Points)
 		clipDurationMs := float64(60000)
 		hasAP := len(clip.AutopilotStates) == n
+		hasGears := len(clip.GearStates) == n
 		hasSpeeds := len(clip.Speeds) == n
+		hasAccel := len(clip.AccelPositions) == n
 		for i := 0; i < n; i++ {
 			var t float64
 			if n > 1 {
@@ -485,8 +496,14 @@ func buildDriveStats(clips []timedRoute, idx int) Drive {
 			if hasAP {
 				ap.apState = clip.AutopilotStates[i]
 			}
+			if hasGears {
+				ap.gear = clip.GearStates[i]
+			}
 			if hasSpeeds {
 				ap.seiSpeed = clip.Speeds[i]
+			}
+			if hasAccel {
+				ap.accelPos = clip.AccelPositions[i]
 			}
 			allPoints = append(allPoints, ap)
 		}
@@ -550,12 +567,19 @@ func buildDriveStats(clips []timedRoute, idx int) Drive {
 	var fsdDistanceM float64
 
 	if hasFSDData && len(allPoints) > 1 {
-		// Track FSD engagement transitions
-		// A disengagement = transition from engaged (>0) to off (0)
-		// An accel push = speed increase > 1 m/s while FSD engaged,
-		//   but not within 2 seconds of engaging (grace period)
-		var lastEngageTimeMs float64
-		const graceMs = 2000.0
+		// Track FSD engagement transitions.
+		//
+		// Disengagement: transition from engaged (>0) to off (0), BUT not counted
+		// if the car enters Park within 2 seconds — that means FSD completed a
+		// parking maneuver (AutoPark / Smart Summon) and wasn't overridden by the driver.
+		//
+		// Accel press: pedal position rises above 1% while FSD is active, then
+		// returns to 0%. Tesla does not record FSD-commanded pedal input, so any
+		// reading > 0% while autopilot is active is always the human driver.
+		var inAccelPress bool
+
+		var pendingDisengage bool    // a disengagement is waiting for the 2-second Park check
+		var pendingDisengageTimeMs float64
 
 		for i := 1; i < len(allPoints); i++ {
 			prev := allPoints[i-1]
@@ -566,9 +590,22 @@ func buildDriveStats(clips []timedRoute, idx int) Drive {
 			prevEngaged := prev.apState != AutopilotOff
 			curEngaged := cur.apState != AutopilotOff
 
-			// Track when FSD was engaged
+			// Resolve any pending disengagement
+			if pendingDisengage {
+				timeSince := cur.timeMs - pendingDisengageTimeMs
+				if cur.gear == GearPark && timeSince <= 2000.0 {
+					// FSD parked the car — not a driver disengagement
+					pendingDisengage = false
+				} else if timeSince > 2000.0 || curEngaged {
+					// 2-second window passed with no Park, or FSD re-engaged — real disengagement
+					fsdDisengagements++
+					pendingDisengage = false
+				}
+			}
+
+			// Track FSD engagement
 			if !prevEngaged && curEngaged {
-				lastEngageTimeMs = cur.timeMs
+				inAccelPress = false
 			}
 
 			// Count engaged time and distance
@@ -577,17 +614,37 @@ func buildDriveStats(clips []timedRoute, idx int) Drive {
 				fsdDistanceM += d
 			}
 
-			// Detect disengagement
+			// Detect disengagement — defer counting until we know if Park follows
 			if prevEngaged && !curEngaged {
-				fsdDisengagements++
+				pendingDisengage = true
+				pendingDisengageTimeMs = cur.timeMs
+				inAccelPress = false
 			}
 
-			// Detect accelerator push: speed increase while FSD engaged, past grace period
-			if curEngaged && (cur.timeMs-lastEngageTimeMs) > graceMs {
-				speedDelta := float64(cur.seiSpeed) - float64(prev.seiSpeed)
-				if speedDelta > 1.0 {
-					fsdAccelPushes++
-				}
+			// Normalize pedal position to 0-100% range.
+			// Tesla firmware may encode as 0-1 or 0-100 depending on version.
+			accelPct := float64(cur.accelPos)
+			if accelPct <= 1.0 {
+				accelPct *= 100.0
+			}
+
+			// Detect start of a human accelerator press while FSD is active
+			if curEngaged && !inAccelPress && accelPct > 1.0 {
+				inAccelPress = true
+			}
+
+			// Press is complete when pedal returns to 0%
+			if inAccelPress && accelPct <= 0.0 {
+				fsdAccelPushes++
+				inAccelPress = false
+			}
+		}
+
+		// Flush any disengagement still pending at the end of the drive.
+		// If the last point is Park the car was parked by FSD; otherwise count it.
+		if pendingDisengage && len(allPoints) > 0 {
+			if allPoints[len(allPoints)-1].gear != GearPark {
+				fsdDisengagements++
 			}
 		}
 	}
