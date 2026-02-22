@@ -120,17 +120,18 @@ export default function Files() {
         setFiles([])
       } else {
         const data: FileEntry[] = await res.json()
-        // Auto-navigate into the sole subfolder when at a drive's base path
-        // (Music/LightShow/Boombox disk images have a single root folder)
-        if (
-          activeDrive &&
-          path === activeDrive.base &&
-          data.length === 1 &&
-          data[0].is_dir
-        ) {
-          setEffectiveBase(data[0].path)
-          setCurrentPath(data[0].path)
-          return
+        // Auto-navigate into the matching subfolder when at a drive's base path
+        // (Music/LightShow/Boombox disk images have a root folder matching the
+        // drive name, possibly alongside hidden macOS/Tesla metadata folders)
+        if (activeDrive && path === activeDrive.base) {
+          const match = data.find(
+            (e) => e.is_dir && e.name === activeDrive.id
+          )
+          if (match) {
+            setEffectiveBase(match.path)
+            setCurrentPath(match.path)
+            return
+          }
         }
         setFiles(data)
       }
