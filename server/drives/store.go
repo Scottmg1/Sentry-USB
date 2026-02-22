@@ -149,25 +149,40 @@ func (s *Store) ProcessedSet() map[string]bool {
 // accelPositions is a parallel slice of accelerator pedal positions (0-1 or 0-100 scale per firmware).
 // rawParkCount/rawFrameCount are pre-dedup counts for accurate park time estimation.
 // gearRuns stores contiguous gear transitions from raw data for intra-clip drive splitting.
+//
+// If a route for relativePath already exists it is replaced in-place (upsert),
+// so reprocessing a file overwrites its old data rather than duplicating it.
 func (s *Store) AddRoute(relativePath, dateDir string, points []GPSPoint, gears []uint8, apStates []uint8, speeds []float32, accelPositions []float32, rawParkCount, rawFrameCount int, gearRuns []GearRun) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	s.data.ProcessedFiles = append(s.data.ProcessedFiles, relativePath)
-	if len(points) > 0 {
-		s.data.Routes = append(s.data.Routes, Route{
-			File:            relativePath,
-			Date:            dateDir,
-			Points:          points,
-			GearStates:      gears,
-			AutopilotStates: apStates,
-			Speeds:          speeds,
-			AccelPositions:  accelPositions,
-			RawParkCount:    rawParkCount,
-			RawFrameCount:   rawFrameCount,
-			GearRuns:        gearRuns,
-		})
+	if len(points) == 0 {
+		return
 	}
+
+	newRoute := Route{
+		File:            relativePath,
+		Date:            dateDir,
+		Points:          points,
+		GearStates:      gears,
+		AutopilotStates: apStates,
+		Speeds:          speeds,
+		AccelPositions:  accelPositions,
+		RawParkCount:    rawParkCount,
+		RawFrameCount:   rawFrameCount,
+		GearRuns:        gearRuns,
+	}
+
+	// Upsert: replace existing route for this file path if present.
+	norm := strings.ReplaceAll(relativePath, "\\", "/")
+	for i, r := range s.data.Routes {
+		if strings.ReplaceAll(r.File, "\\", "/") == norm {
+			s.data.Routes[i] = newRoute
+			return
+		}
+	}
+	s.data.Routes = append(s.data.Routes, newRoute)
 }
 
 // MarkProcessed marks a file as processed without adding route data (e.g. no GPS found).
@@ -283,13 +298,16 @@ func (s *Store) GetAllTagNames() []string {
 	return names
 }
 
-// ClearProcessedForReprocess clears all processed files and routes so every
-// clip on disk is eligible for re-extraction.  Drive tags are preserved.
+// ClearProcessedForReprocess clears the processed-files list so every clip
+// found on disk is eligible for re-extraction.  Existing route data is
+// intentionally kept: clips that no longer exist on disk retain their
+// previously extracted data, while clips that are found and re-scanned
+// have their routes overwritten in-place by AddRoute's upsert behaviour.
+// Drive tags are preserved.
 func (s *Store) ClearProcessedForReprocess() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.data.ProcessedFiles = nil
-	s.data.Routes = nil
 }
 
 // ArchivePath returns the path where drive data is backed up on the archive mount.
