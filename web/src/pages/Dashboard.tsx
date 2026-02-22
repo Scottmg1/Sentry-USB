@@ -85,6 +85,7 @@ export default function Dashboard() {
   const [archiveProgress, setArchiveProgress] = useState<ProcessProgress | null>(null)
   const [processing, setProcessing] = useState(false)
   const [processProgress, setProcessProgress] = useState<ProcessProgress | null>(null)
+  const [metric, setMetric] = useState(false)
 
   const active = archiveProgress !== null || processing
 
@@ -130,6 +131,16 @@ export default function Dashboard() {
 
     fetchStatus()
     fetchDriveStats()
+    fetch("/api/setup/config")
+      .then((r) => r.json())
+      .then((cfg) => {
+        const entry = cfg.DRIVE_MAP_UNIT
+        if (entry) {
+          const val = typeof entry === "object" ? entry.value : entry
+          setMetric(val === "km")
+        }
+      })
+      .catch(() => {})
     const statusInterval = setInterval(fetchStatus, 4000)
     const statsInterval = setInterval(fetchDriveStats, 5000)
 
@@ -332,8 +343,8 @@ export default function Dashboard() {
               <div>
                 <p className="text-xs text-slate-500">Distance</p>
                 <p className="mt-0.5 text-lg font-semibold text-slate-100">
-                  {driveStats.total_distance_mi.toFixed(1)}{" "}
-                  <span className="text-sm font-normal text-slate-400">mi</span>
+                  {metric ? driveStats.total_distance_km.toFixed(1) : driveStats.total_distance_mi.toFixed(1)}{" "}
+                  <span className="text-sm font-normal text-slate-400">{metric ? "km" : "mi"}</span>
                 </p>
               </div>
             </div>
@@ -355,8 +366,8 @@ export default function Dashboard() {
                 <div>
                   <p className="text-xs text-emerald-400/70">FSD Distance</p>
                   <p className="mt-0.5 text-lg font-semibold text-emerald-400">
-                    {driveStats.fsd_distance_mi.toFixed(1)}{" "}
-                    <span className="text-sm font-normal text-emerald-400/60">mi</span>
+                    {metric ? driveStats.fsd_distance_km.toFixed(1) : driveStats.fsd_distance_mi.toFixed(1)}{" "}
+                    <span className="text-sm font-normal text-emerald-400/60">{metric ? "km" : "mi"}</span>
                   </p>
                 </div>
               </div>
