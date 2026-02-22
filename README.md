@@ -44,19 +44,6 @@ Then open `http://sentryusb.local` and complete the Setup Wizard.
 
 See [Raspberry Pi Setup Guide](doc/RaspberryPiSetup.md) for detailed instructions.
 
-### Fix WiFi/AP after setup (existing installs)
-
-If you completed setup before a recent update and **WiFi or the access point stops working after reboot** (e.g. "brcmf_cfg80211_stop_ap" or dnsmasq "Read-only file system" in logs), the read-only root networking fix can be applied without re-running the full setup. From a shell (SSH or serial/console):
-
-```bash
-sudo -i
-/root/bin/setup-sentryusb fix_networking
-# then reboot
-reboot
-```
-
-This updates fstab and networking paths so WiFi and Ethernet work even when the mutable partition (e.g. on USB) is slow to mount. Safe to run multiple times.
-
 ## Development
 
 ### Frontend (React)
