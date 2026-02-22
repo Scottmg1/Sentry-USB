@@ -15,16 +15,6 @@ SentryUSB turns a Raspberry Pi (or compatible SBC) into a smart USB drive for yo
 - **Keep-Awake** — BLE, TeslaFi, Tessie, and Webhook methods
 - **10+ Notification Providers** — Pushover, Discord, Telegram, Slack, Signal, Matrix, AWS SNS, IFTTT, Gotify, Webhooks
 
-## Architecture
-
-```
-Browser (React SPA)  ←→  Go API Server (single ARM binary)  ←→  Shell Scripts + Pi Hardware
-```
-
-- **Frontend**: React + Vite + TailwindCSS — builds to static files
-- **Backend**: Go HTTP server with REST API + WebSocket for live updates
-- **Legacy**: Existing bash scripts preserved; Go shells out to them
-
 ## Documentation
 
 - **[Wiki](https://github.com/Scottmg1/Sentry-USB/wiki)** — Getting Started, Setup Wizard Guide, Archive Methods, Notifications, Troubleshooting, FAQ, Developer Guide
@@ -113,6 +103,17 @@ SentryUSB/
 ├── setup/            # Pi setup & configuration scripts
 └── doc/              # Documentation
 ```
+
+## Architecture
+
+```
+Browser (React SPA)  ←→  Go API Server (single ARM binary)  ←→  Shell Scripts + Pi Hardware
+```
+
+- **Frontend**: React + Vite + TailwindCSS — builds to static files
+- **Backend**: Go HTTP server with REST API + WebSocket for live updates
+- **Legacy**: Existing bash scripts preserved; Go shells out to them
+
 
 ## Based On
 
