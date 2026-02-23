@@ -35,29 +35,6 @@ func RunWithTimeout(timeout time.Duration, name string, args ...string) (string,
 	return stdout.String(), nil
 }
 
-// RunScript executes a shell script at the given path.
-func RunScript(scriptPath string) (string, error) {
-	return Run("bash", scriptPath)
-}
-
-// RunCGI executes a CGI script and returns its body (stripping HTTP headers).
-func RunCGI(scriptPath string) (string, error) {
-	output, err := Run("bash", scriptPath)
-	if err != nil {
-		return "", err
-	}
-
-	// CGI scripts output HTTP headers followed by a blank line then the body.
-	// Find the blank line separator.
-	idx := bytes.Index([]byte(output), []byte("\n\n"))
-	if idx >= 0 {
-		return output[idx+2:], nil
-	}
-
-	// If no header separator found, return the whole output
-	return output, nil
-}
-
 // curlProgressRe matches curl's progress meter lines that leak into stderr.
 var curlProgressRe = regexp.MustCompile(`(?m)^\s*%\s+Total.*$|^\s*\d+\s+\d+\s+\d+\s+\d+\s+\d+\s+\d+.*$`)
 

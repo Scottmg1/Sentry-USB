@@ -31,26 +31,6 @@ export interface PiStatus {
   ether_speed: string
 }
 
-export interface PiConfig {
-  has_cam: string
-  has_music: string
-  has_lightshow: string
-  has_boombox: string
-  uses_ble: string
-}
-
-export interface SetupConfig {
-  [key: string]: string
-}
-
-export interface FileEntry {
-  name: string
-  path: string
-  is_dir: boolean
-  size: number
-  modified: string
-}
-
 export interface DriveStats {
   drives_count: number
   routes_count: number
@@ -76,34 +56,6 @@ export interface DriveStatus {
   archiving?: boolean
 }
 
-export interface FSDDayStats {
-  date: string
-  dayName: string
-  disengagements: number
-  accelPushes: number
-  fsdPercent: number
-  drives: number
-}
-
-export interface FSDAnalytics {
-  period: string
-  period_start: string
-  total_drives: number
-  fsd_sessions: number
-  fsd_percent: number
-  today_percent: number
-  best_day: string
-  best_day_percent: number
-  fsd_engaged_ms: number
-  fsd_distance_km: number
-  fsd_distance_mi: number
-  total_distance_km: number
-  total_distance_mi: number
-  disengagements: number
-  accel_pushes: number
-  daily: FSDDayStats[]
-}
-
 export interface EventMeta {
   timestamp?: string
   city?: string
@@ -127,48 +79,6 @@ export interface ClipEntry {
 
 export const api = {
   getStatus: () => request<PiStatus>("/status"),
-  getConfig: () => request<PiConfig>("/config"),
-  getSetupConfig: () => request<SetupConfig>("/setup/config"),
-  saveSetupConfig: (config: SetupConfig) =>
-    request<{ success: boolean }>("/setup/config", {
-      method: "PUT",
-      body: JSON.stringify(config),
-    }),
-  runSetup: () =>
-    request<{ success: boolean }>("/setup/run", { method: "POST" }),
   getDriveStats: () => request<DriveStats>("/drives/stats"),
   getDriveStatus: () => request<DriveStatus>("/drives/status"),
-  getFSDAnalytics: (period?: string) =>
-    request<FSDAnalytics>(`/drives/fsd-analytics${period ? `?period=${period}` : ""}`),
-  processNewDrives: (throttleMs = 15) =>
-    request<{ status: string }>("/drives/process", {
-      method: "POST",
-      body: JSON.stringify({ throttle_ms: throttleMs }),
-    }),
-  reprocessAllDrives: () =>
-    request<{ status: string }>("/drives/reprocess", { method: "POST" }),
-  reprocessFromArchive: () =>
-    request<{ status: string }>("/drives/reprocess-archive", { method: "POST" }),
-  getClips: () => request<ClipGroup[]>("/clips"),
-  listFiles: (path: string) =>
-    request<FileEntry[]>(`/files/ls?path=${encodeURIComponent(path)}`),
-  deleteFile: (path: string) =>
-    request<{ success: boolean }>(`/files?path=${encodeURIComponent(path)}`, {
-      method: "DELETE",
-    }),
-  createDir: (path: string) =>
-    request<{ success: boolean }>("/files/mkdir", {
-      method: "POST",
-      body: JSON.stringify({ path }),
-    }),
-  reboot: () => request<{ success: boolean }>("/system/reboot", { method: "POST" }),
-  toggleDrives: () =>
-    request<{ success: boolean }>("/system/toggle-drives", { method: "POST" }),
-  triggerSync: () =>
-    request<{ success: boolean }>("/system/trigger-sync", { method: "POST" }),
-  blePair: () =>
-    request<{ success: boolean }>("/system/ble-pair", { method: "POST" }),
-  bleStatus: () => request<{ status: string }>("/system/ble-status"),
-  refreshDiagnostics: () =>
-    request<{ success: boolean }>("/diagnostics/refresh", { method: "POST" }),
 }
