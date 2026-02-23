@@ -14,7 +14,7 @@ readonly gadget_root="$configfs_root/usb_gadget/sentryusb"
 if [ ! -d "$gadget_root" ]
 then
   echo "already released"
-  exit 2
+  exit 0
 fi
 
 echo > "$gadget_root/UDC" || true

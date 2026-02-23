@@ -872,8 +872,8 @@ function archive_clips () {
   fi
 
   touch /tmp/flag_post_archive  #Set post-archive flag for optional temperature logging
-  /root/bin/post-archive-process.sh || log "ERROR: post-archive-process.sh failed (exit $?)"
   clear_archive_status
+  /root/bin/post-archive-process.sh || log "ERROR: post-archive-process.sh failed (exit $?)"
   /root/bin/disconnect-archive.sh
 }
 
