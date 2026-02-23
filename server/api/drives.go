@@ -186,6 +186,20 @@ func (dh *DriveHandlers) listTags(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, dh.store.GetAllTagNames())
 }
 
+// archiveLog appends a timestamped [drive-map] entry to the archiveloop log file,
+// matching the format used by post-archive-process.sh so manual processing
+// events appear alongside automatic archive events.
+func archiveLog(format string, args ...interface{}) {
+	const logPath = "/mutable/archiveloop.log"
+	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	msg := fmt.Sprintf(format, args...)
+	fmt.Fprintf(f, "%s: [drive-map] %s\n", time.Now().Format("Mon 02 Jan 15:04:05 MST 2006"), msg)
+}
+
 // isArchiving returns true if the archiveloop is currently archiving files.
 func isArchiving() bool {
 	archive := readArchiveStatus()
@@ -196,10 +210,21 @@ func isArchiving() bool {
 	return phase == "archiving"
 }
 
+// awakeShellPreamble sources the system config (so TESSIE_API_TOKEN, TESLA_BLE_VIN,
+// SENTRY_CASE etc. are available) and defines a fallback log() function.
+// awake_start/awake_stop rely on both being present but neither is set when the
+// scripts are invoked directly from the Go server (as opposed to from archiveloop).
+const awakeShellPreamble = `source /root/bin/envsetup.sh 2>/dev/null || true
+declare -F log > /dev/null 2>&1 || {
+  function log { echo "$(date): $*" >> "${LOG_FILE:-/mutable/archiveloop.log}" 2>/dev/null || true; }
+  export -f log
+}
+`
+
 // startKeepAwake runs awake_start in the background to keep the car from sleeping.
 func startKeepAwake() {
 	go func() {
-		cmd := exec.Command("/root/bin/awake_start")
+		cmd := exec.Command("/bin/bash", "-c", awakeShellPreamble+"/root/bin/awake_start")
 		if err := cmd.Run(); err != nil {
 			log.Printf("[drives] Warning: awake_start failed: %v", err)
 		}
@@ -209,7 +234,7 @@ func startKeepAwake() {
 // stopKeepAwake runs awake_stop to allow the car to sleep again.
 func stopKeepAwake() {
 	go func() {
-		cmd := exec.Command("/root/bin/awake_stop")
+		cmd := exec.Command("/bin/bash", "-c", awakeShellPreamble+"/root/bin/awake_stop")
 		if err := cmd.Run(); err != nil {
 			log.Printf("[drives] Warning: awake_stop failed: %v", err)
 		}
@@ -260,6 +285,7 @@ func (dh *DriveHandlers) processFiles(w http.ResponseWriter, r *http.Request) {
 		startKeepAwake()
 		defer stopKeepAwake()
 
+		archiveLog("Starting drive processing on %s", body.ClipsDir)
 		dh.hub.Broadcast("drive_process", map[string]interface{}{
 			"status": "started", "clips_dir": body.ClipsDir,
 		})
@@ -276,11 +302,14 @@ func (dh *DriveHandlers) processFiles(w http.ResponseWriter, r *http.Request) {
 		)
 
 		if err != nil {
+			archiveLog("Drive processing error: %v", err)
 			dh.hub.Broadcast("drive_process", map[string]interface{}{
 				"status": "error", "error": err.Error(),
 			})
 			return
 		}
+		archiveLog("Drive processing complete. Files: %d, GPS: %d, Drives: %d, Errors: %d (%s)",
+			result.FilesNew, result.FilesWithGPS, result.DrivesFound, result.Errors, result.Duration)
 
 		// Sync drive data to archive mount (best-effort)
 		if err := dh.store.SyncToArchive(); err != nil {
@@ -328,6 +357,7 @@ func (dh *DriveHandlers) reprocessAll(w http.ResponseWriter, r *http.Request) {
 		startKeepAwake()
 		defer stopKeepAwake()
 
+		archiveLog("Starting reprocess (all) on %s", clipsDir)
 		dh.hub.Broadcast("drive_process", map[string]interface{}{
 			"status": "started", "clips_dir": clipsDir, "mode": "reprocess",
 		})
@@ -342,11 +372,14 @@ func (dh *DriveHandlers) reprocessAll(w http.ResponseWriter, r *http.Request) {
 		)
 
 		if err != nil {
+			archiveLog("Reprocess error: %v", err)
 			dh.hub.Broadcast("drive_process", map[string]interface{}{
 				"status": "error", "error": err.Error(),
 			})
 			return
 		}
+		archiveLog("Reprocess complete. Files: %d, GPS: %d, Drives: %d, Errors: %d (%s)",
+			result.FilesNew, result.FilesWithGPS, result.DrivesFound, result.Errors, result.Duration)
 
 		if err := dh.store.SyncToArchive(); err != nil {
 			log.Printf("[drives] Warning: failed to sync to archive: %v", err)
@@ -396,6 +429,7 @@ func (dh *DriveHandlers) reprocessFromArchive(w http.ResponseWriter, r *http.Req
 		startKeepAwake()
 		defer stopKeepAwake()
 
+		archiveLog("Starting reprocess from archive on %s", archiveClipsDir)
 		dh.hub.Broadcast("drive_process", map[string]interface{}{
 			"status": "started", "clips_dir": archiveClipsDir, "mode": "reprocess-archive",
 		})
@@ -410,11 +444,14 @@ func (dh *DriveHandlers) reprocessFromArchive(w http.ResponseWriter, r *http.Req
 		)
 
 		if err != nil {
+			archiveLog("Reprocess from archive error: %v", err)
 			dh.hub.Broadcast("drive_process", map[string]interface{}{
 				"status": "error", "error": err.Error(),
 			})
 			return
 		}
+		archiveLog("Reprocess from archive complete. Files: %d, GPS: %d, Drives: %d, Errors: %d (%s)",
+			result.FilesNew, result.FilesWithGPS, result.DrivesFound, result.Errors, result.Duration)
 
 		if err := dh.store.SyncToArchive(); err != nil {
 			log.Printf("[drives] Warning: failed to sync to archive: %v", err)

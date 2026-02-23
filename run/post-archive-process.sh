@@ -30,12 +30,33 @@ function process_clips_dir() {
   local clips_dir="$1"
   log "Starting drive processing on $clips_dir"
 
-  RESPONSE=$(curl -sf -X POST "${API_URL}/api/drives/process" \
-    -H "Content-Type: application/json" \
-    -d "{\"clips_dir\": \"${clips_dir}\", \"throttle_ms\": 20}" 2>&1)
+  # Retry up to 6 times (60s) if the server is busy (409 = already running or archiving)
+  local max_retries=6
+  local retry_wait=10
+  local attempt=0
+  local HTTP_CODE RESPONSE
 
-  if [ $? -ne 0 ]; then
-    log "Failed to trigger processing for $clips_dir: $RESPONSE"
+  while [ $attempt -lt $max_retries ]; do
+    HTTP_CODE=$(curl -s -o /tmp/drive_process_response.json -w "%{http_code}" \
+      -X POST "${API_URL}/api/drives/process" \
+      -H "Content-Type: application/json" \
+      -d "{\"clips_dir\": \"${clips_dir}\", \"throttle_ms\": 20}" 2>/dev/null)
+    RESPONSE=$(cat /tmp/drive_process_response.json 2>/dev/null)
+
+    if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "202" ]; then
+      break
+    elif [ "$HTTP_CODE" = "409" ]; then
+      attempt=$((attempt + 1))
+      log "Processing busy (409), retrying in ${retry_wait}s (attempt $attempt/$max_retries): $RESPONSE"
+      sleep $retry_wait
+    else
+      log "Failed to trigger processing for $clips_dir (HTTP $HTTP_CODE): $RESPONSE"
+      return 1
+    fi
+  done
+
+  if [ $attempt -ge $max_retries ]; then
+    log "Failed to trigger processing for $clips_dir: still busy after ${max_retries} retries"
     return 1
   fi
 
