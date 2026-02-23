@@ -97,17 +97,23 @@ export default function Viewer() {
   const [focusedCamera, setFocusedCamera] = useState<string | null>(null)
   const [playbackSpeed, setPlaybackSpeed] = useState(1)
   const [currentTime, setCurrentTime] = useState(0)
-  const [duration, setDuration] = useState(0)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [showPromo, setShowPromo] = useState(true)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
+  const [segmentDurations, setSegmentDurations] = useState<number[]>([])
 
   const videoRefs = useRef<Map<string, HTMLVideoElement>>(new Map())
   const masterVideoRef = useRef<HTMLVideoElement | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const seekBarRef = useRef<HTMLDivElement>(null)
   const animFrameRef = useRef<number>(0)
+  const pendingSeekRef = useRef<number | null>(null)
+
+  // Continuous timeline across all segments
+  const priorSegmentsTime = segmentDurations.slice(0, currentSetIdx).reduce((a, b) => a + b, 0)
+  const globalTime = priorSegmentsTime + currentTime
+  const totalDuration = segmentDurations.reduce((a, b) => a + b, 0)
 
   // Fetch clips
   useEffect(() => {
@@ -127,10 +133,33 @@ export default function Viewer() {
       setCurrentSetIdx(0)
       setPlaying(false)
       setFocusedCamera(null)
+      pendingSeekRef.current = null
       setCurrentTime(0)
-      setDuration(0)
     }
   }, [selectedClip])
+
+  // Preload segment durations for continuous timeline
+  useEffect(() => {
+    if (!clipSets.length) { setSegmentDurations([]); return }
+    const durations = new Array(clipSets.length).fill(60)
+    setSegmentDurations([...durations])
+    const cleanups: (() => void)[] = []
+    clipSets.forEach((set, i) => {
+      const url = set.cameras["front"] || Object.values(set.cameras)[0]
+      if (!url) return
+      const v = document.createElement("video")
+      v.preload = "metadata"
+      v.src = url
+      v.onloadedmetadata = () => {
+        if (Number.isFinite(v.duration)) {
+          durations[i] = v.duration
+          setSegmentDurations([...durations])
+        }
+      }
+      cleanups.push(() => { v.src = ""; v.remove() })
+    })
+    return () => cleanups.forEach((c) => c())
+  }, [clipSets])
 
   const currentSet = clipSets[currentSetIdx]
 
@@ -152,9 +181,6 @@ export default function Viewer() {
       const master = masterVideoRef.current
       if (master) {
         setCurrentTime(master.currentTime)
-        if (master.duration && Number.isFinite(master.duration)) {
-          setDuration(master.duration)
-        }
       }
       animFrameRef.current = requestAnimationFrame(tick)
     }
@@ -183,10 +209,7 @@ export default function Viewer() {
     if (!currentSet || !playing) return
     const timer = setTimeout(() => {
       videoRefs.current.forEach((v) => {
-        if (v) {
-          v.currentTime = 0
-          v.play().catch(() => {})
-        }
+        if (v) v.play().catch(() => {})
       })
     }, 100)
     return () => clearTimeout(timer)
@@ -209,36 +232,35 @@ export default function Viewer() {
     setPlaying(!wasPlaying)
   }, [playing])
 
+  const seekToGlobal = useCallback((globalT: number) => {
+    const clamped = Math.max(0, Math.min(globalT, totalDuration))
+    let remaining = clamped
+    for (let i = 0; i < segmentDurations.length; i++) {
+      if (remaining <= segmentDurations[i] + 0.05 || i === segmentDurations.length - 1) {
+        const offset = Math.min(remaining, segmentDurations[i])
+        if (i !== currentSetIdx) {
+          pendingSeekRef.current = offset
+          setCurrentSetIdx(i)
+        } else {
+          syncVideos(offset)
+        }
+        return
+      }
+      remaining -= segmentDurations[i]
+    }
+  }, [segmentDurations, totalDuration, currentSetIdx, syncVideos])
+
   const skip = useCallback((seconds: number) => {
-    const master = masterVideoRef.current
-    if (!master) return
-    const newTime = Math.max(0, Math.min(master.duration, master.currentTime + seconds))
-    syncVideos(newTime)
-  }, [syncVideos])
+    seekToGlobal(globalTime + seconds)
+  }, [globalTime, seekToGlobal])
 
   const handleSeek = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const bar = seekBarRef.current
-    const master = masterVideoRef.current
-    if (!bar || !master || !Number.isFinite(master.duration)) return
+    if (!bar || totalDuration <= 0) return
     const rect = bar.getBoundingClientRect()
     const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
-    const newTime = pct * master.duration
-    syncVideos(newTime)
-  }, [syncVideos])
-
-  function handlePrev() {
-    if (currentSetIdx > 0) {
-      setCurrentSetIdx(currentSetIdx - 1)
-      setCurrentTime(0)
-    }
-  }
-
-  function handleNext() {
-    if (currentSetIdx < clipSets.length - 1) {
-      setCurrentSetIdx(currentSetIdx + 1)
-      setCurrentTime(0)
-    }
-  }
+    seekToGlobal(pct * totalDuration)
+  }, [totalDuration, seekToGlobal])
 
   // Fullscreen toggle
   const toggleFullscreen = useCallback(() => {
@@ -272,14 +294,6 @@ export default function Viewer() {
         case "ArrowRight":
           e.preventDefault()
           skip(e.shiftKey ? 15 : 5)
-          break
-        case "ArrowUp":
-          e.preventDefault()
-          handleNext()
-          break
-        case "ArrowDown":
-          e.preventDefault()
-          handlePrev()
           break
         case "f":
           e.preventDefault()
@@ -331,8 +345,7 @@ export default function Viewer() {
     }
   }, [playbackSpeed])
 
-  // Progress percentage
-  const progress = duration > 0 ? (currentTime / duration) * 100 : 0
+  const progress = totalDuration > 0 ? (globalTime / totalDuration) * 100 : 0
 
   // Event metadata
   const eventMeta = selectedClip?.event
@@ -367,7 +380,7 @@ export default function Viewer() {
             <p className="mt-0.5 text-sm text-slate-500">
               Multi-camera clip viewer
               <span className="ml-2 text-[10px] text-slate-600">
-                Space: play &middot; Arrows: skip/navigate &middot; F: fullscreen
+                Space: play &middot; ←→: seek &middot; F: fullscreen
               </span>
             </p>
           </div>
@@ -571,6 +584,10 @@ export default function Viewer() {
                           onLoadedData={(e) => {
                             const v = e.currentTarget
                             v.playbackRate = playbackSpeed
+                            if (pendingSeekRef.current !== null) {
+                              v.currentTime = pendingSeekRef.current
+                              if (cam === "front" || !currentSet.cameras["front"]) pendingSeekRef.current = null
+                            }
                             if (playing) v.play().catch(() => {})
                           }}
                         />
@@ -613,11 +630,10 @@ export default function Viewer() {
                     handleSeek(e)
                     const onMove = (ev: MouseEvent) => {
                       const bar = seekBarRef.current
-                      const master = masterVideoRef.current
-                      if (!bar || !master || !Number.isFinite(master.duration)) return
+                      if (!bar || totalDuration <= 0) return
                       const rect = bar.getBoundingClientRect()
                       const pct = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width))
-                      syncVideos(pct * master.duration)
+                      seekToGlobal(pct * totalDuration)
                     }
                     const onUp = () => {
                       document.removeEventListener("mousemove", onMove)
@@ -627,18 +643,25 @@ export default function Viewer() {
                     document.addEventListener("mouseup", onUp)
                   }}
                 >
-                  <div
-                    className="h-full rounded-full bg-blue-500 transition-all"
-                    style={{ width: `${progress}%` }}
-                  >
-                    <div className="absolute -right-1 -top-0.5 hidden h-3 w-3 rounded-full bg-blue-400 shadow-lg group-hover:block" />
+                  <div className="relative h-full w-full">
+                    <div
+                      className="h-full rounded-full bg-blue-500 transition-all"
+                      style={{ width: `${progress}%` }}
+                    >
+                      <div className="absolute -right-1 -top-0.5 hidden h-3 w-3 rounded-full bg-blue-400 shadow-lg group-hover:block" />
+                    </div>
+                    {segmentDurations.length > 1 && segmentDurations.map((_, i) => {
+                      if (i === 0 || totalDuration <= 0) return null
+                      const pos = segmentDurations.slice(0, i).reduce((a, b) => a + b, 0) / totalDuration * 100
+                      return <div key={i} className="absolute top-0 h-full w-px bg-white/20" style={{ left: `${pos}%` }} />
+                    })}
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2">
                   {/* Time display */}
-                  <span className="w-20 text-xs tabular-nums text-slate-400">
-                    {formatTime(currentTime)} / {formatTime(duration)}
+                  <span className="w-28 text-xs tabular-nums text-slate-400">
+                    {formatTime(globalTime)} / {formatTime(totalDuration)}
                   </span>
 
                   {/* Skip back */}
@@ -650,16 +673,6 @@ export default function Viewer() {
                     <SkipBack className="h-3.5 w-3.5" />
                   </button>
 
-                  {/* Prev clip */}
-                  <button
-                    onClick={handlePrev}
-                    disabled={currentSetIdx === 0}
-                    className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white/5 hover:text-slate-200 disabled:opacity-30"
-                    title="Previous clip (↓)"
-                  >
-                    <ChevronLeft className="h-3.5 w-3.5" />
-                  </button>
-
                   {/* Play/Pause */}
                   <button
                     onClick={togglePlay}
@@ -667,16 +680,6 @@ export default function Viewer() {
                     title="Play/Pause (Space)"
                   >
                     {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4 translate-x-px" />}
-                  </button>
-
-                  {/* Next clip */}
-                  <button
-                    onClick={handleNext}
-                    disabled={currentSetIdx >= clipSets.length - 1}
-                    className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white/5 hover:text-slate-200 disabled:opacity-30"
-                    title="Next clip (↑)"
-                  >
-                    <ChevronRight className="h-3.5 w-3.5" />
                   </button>
 
                   {/* Skip forward */}
@@ -687,11 +690,6 @@ export default function Viewer() {
                   >
                     <SkipForward className="h-3.5 w-3.5" />
                   </button>
-
-                  {/* Clip counter */}
-                  <span className="text-[11px] tabular-nums text-slate-500">
-                    {currentSetIdx + 1}/{clipSets.length}
-                  </span>
 
                   <div className="flex-1" />
 

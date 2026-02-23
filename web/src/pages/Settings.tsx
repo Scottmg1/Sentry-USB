@@ -897,7 +897,7 @@ export default function Settings() {
           <p className="text-slate-300">
             <span className="text-slate-500">Based on:</span>{" "}
             <a
-              href="https://github.com/Scottmg1/Sentry-USB"
+              href="https://github.com/marcone/teslausb"
               target="_blank"
               rel="noopener noreferrer"
               className="text-blue-400 hover:text-blue-300"
