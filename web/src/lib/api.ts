@@ -104,6 +104,15 @@ export interface FSDAnalytics {
   daily: FSDDayStats[]
 }
 
+export interface EventMeta {
+  timestamp?: string
+  city?: string
+  reason?: string
+  camera?: string
+  latitude?: string
+  longitude?: string
+}
+
 export interface ClipGroup {
   name: string
   clips: ClipEntry[]
@@ -113,6 +122,7 @@ export interface ClipEntry {
   date: string
   path: string
   files: string[]
+  event?: EventMeta
 }
 
 export const api = {

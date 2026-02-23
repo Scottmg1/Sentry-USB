@@ -2,6 +2,7 @@ package api
 
 import (
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -234,10 +235,21 @@ func (h *handlers) speedtest(w http.ResponseWriter, r *http.Request) {
 
 func (h *handlers) getClips(w http.ResponseWriter, r *http.Request) {
 	categories := []string{"RecentClips", "SavedClips", "SentryClips"}
+
+	type eventMeta struct {
+		Timestamp string `json:"timestamp,omitempty"`
+		City      string `json:"city,omitempty"`
+		Reason    string `json:"reason,omitempty"`
+		Camera    string `json:"camera,omitempty"`
+		Latitude  string `json:"latitude,omitempty"`
+		Longitude string `json:"longitude,omitempty"`
+	}
+
 	type clipEntry struct {
-		Date  string   `json:"date"`
-		Path  string   `json:"path"`
-		Files []string `json:"files"`
+		Date  string     `json:"date"`
+		Path  string     `json:"path"`
+		Files []string   `json:"files"`
+		Event *eventMeta `json:"event,omitempty"`
 	}
 	type clipGroup struct {
 		Name  string      `json:"name"`
@@ -279,11 +291,41 @@ func (h *handlers) getClips(w http.ResponseWriter, r *http.Request) {
 
 			if len(fileNames) > 0 {
 				sort.Strings(fileNames)
-				group.Clips = append(group.Clips, clipEntry{
+				entry := clipEntry{
 					Date:  dir.Name(),
 					Path:  fmt.Sprintf("/TeslaCam/%s/%s", cat, dir.Name()),
 					Files: fileNames,
-				})
+				}
+
+				// Try to read event.json for metadata
+				eventPath := filepath.Join(clipPath, "event.json")
+				if data, err := os.ReadFile(eventPath); err == nil {
+					var raw map[string]interface{}
+					if json.Unmarshal(data, &raw) == nil {
+						meta := &eventMeta{}
+						if v, ok := raw["timestamp"].(string); ok {
+							meta.Timestamp = v
+						}
+						if v, ok := raw["city"].(string); ok {
+							meta.City = v
+						}
+						if v, ok := raw["reason"].(string); ok {
+							meta.Reason = v
+						}
+						if v, ok := raw["camera"].(string); ok {
+							meta.Camera = v
+						}
+						if v, ok := raw["est_lat"].(string); ok {
+							meta.Latitude = v
+						}
+						if v, ok := raw["est_lon"].(string); ok {
+							meta.Longitude = v
+						}
+						entry.Event = meta
+					}
+				}
+
+				group.Clips = append(group.Clips, entry)
 			}
 		}
 

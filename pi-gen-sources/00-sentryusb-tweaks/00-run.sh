@@ -12,15 +12,20 @@ touch "${ROOTFS_DIR}/boot/ssh"
 # customized and lock its settings panel. The sentryusb user is created at
 # build time, resize2fs_once is disabled below, and WiFi is handled by
 # rc.local via sentryusb.conf — so firstrun.sh is not needed.
+#
+# IMPORTANT: We keep init=/usr/lib/raspberrypi-sys-mods/firstboot in
+# cmdline.txt. This is the Bookworm+ mechanism that Raspberry Pi Imager
+# uses to apply custom.toml (WiFi, SSH, hostname). Without it, Imager
+# grays out the OS Customization panel.
 rm -f "${ROOTFS_DIR}/boot/firmware/firstrun.sh"
 rm -f "${ROOTFS_DIR}/boot/firmware/userconf.txt"
+rm -f "${ROOTFS_DIR}/boot/firmware/custom.toml"
 if [ -f "${ROOTFS_DIR}/boot/firmware/cmdline.txt" ]; then
     sed -i \
         -e 's| systemd\.run=/boot/firmware/firstrun\.sh||g' \
         -e 's| systemd\.run=/boot/firstrun\.sh||g' \
         -e 's| systemd\.run_success_action=reboot||g' \
         -e 's| systemd\.unit=kernel-command-line\.target||g' \
-        -e 's| init=/usr/lib/raspberrypi-sys-mods/firstboot||g' \
         "${ROOTFS_DIR}/boot/firmware/cmdline.txt"
 fi
 
@@ -105,7 +110,6 @@ systemctl disable resize2fs_once || true
 systemctl disable dpkg-db-backup || true
 update-rc.d resize2fs_once remove || true
 rm -f /etc/init.d/resize2fs_once
-rm -f /usr/share/initramfs-tools/scripts/local-premount/firstboot
 update-initramfs -u || true
 
 # Clean apt cache to reduce image size

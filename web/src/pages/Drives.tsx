@@ -35,9 +35,16 @@ interface DriveSummary {
   fsdDistanceMi: number
 }
 
+interface FSDEventPoint {
+  lat: number
+  lng: number
+  type: "disengagement" | "accel_push"
+}
+
 interface DriveDetail extends Omit<DriveSummary, "startPoint" | "endPoint"> {
   points: [number, number, number, number][] // [lat, lng, timeMs, speedMps]
   fsdStates?: number[] // parallel to points: 0=manual, >0=FSD engaged
+  fsdEvents?: FSDEventPoint[]
   tags?: string[]
 }
 
@@ -373,6 +380,25 @@ export default function Drives() {
         icon: L.divIcon({ className: "", html: '<div style="width:10px;height:10px;border-radius:50%;background:#ef4444;border:2px solid #fff"></div>', iconSize: [10, 10], iconAnchor: [5, 5] }),
       }).addTo(map)
       selectionLayers.current.push(startM, endM)
+
+      // Draw FSD event markers
+      if (data.fsdEvents && data.fsdEvents.length > 0) {
+        for (const ev of data.fsdEvents) {
+          const isDisengage = ev.type === "disengagement"
+          const color = isDisengage ? "#ef4444" : "#f59e0b"
+          const label = isDisengage ? "D" : "A"
+          const title = isDisengage ? "FSD Disengagement" : "Accel Push"
+          const m = L.marker([ev.lat, ev.lng], {
+            icon: L.divIcon({
+              className: "",
+              html: `<div title="${title}" style="width:16px;height:16px;border-radius:50%;background:${color};border:2px solid #fff;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:bold;color:#fff;line-height:1;box-shadow:0 0 4px rgba(0,0,0,0.5)">${label}</div>`,
+              iconSize: [16, 16],
+              iconAnchor: [8, 8],
+            }),
+          }).bindTooltip(title, { permanent: false, direction: "top", offset: [0, -10] }).addTo(map)
+          selectionLayers.current.push(m)
+        }
+      }
 
       const arrow = L.marker(latlngs[0], {
         icon: L.divIcon({
@@ -851,7 +877,7 @@ export default function Drives() {
                           <span>{formatDuration(d.durationMs)}</span>
                           <span>{avgSpd(d)}</span>
                           {d.fsdDisengagements > 0 && (
-                            <span className="text-red-400/70">{d.fsdDisengagements} disengage{d.fsdDisengagements !== 1 ? "s" : ""}</span>
+                            <span className="text-red-400/70">{d.fsdDisengagements} disengagement{d.fsdDisengagements !== 1 ? "s" : ""}</span>
                           )}
                         </div>
                         <div className="mt-1.5 flex flex-wrap items-center gap-1">
@@ -974,7 +1000,7 @@ export default function Drives() {
                         <span>{formatDuration(d.durationMs)}</span>
                         <span>{avgSpd(d)}</span>
                         {d.fsdDisengagements > 0 && (
-                          <span className="text-red-400/70">{d.fsdDisengagements} disengage{d.fsdDisengagements !== 1 ? "s" : ""}</span>
+                          <span className="text-red-400/70">{d.fsdDisengagements} disengagement{d.fsdDisengagements !== 1 ? "s" : ""}</span>
                         )}
                       </div>
                       <div className="mt-1.5 flex flex-wrap items-center gap-1">
@@ -1125,7 +1151,7 @@ export default function Drives() {
                   </div>
                   <div className="flex items-center gap-1.5 text-[11px]">
                     <span className="font-bold text-red-400">{selectedDrive.fsdDisengagements}</span>
-                    <span className="text-slate-500">Disengage{selectedDrive.fsdDisengagements !== 1 ? "s" : ""}</span>
+                    <span className="text-slate-500">Disengagement{selectedDrive.fsdDisengagements !== 1 ? "s" : ""}</span>
                   </div>
                   {selectedDrive.fsdAccelPushes > 0 && (
                     <div className="flex items-center gap-1.5 text-[11px]">

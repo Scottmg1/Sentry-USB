@@ -8,6 +8,13 @@ import (
 	"time"
 )
 
+// FSDEvent records the location of a notable FSD event (disengagement or accel push).
+type FSDEvent struct {
+	Lat  float64 `json:"lat"`
+	Lng  float64 `json:"lng"`
+	Type string  `json:"type"` // "disengagement" or "accel_push"
+}
+
 // Drive represents a logical driving session grouped from consecutive clips.
 type Drive struct {
 	ID          int        `json:"id"`
@@ -25,6 +32,7 @@ type Drive struct {
 	PointCount  int        `json:"pointCount"`
 	Points      [][4]float64 `json:"points"` // [lat, lng, timeMs, speedMps]
 	FSDStates   []uint8      `json:"fsdStates,omitempty"` // parallel to Points: 0=manual, >0=FSD engaged
+	FSDEvents   []FSDEvent   `json:"fsdEvents,omitempty"` // locations of disengagements and accel pushes
 	Tags        []string     `json:"tags,omitempty"`
 	// FSD analytics per drive
 	FSDEngagedMs      int64   `json:"fsdEngagedMs"`
@@ -565,6 +573,7 @@ func buildDriveStats(clips []timedRoute, idx int) Drive {
 	var fsdDisengagements int
 	var fsdAccelPushes int
 	var fsdDistanceM float64
+	var fsdEvents []FSDEvent
 
 	if hasFSDData && len(allPoints) > 1 {
 		// Track FSD engagement transitions.
@@ -577,9 +586,11 @@ func buildDriveStats(clips []timedRoute, idx int) Drive {
 		// returns to 0%. Tesla does not record FSD-commanded pedal input, so any
 		// reading > 0% while autopilot is active is always the human driver.
 		var inAccelPress bool
+		var accelPressLat, accelPressLng float64
 
 		var pendingDisengage bool    // a disengagement is waiting for the 2-second Park check
 		var pendingDisengageTimeMs float64
+		var pendingDisengageLat, pendingDisengageLng float64
 
 		for i := 1; i < len(allPoints); i++ {
 			prev := allPoints[i-1]
@@ -599,6 +610,7 @@ func buildDriveStats(clips []timedRoute, idx int) Drive {
 				} else if timeSince > 2000.0 || curEngaged {
 					// 2-second window passed with no Park, or FSD re-engaged — real disengagement
 					fsdDisengagements++
+					fsdEvents = append(fsdEvents, FSDEvent{Lat: pendingDisengageLat, Lng: pendingDisengageLng, Type: "disengagement"})
 					pendingDisengage = false
 				}
 			}
@@ -618,6 +630,8 @@ func buildDriveStats(clips []timedRoute, idx int) Drive {
 			if prevEngaged && !curEngaged {
 				pendingDisengage = true
 				pendingDisengageTimeMs = cur.timeMs
+				pendingDisengageLat = cur.lat
+				pendingDisengageLng = cur.lng
 				inAccelPress = false
 			}
 
@@ -631,11 +645,14 @@ func buildDriveStats(clips []timedRoute, idx int) Drive {
 			// Detect start of a human accelerator press while FSD is active
 			if curEngaged && !inAccelPress && accelPct > 1.0 {
 				inAccelPress = true
+				accelPressLat = cur.lat
+				accelPressLng = cur.lng
 			}
 
 			// Press is complete when pedal returns to 0%
 			if inAccelPress && accelPct <= 0.0 {
 				fsdAccelPushes++
+				fsdEvents = append(fsdEvents, FSDEvent{Lat: accelPressLat, Lng: accelPressLng, Type: "accel_push"})
 				inAccelPress = false
 			}
 		}
@@ -645,6 +662,7 @@ func buildDriveStats(clips []timedRoute, idx int) Drive {
 		if pendingDisengage && len(allPoints) > 0 {
 			if allPoints[len(allPoints)-1].gear != GearPark {
 				fsdDisengagements++
+				fsdEvents = append(fsdEvents, FSDEvent{Lat: pendingDisengageLat, Lng: pendingDisengageLng, Type: "disengagement"})
 			}
 		}
 	}
@@ -676,6 +694,7 @@ func buildDriveStats(clips []timedRoute, idx int) Drive {
 		PointCount:        len(allPoints),
 		Points:            pointData,
 		FSDStates:         fsdStateResult,
+		FSDEvents:         fsdEvents,
 		FSDEngagedMs:      fsdEngagedMs,
 		FSDDisengagements: fsdDisengagements,
 		FSDAccelPushes:    fsdAccelPushes,
