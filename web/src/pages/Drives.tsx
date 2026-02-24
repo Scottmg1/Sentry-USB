@@ -5,6 +5,7 @@ import {
   MapPin, Navigation, Clock, Gauge, Play,
   Download, Upload, Loader2, ChevronLeft, Search, List, X,
   Tag, Plus, Layers, BarChart3, RefreshCw, Server, AlertTriangle,
+  Eye, EyeOff,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -208,6 +209,8 @@ export default function Drives() {
   const [showProcessMenu, setShowProcessMenu] = useState(false)
   const [archiving, setArchiving] = useState(false)
   const [showFSDPanel, setShowFSDPanel] = useState(false)
+  const [showFSDMarkers, setShowFSDMarkers] = useState(true)
+  const fsdEventLayers = useRef<L.Layer[]>([])
   const [fsdAnalytics, setFsdAnalytics] = useState<FSDAnalytics | null>(null)
   const [fsdPeriod, setFsdPeriod] = useState<"day" | "week" | "trip">("week")
 
@@ -300,6 +303,7 @@ export default function Drives() {
     if (!map) return
     selectionLayers.current.forEach((l) => map.removeLayer(l))
     selectionLayers.current = []
+    fsdEventLayers.current = []
     if (arrowMarker.current) { map.removeLayer(arrowMarker.current); arrowMarker.current = null }
   }
 
@@ -384,6 +388,7 @@ export default function Drives() {
       selectionLayers.current.push(startM, endM)
 
       // Draw FSD event markers
+      fsdEventLayers.current = []
       if (data.fsdEvents && data.fsdEvents.length > 0) {
         for (const ev of data.fsdEvents) {
           const isDisengage = ev.type === "disengagement"
@@ -397,7 +402,9 @@ export default function Drives() {
               iconSize: [16, 16],
               iconAnchor: [8, 8],
             }),
-          }).bindTooltip(title, { permanent: false, direction: "top", offset: [0, -10] }).addTo(map)
+          }).bindTooltip(title, { permanent: false, direction: "top", offset: [0, -10] })
+          if (showFSDMarkers) m.addTo(map)
+          fsdEventLayers.current.push(m)
           selectionLayers.current.push(m)
         }
       }
@@ -420,6 +427,19 @@ export default function Drives() {
       // ignore
     }
   }
+
+  // Toggle FSD event markers on/off
+  useEffect(() => {
+    const map = mapInstance.current
+    if (!map) return
+    for (const layer of fsdEventLayers.current) {
+      if (showFSDMarkers) {
+        if (!map.hasLayer(layer)) layer.addTo(map)
+      } else {
+        map.removeLayer(layer)
+      }
+    }
+  }, [showFSDMarkers])
 
   function goBack() {
     setSelectedId(null)
@@ -1166,6 +1186,17 @@ export default function Drives() {
                     <span className="font-semibold text-emerald-400">{metric ? `${selectedDrive.fsdDistanceKm} km` : `${selectedDrive.fsdDistanceMi} mi`}</span>
                   </div>
                   <div className="ml-auto flex items-center gap-2 text-[10px] text-slate-600">
+                    <button
+                      onClick={() => setShowFSDMarkers(!showFSDMarkers)}
+                      className={cn(
+                        "flex items-center gap-1 rounded-full px-2 py-0.5 transition-colors",
+                        showFSDMarkers ? "bg-white/5 text-slate-400 hover:bg-white/10" : "bg-white/5 text-slate-600 hover:bg-white/10"
+                      )}
+                      title={showFSDMarkers ? "Hide event markers" : "Show event markers"}
+                    >
+                      {showFSDMarkers ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+                      Markers
+                    </button>
                     <span className="flex items-center gap-1"><span className="inline-block h-1.5 w-3 rounded-full bg-emerald-500" /> FSD</span>
                     <span className="flex items-center gap-1"><span className="inline-block h-1.5 w-3 rounded-full bg-blue-500" /> Manual</span>
                   </div>
