@@ -25,6 +25,11 @@ if ! curl -sf "${API_URL}/api/drives/status" > /dev/null 2>&1; then
   exit 0
 fi
 
+# Clear archive status so the processing API doesn't think archiving is
+# still in progress.  archive_clips is finished by the time this script
+# runs, but the status file may not have been cleaned up yet.
+rm -f /tmp/archive_status.json /tmp/archive_status.json.tmp
+
 # Process a single clips directory: trigger API, wait for completion
 function process_clips_dir() {
   local clips_dir="$1"
@@ -38,7 +43,7 @@ function process_clips_dir() {
 
   while [ $attempt -lt $max_retries ]; do
     HTTP_CODE=$(curl -s -o /tmp/drive_process_response.json -w "%{http_code}" \
-      -X POST "${API_URL}/api/drives/process" \
+      -X POST "${API_URL}/api/drives/process?post_archive=1" \
       -H "Content-Type: application/json" \
       -d "{\"clips_dir\": \"${clips_dir}\", \"throttle_ms\": 20}" 2>/dev/null)
     RESPONSE=$(cat /tmp/drive_process_response.json 2>/dev/null)

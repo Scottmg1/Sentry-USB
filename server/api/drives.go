@@ -201,7 +201,19 @@ func archiveLog(format string, args ...interface{}) {
 }
 
 // isArchiving returns true if the archiveloop is currently archiving files.
+// The archive_progress_monitor updates the status file every 5s, so if it
+// hasn't been touched in over 120s, treat it as stale (archiveloop crashed
+// or forgot to clear it).
 func isArchiving() bool {
+	const statusFile = "/tmp/archive_status.json"
+	info, err := os.Stat(statusFile)
+	if err != nil {
+		return false
+	}
+	if time.Since(info.ModTime()) > 120*time.Second {
+		os.Remove(statusFile)
+		return false
+	}
 	archive := readArchiveStatus()
 	if archive == nil {
 		return false
@@ -248,7 +260,9 @@ func (dh *DriveHandlers) processFiles(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "processing already in progress")
 		return
 	}
-	if isArchiving() {
+	// post_archive=1 is set by post-archive-process.sh which runs after
+	// archiving is complete.  Skip the stale-file check in that case.
+	if r.URL.Query().Get("post_archive") != "1" && isArchiving() {
 		writeError(w, http.StatusConflict, "archive is currently running — please wait until it finishes")
 		return
 	}
