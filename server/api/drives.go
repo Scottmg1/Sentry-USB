@@ -549,7 +549,6 @@ func (dh *DriveHandlers) driveStats(w http.ResponseWriter, r *http.Request) {
 	var totalDistKm, totalDistMi float64
 	var totalDurationMs int64
 	var totalFSDEngagedMs int64
-	var fsdCapableDurationMs int64
 	var totalFSDDistKm, totalFSDDistMi float64
 	var totalDisengagements, totalAccelPushes int
 	for _, d := range allDrives {
@@ -561,16 +560,11 @@ func (dh *DriveHandlers) driveStats(w http.ResponseWriter, r *http.Request) {
 		totalFSDDistMi += d.FSDDistanceMi
 		totalDisengagements += d.FSDDisengagements
 		totalAccelPushes += d.FSDAccelPushes
-		// Only count drives with FSD data in the percentage denominator
-		// so drives processed before FSD tracking don't dilute the metric.
-		if d.FSDEngagedMs > 0 {
-			fsdCapableDurationMs += d.DurationMs
-		}
 	}
 
 	var fsdPercent float64
-	if fsdCapableDurationMs > 0 {
-		fsdPercent = math.Round(float64(totalFSDEngagedMs)/float64(fsdCapableDurationMs)*1000) / 10
+	if totalDurationMs > 0 {
+		fsdPercent = math.Round(float64(totalFSDEngagedMs)/float64(totalDurationMs)*1000) / 10
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
