@@ -38,7 +38,8 @@ function SizeInput({
 
   const handleNumChange = (v: string) => {
     const cleaned = v.replace(/[^0-9]/g, "")
-    onChange(field, cleaned ? cleaned + unit : "")
+    // If cleared and a default exists, restore the default instead of empty
+    onChange(field, cleaned ? cleaned + unit : (defaultVal ? defaultVal : ""))
   }
 
   const handleUnitChange = (newUnit: Unit) => {

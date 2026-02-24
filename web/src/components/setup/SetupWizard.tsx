@@ -144,6 +144,7 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
   // Defaults for fields that appear pre-selected in the UI but may not exist
   // in the config file yet. Without this, untouched defaults never get saved.
   const defaults: SetupFormData = {
+    CAM_SIZE: "40",
     ARCHIVE_SAVEDCLIPS: "true",
     ARCHIVE_SENTRYCLIPS: "true",
     ARCHIVE_RECENTCLIPS: "true",
