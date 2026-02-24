@@ -349,7 +349,7 @@ func checkNetwork() healthCategory {
 	}
 
 	// Check NM dispatcher script for AP recreation
-	if _, err := os.Stat("/etc/NetworkManager/dispatcher.d/90-sentryusb-ap"); err == nil {
+	if _, err := os.Stat("/etc/NetworkManager/dispatcher.d/10-sentryusb-ap"); err == nil {
 		items = append(items, healthItem{"AP dispatcher script", statusPass, "Present"})
 	} else {
 		// Only warn if AP is configured
