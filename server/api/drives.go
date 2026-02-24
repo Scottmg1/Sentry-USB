@@ -311,11 +311,6 @@ func (dh *DriveHandlers) processFiles(w http.ResponseWriter, r *http.Request) {
 		archiveLog("Drive processing complete. Files: %d, GPS: %d, Drives: %d, Errors: %d (%s)",
 			result.FilesNew, result.FilesWithGPS, result.DrivesFound, result.Errors, result.Duration)
 
-		// Sync drive data to archive mount (best-effort)
-		if err := dh.store.SyncToArchive(); err != nil {
-			log.Printf("[drives] Warning: failed to sync to archive: %v", err)
-		}
-
 		dh.hub.Broadcast("drive_process", map[string]interface{}{
 			"status": "complete", "result": result,
 		})
@@ -380,10 +375,6 @@ func (dh *DriveHandlers) reprocessAll(w http.ResponseWriter, r *http.Request) {
 		}
 		archiveLog("Reprocess complete. Files: %d, GPS: %d, Drives: %d, Errors: %d (%s)",
 			result.FilesNew, result.FilesWithGPS, result.DrivesFound, result.Errors, result.Duration)
-
-		if err := dh.store.SyncToArchive(); err != nil {
-			log.Printf("[drives] Warning: failed to sync to archive: %v", err)
-		}
 
 		dh.hub.Broadcast("drive_process", map[string]interface{}{
 			"status": "complete", "result": result,
@@ -452,10 +443,6 @@ func (dh *DriveHandlers) reprocessFromArchive(w http.ResponseWriter, r *http.Req
 		}
 		archiveLog("Reprocess from archive complete. Files: %d, GPS: %d, Drives: %d, Errors: %d (%s)",
 			result.FilesNew, result.FilesWithGPS, result.DrivesFound, result.Errors, result.Duration)
-
-		if err := dh.store.SyncToArchive(); err != nil {
-			log.Printf("[drives] Warning: failed to sync to archive: %v", err)
-		}
 
 		dh.hub.Broadcast("drive_process", map[string]interface{}{
 			"status": "complete", "result": result,

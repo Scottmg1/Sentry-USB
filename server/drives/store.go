@@ -316,9 +316,17 @@ const archiveDataPath = "/mnt/archive/drive-data.json"
 // SyncToArchive copies the local drive data file to the archive mount.
 // This is best-effort — it silently returns nil if the archive is not mounted.
 func (s *Store) SyncToArchive() error {
-	// Check if archive is mounted
+	// Check if archive directory exists
 	if _, err := os.Stat("/mnt/archive"); err != nil {
 		return nil
+	}
+
+	// Verify it's actually a mounted filesystem (not just an empty local dir).
+	// On Linux, check /proc/mounts; on other platforms skip the check.
+	if mounts, err := os.ReadFile("/proc/mounts"); err == nil {
+		if !strings.Contains(string(mounts), "/mnt/archive") {
+			return nil
+		}
 	}
 
 	s.mu.RLock()
@@ -334,7 +342,11 @@ func (s *Store) SyncToArchive() error {
 		os.Remove(tmp)
 		return err
 	}
-	return os.Rename(tmp, archiveDataPath)
+	if err := os.Rename(tmp, archiveDataPath); err != nil {
+		return err
+	}
+	log.Printf("[drives] Synced drive data to archive (%d bytes)", len(src))
+	return nil
 }
 
 // RestoreFromArchive copies drive data from the archive mount to the local path

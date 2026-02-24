@@ -178,6 +178,13 @@ func (p *Processor) ProcessDirectory(ctx context.Context, clipsDir string, throt
 		log.Printf("[drives] Error saving final data: %v", err)
 	}
 
+	// Sync drive data to archive mount while we're still "running" so the
+	// post-archive shell script keeps the archive mounted.  If the archive
+	// is not mounted this is a harmless no-op.
+	if err := p.store.SyncToArchive(); err != nil {
+		log.Printf("[drives] Warning: failed to sync to archive: %v", err)
+	}
+
 	result.Duration = time.Since(start).Round(time.Millisecond).String()
 
 	// Count drives
