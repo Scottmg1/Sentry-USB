@@ -149,6 +149,7 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
     ARCHIVE_RECENTCLIPS: "true",
     ARCHIVE_TRACKMODECLIPS: "true",
     DRIVE_MAP_ENABLED: "true",
+    DRIVE_MAP_UNIT: "mi",
   }
   const [formData, setFormData] = useState<SetupFormData>({ ...defaults, ...(initialData ?? {}) })
   const [saving, setSaving] = useState(false)

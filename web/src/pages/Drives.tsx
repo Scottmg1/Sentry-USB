@@ -180,8 +180,10 @@ export default function Drives() {
       .then((cfg) => {
         const entry = cfg.DRIVE_MAP_UNIT
         if (entry) {
-          const val = typeof entry === "object" ? entry.value : entry
-          setMetric(val === "km")
+          const val = typeof entry === "object"
+            ? (entry.active ? entry.value : null)
+            : entry
+          if (val !== null) setMetric(val === "km")
         }
       })
       .catch(() => {})

@@ -125,7 +125,7 @@ if [ -x /root/bin/send-push-message ]; then
       NEW_DRIVES=$((DRIVES_AFTER - DRIVES_BEFORE))
 
       # Check user unit preference (mi or km) from setup config (DRIVE_MAP_UNIT)
-      UNIT_PREF=$(curl -sf "${API_URL}/api/setup/config" 2>/dev/null | grep -o '"DRIVE_MAP_UNIT":"[^"]*"' | cut -d'"' -f4)
+      UNIT_PREF=$(curl -sf "${API_URL}/api/setup/config" 2>/dev/null | grep -o '"DRIVE_MAP_UNIT":{[^}]*}' | grep -o '"value":"[^"]*"' | cut -d'"' -f4)
 
       # Calculate NEW distance by subtracting before from after
       if [ "$UNIT_PREF" = "km" ]; then
