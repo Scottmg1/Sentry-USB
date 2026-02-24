@@ -154,13 +154,6 @@ export CAM_SIZE=40G
 # Uncomment if you want to override the default hostname of "sentryusb"
 # export SENTRYUSB_HOSTNAME=sentryusb-Model3
 
-# uncomment to define an SSH public key that can be utilized to SSH into
-# SentryUSB as root
-# export SSH_ROOT_PUBLIC_KEY='ssh-rsa AAAAB3NzaC1yc2EAAAADA... user@host.domain'
-
-# uncoment to disable password SSH authentication for all users
-# export SSH_DISABLE_PASSWORD_AUTHENTICATION=true
-
 # Push notifications consist of a title and a message.
 # By default SENTRYUSB_HOSTNAME is used as the title, but you can
 # set a custom title by setting the following variable.

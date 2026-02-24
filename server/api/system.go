@@ -233,6 +233,43 @@ func (h *handlers) speedtest(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// sshKeyDir is where SentryUSB's outgoing SSH keypair lives (used for rsync to NAS).
+const sshKeyDir = "/root/.ssh"
+const sshKeyPath = sshKeyDir + "/id_ed25519"
+const sshPubKeyPath = sshKeyPath + ".pub"
+
+func (h *handlers) getSSHPubKey(w http.ResponseWriter, r *http.Request) {
+	data, err := os.ReadFile(sshPubKeyPath)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]string{"public_key": ""})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"public_key": strings.TrimSpace(string(data))})
+}
+
+func (h *handlers) generateSSHKey(w http.ResponseWriter, r *http.Request) {
+	// Remove existing key so ssh-keygen doesn't prompt to overwrite
+	os.Remove(sshKeyPath)
+	os.Remove(sshPubKeyPath)
+
+	// Ensure the .ssh directory exists with correct permissions
+	os.MkdirAll(sshKeyDir, 0700)
+
+	_, err := shell.RunWithTimeout(15*time.Second,
+		"ssh-keygen", "-t", "ed25519", "-f", sshKeyPath, "-N", "", "-C", "sentryusb")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to generate SSH key: "+err.Error())
+		return
+	}
+
+	data, err := os.ReadFile(sshPubKeyPath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Key generated but could not read public key")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"public_key": strings.TrimSpace(string(data))})
+}
+
 func (h *handlers) getClips(w http.ResponseWriter, r *http.Request) {
 	categories := []string{"RecentClips", "SavedClips", "SentryClips"}
 

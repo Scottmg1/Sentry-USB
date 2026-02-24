@@ -34,7 +34,7 @@ const sections = [
   },
   {
     title: "Security",
-    fields: ["WEB_USERNAME", "WEB_PASSWORD", "SSH_ROOT_PUBLIC_KEY", "SSH_DISABLE_PASSWORD_AUTHENTICATION"],
+    fields: ["WEB_USERNAME", "WEB_PASSWORD"],
   },
   {
     title: "Advanced",

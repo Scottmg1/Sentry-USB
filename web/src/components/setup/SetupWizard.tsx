@@ -103,8 +103,6 @@ function notificationsError(data: SetupFormData): string | null {
 function securityError(data: SetupFormData): string | null {
   if (data.WEB_USERNAME?.trim() && !data.WEB_PASSWORD?.trim())
     return "Web Password is required when a Web Username is set."
-  if (data.SSH_DISABLE_PASSWORD_AUTHENTICATION === "true" && !data.SSH_ROOT_PUBLIC_KEY?.trim())
-    return "An SSH Public Key is required before disabling password authentication."
   return null
 }
 

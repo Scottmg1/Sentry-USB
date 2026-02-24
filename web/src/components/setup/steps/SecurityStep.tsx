@@ -1,4 +1,5 @@
-import { Lock } from "lucide-react"
+import { useState } from "react"
+import { Lock, Key, Copy, Check, Loader2, RefreshCw } from "lucide-react"
 import type { StepProps } from "../SetupWizard"
 import { SecretInput } from "../SecretInput"
 import { cn } from "@/lib/utils"
@@ -28,6 +29,117 @@ function Field({ label, field, type = "text", placeholder, data, onChange, hint,
   )
 }
 
+function NasSSHKey() {
+  const [pubKey, setPubKey] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+
+  async function fetchKey() {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch("/api/system/ssh-pubkey")
+      if (!res.ok) throw new Error("Failed to fetch SSH key")
+      const data = await res.json()
+      if (data.public_key) {
+        setPubKey(data.public_key)
+      } else {
+        setPubKey(null)
+      }
+    } catch {
+      setPubKey(null)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function generateKey() {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch("/api/system/ssh-keygen", { method: "POST" })
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || "Failed to generate SSH key")
+      }
+      const data = await res.json()
+      setPubKey(data.public_key)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown error")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function copyKey() {
+    if (!pubKey) return
+    navigator.clipboard.writeText(pubKey)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <Key className="h-4 w-4 text-blue-400" />
+        <h4 className="text-sm font-medium text-slate-300">NAS SSH Key (rsync)</h4>
+      </div>
+      <p className="text-xs text-slate-500">
+        Generate an SSH keypair so SentryUSB can connect to your NAS for rsync
+        archiving without a password. Copy the public key below and add it to
+        your NAS's <code className="rounded bg-white/10 px-1">~/.ssh/authorized_keys</code> file.
+      </p>
+
+      {pubKey ? (
+        <div className="space-y-2">
+          <div className="relative">
+            <pre className="overflow-x-auto rounded-lg border border-white/10 bg-white/5 px-3 py-2 pr-10 font-mono text-xs text-slate-300 leading-relaxed">
+              {pubKey}
+            </pre>
+            <button
+              onClick={copyKey}
+              className="absolute right-2 top-2 rounded p-1 text-slate-500 transition hover:bg-white/10 hover:text-slate-300"
+              title="Copy to clipboard"
+            >
+              {copied ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
+            </button>
+          </div>
+          <button
+            onClick={generateKey}
+            disabled={loading}
+            className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-slate-400 transition hover:bg-white/10 hover:text-slate-300 disabled:opacity-50"
+          >
+            {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+            Regenerate Key
+          </button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-3">
+          <button
+            onClick={generateKey}
+            disabled={loading}
+            className="flex items-center gap-1.5 rounded-lg bg-blue-500/20 px-4 py-2 text-sm font-medium text-blue-400 transition hover:bg-blue-500/30 disabled:opacity-50"
+          >
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Key className="h-4 w-4" />}
+            Generate SSH Key
+          </button>
+          <button
+            onClick={fetchKey}
+            disabled={loading}
+            className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-400 transition hover:bg-white/10 hover:text-slate-300 disabled:opacity-50"
+          >
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            Check Existing
+          </button>
+        </div>
+      )}
+
+      {error && <p className="text-xs text-red-400">{error}</p>}
+    </div>
+  )
+}
+
 export function SecurityStep({ data, onChange }: StepProps) {
   return (
     <div className="space-y-6">
@@ -52,44 +164,8 @@ export function SecurityStep({ data, onChange }: StepProps) {
         </div>
       </div>
 
-      {/* SSH */}
-      <div>
-        <h4 className="mb-2 text-sm font-medium text-slate-300">SSH Access</h4>
-        <div className="space-y-3">
-          <div>
-            <label className="mb-1 block text-sm font-medium text-slate-300">SSH Public Key</label>
-            <textarea
-              value={data.SSH_ROOT_PUBLIC_KEY ?? ""}
-              onChange={(e) => onChange("SSH_ROOT_PUBLIC_KEY", e.target.value)}
-              placeholder="ssh-rsa AAAAB3NzaC1yc2E... user@host"
-              rows={3}
-              className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 font-mono text-xs text-slate-100 placeholder-slate-600 outline-none transition focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/25"
-            />
-            <p className="mt-1 text-xs text-slate-600">
-              Optional. Allows SSH login as root with this key.
-            </p>
-          </div>
-
-          <label className="flex cursor-pointer items-center gap-2">
-            <input
-              type="checkbox"
-              checked={data.SSH_DISABLE_PASSWORD_AUTHENTICATION === "true"}
-              onChange={(e) => onChange("SSH_DISABLE_PASSWORD_AUTHENTICATION", e.target.checked ? "true" : "false")}
-              className="h-4 w-4 rounded border-white/20 bg-white/5 accent-blue-500"
-            />
-            <span className="text-sm text-slate-300">
-              Disable SSH password authentication
-            </span>
-          </label>
-          {data.SSH_DISABLE_PASSWORD_AUTHENTICATION === "true" && !data.SSH_ROOT_PUBLIC_KEY?.trim() ? (
-            <p className="text-xs text-red-400">An SSH Public Key is required before disabling password authentication.</p>
-          ) : (
-            <p className="text-xs text-slate-600">
-              Only enable this if you have set an SSH public key above.
-            </p>
-          )}
-        </div>
-      </div>
+      {/* NAS SSH Key for rsync */}
+      <NasSSHKey />
     </div>
   )
 }

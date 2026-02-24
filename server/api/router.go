@@ -56,6 +56,10 @@ func RegisterRoutes(mux *http.ServeMux, hub *ws.Hub) {
 	mux.HandleFunc("GET /api/system/ble-status", h.bleStatus)
 	mux.HandleFunc("GET /api/system/speedtest", h.speedtest)
 
+	// SSH key management (for rsync to NAS)
+	mux.HandleFunc("GET /api/system/ssh-pubkey", h.getSSHPubKey)
+	mux.HandleFunc("POST /api/system/ssh-keygen", h.generateSSHKey)
+
 	// Updates
 	mux.HandleFunc("GET /api/system/check-internet", h.checkInternet)
 	mux.HandleFunc("POST /api/system/update", h.runUpdate)
