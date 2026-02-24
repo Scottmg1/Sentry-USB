@@ -331,19 +331,19 @@ export default function Dashboard() {
           <>
             <div className="mb-4 grid grid-cols-3 gap-3">
               <div>
-                <p className="text-xs text-slate-500">Clips Processed</p>
+                <p className="text-xs text-slate-500">Lifetime Clips Processed</p>
                 <p className="mt-0.5 text-lg font-semibold text-slate-100">
                   {driveStats.processed_count.toLocaleString()}
                 </p>
               </div>
               <div>
-                <p className="text-xs text-slate-500">Drives Found</p>
+                <p className="text-xs text-slate-500">Lifetime Drives Found</p>
                 <p className="mt-0.5 text-lg font-semibold text-slate-100">
                   {driveStats.drives_count.toLocaleString()}
                 </p>
               </div>
               <div>
-                <p className="text-xs text-slate-500">Distance</p>
+                <p className="text-xs text-slate-500">Lifetime Distance</p>
                 <p className="mt-0.5 text-lg font-semibold text-slate-100">
                   {metric ? driveStats.total_distance_km.toFixed(1) : driveStats.total_distance_mi.toFixed(1)}{" "}
                   <span className="text-sm font-normal text-slate-400">{metric ? "km" : "mi"}</span>
@@ -354,19 +354,19 @@ export default function Dashboard() {
             {driveStats.fsd_engaged_ms > 0 && (
               <div className="mb-4 grid grid-cols-3 gap-3 rounded-lg border border-emerald-500/10 bg-emerald-500/5 p-3">
                 <div>
-                  <p className="text-xs text-emerald-400/70">FSD Usage</p>
+                  <p className="text-xs text-emerald-400/70">Lifetime FSD Usage</p>
                   <p className="mt-0.5 text-lg font-semibold text-emerald-400">
                     {driveStats.fsd_percent}%
                   </p>
                 </div>
                 <div>
-                  <p className="text-xs text-red-400/70">Disengagements</p>
+                  <p className="text-xs text-red-400/70">Lifetime Disengagements</p>
                   <p className="mt-0.5 text-lg font-semibold text-red-400">
                     {driveStats.fsd_disengagements}
                   </p>
                 </div>
                 <div>
-                  <p className="text-xs text-emerald-400/70">FSD Distance</p>
+                  <p className="text-xs text-emerald-400/70">Lifetime FSD Distance</p>
                   <p className="mt-0.5 text-lg font-semibold text-emerald-400">
                     {metric ? driveStats.fsd_distance_km.toFixed(1) : driveStats.fsd_distance_mi.toFixed(1)}{" "}
                     <span className="text-sm font-normal text-emerald-400/60">{metric ? "km" : "mi"}</span>

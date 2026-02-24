@@ -31,7 +31,7 @@ type Drive struct {
 	ClipCount   int        `json:"clipCount"`
 	PointCount  int        `json:"pointCount"`
 	Points      [][4]float64 `json:"points"` // [lat, lng, timeMs, speedMps]
-	FSDStates   []uint8      `json:"fsdStates,omitempty"` // parallel to Points: 0=manual, >0=FSD engaged
+	FSDStates   []int        `json:"fsdStates,omitempty"` // parallel to Points: 0=manual, >0=FSD engaged
 	FSDEvents   []FSDEvent   `json:"fsdEvents,omitempty"` // locations of disengagements and accel pushes
 	Tags        []string     `json:"tags,omitempty"`
 	// FSD analytics per drive
@@ -550,7 +550,7 @@ func buildDriveStats(clips []timedRoute, idx int) Drive {
 
 	// Build point data array: [lat, lng, timeMs, speedMps]
 	pointData := make([][4]float64, len(allPoints))
-	fsdStates := make([]uint8, len(allPoints))
+	fsdStates := make([]int, len(allPoints))
 	hasFSDData := false
 	for i, p := range allPoints {
 		var speed float64
@@ -562,7 +562,7 @@ func buildDriveStats(clips []timedRoute, idx int) Drive {
 			}
 		}
 		pointData[i] = [4]float64{p.lat, p.lng, p.timeMs, math.Round(speed*100) / 100}
-		fsdStates[i] = p.apState
+		fsdStates[i] = int(p.apState)
 		if p.apState != AutopilotOff {
 			hasFSDData = true
 		}
@@ -673,7 +673,7 @@ func buildDriveStats(clips []timedRoute, idx int) Drive {
 		fsdPercent = math.Round(float64(fsdEngagedMs)/float64(durationMs)*1000) / 10
 	}
 
-	var fsdStateResult []uint8
+	var fsdStateResult []int
 	if hasFSDData {
 		fsdStateResult = fsdStates
 	}
