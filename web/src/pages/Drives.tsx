@@ -909,23 +909,42 @@ export default function Drives() {
                             </span>
                           ))}
                           {listTagInputId === d.id ? (
-                            <input
-                              autoFocus
-                              value={listTagValue}
-                              onChange={(e) => setListTagValue(e.target.value)}
-                              onClick={(e) => e.stopPropagation()}
-                              onKeyDown={(e) => {
-                                e.stopPropagation()
-                                if (e.key === "Enter" && listTagValue.trim()) {
-                                  addTagToDrive(d.id, d.tags ?? [], listTagValue)
-                                  setListTagValue(""); setListTagInputId(null)
-                                }
-                                if (e.key === "Escape") { setListTagInputId(null); setListTagValue("") }
-                              }}
-                              onBlur={() => { setListTagInputId(null); setListTagValue("") }}
-                              placeholder="Tag..."
-                              className="w-16 rounded-full border border-blue-500/30 bg-white/5 px-1.5 py-0.5 text-[10px] text-slate-200 placeholder-slate-600 outline-none focus:border-blue-500/50"
-                            />
+                            <>
+                              {allTags
+                                .filter((t) => !(d.tags ?? []).includes(t) && (!listTagValue || t.toLowerCase().includes(listTagValue.toLowerCase())))
+                                .map((t) => (
+                                  <button
+                                    key={t}
+                                    onMouseDown={(e) => {
+                                      e.preventDefault()
+                                      e.stopPropagation()
+                                      addTagToDrive(d.id, d.tags ?? [], t)
+                                      setListTagValue(""); setListTagInputId(null)
+                                    }}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="inline-flex items-center gap-0.5 rounded-full border border-dashed border-blue-500/20 bg-blue-500/5 px-1.5 py-0.5 text-[10px] font-medium text-blue-400/70 transition-colors hover:border-blue-500/40 hover:bg-blue-500/15 hover:text-blue-400"
+                                  >
+                                    <Plus className="h-2 w-2" />{t}
+                                  </button>
+                                ))}
+                              <input
+                                autoFocus
+                                value={listTagValue}
+                                onChange={(e) => setListTagValue(e.target.value)}
+                                onClick={(e) => e.stopPropagation()}
+                                onKeyDown={(e) => {
+                                  e.stopPropagation()
+                                  if (e.key === "Enter" && listTagValue.trim()) {
+                                    addTagToDrive(d.id, d.tags ?? [], listTagValue)
+                                    setListTagValue(""); setListTagInputId(null)
+                                  }
+                                  if (e.key === "Escape") { setListTagInputId(null); setListTagValue("") }
+                                }}
+                                onBlur={() => { setListTagInputId(null); setListTagValue("") }}
+                                placeholder="New..."
+                                className="w-16 rounded-full border border-blue-500/30 bg-white/5 px-1.5 py-0.5 text-[10px] text-slate-200 placeholder-slate-600 outline-none focus:border-blue-500/50"
+                              />
+                            </>
                           ) : (
                             <button
                               onClick={(e) => { e.stopPropagation(); setListTagInputId(d.id); setListTagValue("") }}
@@ -1032,23 +1051,42 @@ export default function Drives() {
                           </span>
                         ))}
                         {listTagInputId === d.id ? (
-                          <input
-                            autoFocus
-                            value={listTagValue}
-                            onChange={(e) => setListTagValue(e.target.value)}
-                            onClick={(e) => e.stopPropagation()}
-                            onKeyDown={(e) => {
-                              e.stopPropagation()
-                              if (e.key === "Enter" && listTagValue.trim()) {
-                                addTagToDrive(d.id, d.tags ?? [], listTagValue)
-                                setListTagValue(""); setListTagInputId(null)
-                              }
-                              if (e.key === "Escape") { setListTagInputId(null); setListTagValue("") }
-                            }}
-                            onBlur={() => { setListTagInputId(null); setListTagValue("") }}
-                            placeholder="Tag..."
-                            className="w-16 rounded-full border border-blue-500/30 bg-white/5 px-1.5 py-0.5 text-[10px] text-slate-200 placeholder-slate-600 outline-none focus:border-blue-500/50"
-                          />
+                          <>
+                            {allTags
+                              .filter((t) => !(d.tags ?? []).includes(t) && (!listTagValue || t.toLowerCase().includes(listTagValue.toLowerCase())))
+                              .map((t) => (
+                                <button
+                                  key={t}
+                                  onMouseDown={(e) => {
+                                    e.preventDefault()
+                                    e.stopPropagation()
+                                    addTagToDrive(d.id, d.tags ?? [], t)
+                                    setListTagValue(""); setListTagInputId(null)
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="inline-flex items-center gap-0.5 rounded-full border border-dashed border-blue-500/20 bg-blue-500/5 px-1.5 py-0.5 text-[10px] font-medium text-blue-400/70 transition-colors hover:border-blue-500/40 hover:bg-blue-500/15 hover:text-blue-400"
+                                >
+                                  <Plus className="h-2 w-2" />{t}
+                                </button>
+                              ))}
+                            <input
+                              autoFocus
+                              value={listTagValue}
+                              onChange={(e) => setListTagValue(e.target.value)}
+                              onClick={(e) => e.stopPropagation()}
+                              onKeyDown={(e) => {
+                                e.stopPropagation()
+                                if (e.key === "Enter" && listTagValue.trim()) {
+                                  addTagToDrive(d.id, d.tags ?? [], listTagValue)
+                                  setListTagValue(""); setListTagInputId(null)
+                                }
+                                if (e.key === "Escape") { setListTagInputId(null); setListTagValue("") }
+                              }}
+                              onBlur={() => { setListTagInputId(null); setListTagValue("") }}
+                              placeholder="New..."
+                              className="w-16 rounded-full border border-blue-500/30 bg-white/5 px-1.5 py-0.5 text-[10px] text-slate-200 placeholder-slate-600 outline-none focus:border-blue-500/50"
+                            />
+                          </>
                         ) : (
                           <button
                             onClick={(e) => { e.stopPropagation(); setListTagInputId(d.id); setListTagValue("") }}
@@ -1130,22 +1168,40 @@ export default function Drives() {
                   </span>
                 ))}
                 {showTagInput ? (
-                  <input
-                    autoFocus
-                    value={tagInput}
-                    onChange={(e) => setTagInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && tagInput.trim()) {
-                        addTagToDrive(selectedId!, selectedDrive.tags ?? [], tagInput)
-                        setTagInput("")
-                        setShowTagInput(false)
-                      }
-                      if (e.key === "Escape") { setShowTagInput(false); setTagInput("") }
-                    }}
-                    onBlur={() => { setShowTagInput(false); setTagInput("") }}
-                    placeholder="Enter tag name..."
-                    className="w-28 rounded-full border border-blue-500/30 bg-white/5 px-3 py-1 text-xs text-slate-200 placeholder-slate-500 outline-none focus:border-blue-500/50"
-                  />
+                  <>
+                    {allTags
+                      .filter((t) => !(selectedDrive.tags ?? []).includes(t) && (!tagInput || t.toLowerCase().includes(tagInput.toLowerCase())))
+                      .map((t) => (
+                        <button
+                          key={t}
+                          onMouseDown={(e) => {
+                            e.preventDefault()
+                            addTagToDrive(selectedId!, selectedDrive.tags ?? [], t)
+                            setTagInput("")
+                            setShowTagInput(false)
+                          }}
+                          className="inline-flex items-center gap-1 rounded-full border border-dashed border-blue-500/20 bg-blue-500/5 px-2.5 py-1 text-xs font-medium text-blue-400/70 transition-colors hover:border-blue-500/40 hover:bg-blue-500/15 hover:text-blue-400"
+                        >
+                          <Plus className="h-3 w-3" />{t}
+                        </button>
+                      ))}
+                    <input
+                      autoFocus
+                      value={tagInput}
+                      onChange={(e) => setTagInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && tagInput.trim()) {
+                          addTagToDrive(selectedId!, selectedDrive.tags ?? [], tagInput)
+                          setTagInput("")
+                          setShowTagInput(false)
+                        }
+                        if (e.key === "Escape") { setShowTagInput(false); setTagInput("") }
+                      }}
+                      onBlur={() => { setShowTagInput(false); setTagInput("") }}
+                      placeholder="New tag..."
+                      className="w-28 rounded-full border border-blue-500/30 bg-white/5 px-3 py-1 text-xs text-slate-200 placeholder-slate-500 outline-none focus:border-blue-500/50"
+                    />
+                  </>
                 ) : (
                   <button
                     onClick={() => setShowTagInput(true)}
