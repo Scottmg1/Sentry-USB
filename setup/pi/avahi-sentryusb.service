@@ -10,7 +10,7 @@
 
   <service>
     <type>_sentryusb._tcp</type>
-    <port>8788</port>
+    <port>80</port>
     <txt-record>version=1.0.0</txt-record>
     <txt-record>path=/api</txt-record>
   </service>
