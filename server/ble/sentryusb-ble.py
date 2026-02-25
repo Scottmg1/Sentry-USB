@@ -51,13 +51,73 @@ WIFI_CONFIG_UUID         = '6e400003-b5a3-f393-e0a9-e50e24dcca9e'
 WIFI_STATUS_UUID         = '6e400004-b5a3-f393-e0a9-e50e24dcca9e'
 DEVICE_INFO_UUID         = '6e400005-b5a3-f393-e0a9-e50e24dcca9e'
 
+AUTH_UUID                = '6e400006-b5a3-f393-e0a9-e50e24dcca9e'
+
 API_SERVICE_UUID         = '6e400010-b5a3-f393-e0a9-e50e24dcca9e'
 API_REQUEST_UUID         = '6e400011-b5a3-f393-e0a9-e50e24dcca9e'
 API_RESPONSE_UUID        = '6e400012-b5a3-f393-e0a9-e50e24dcca9e'
 
 API_BASE = 'http://127.0.0.1:8788/api'
 
+PIN_FILE = '/root/.sentryusb/ble-pin'
+BOOT_PIN_FILE = '/boot/firmware/BLE_PIN'
+
+# Track authenticated BLE peers (by D-Bus device path)
+authenticated_peers = set()
+
 mainloop = None
+
+
+def load_pin():
+    """Load the stored BLE passcode, or None if not yet claimed."""
+    try:
+        with open(PIN_FILE, 'r') as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        return None
+
+
+def save_pin(pin):
+    """Save a new BLE passcode."""
+    os.makedirs(os.path.dirname(PIN_FILE), exist_ok=True)
+    with open(PIN_FILE, 'w') as f:
+        f.write(pin)
+    # Also write to boot partition for easy reset
+    try:
+        subprocess.run(['/root/bin/remountfs_rw'], capture_output=True, timeout=5)
+        with open(BOOT_PIN_FILE, 'w') as f:
+            f.write(pin)
+    except Exception:
+        pass
+    log.info(f'BLE passcode set (length={len(pin)})')
+
+
+def is_claimed():
+    """Check if a passcode has been set (device is claimed)."""
+    return load_pin() is not None
+
+
+def check_pin(pin):
+    """Verify a passcode against the stored one."""
+    stored = load_pin()
+    return stored is not None and stored == pin
+
+
+def is_authenticated(options):
+    """Check if the connected peer is authenticated."""
+    device = options.get('device', '')
+    if not device:
+        # If we can't determine the device, check if unclaimed (allow all)
+        return not is_claimed()
+    return str(device) in authenticated_peers
+
+
+def mark_authenticated(options):
+    """Mark the connected peer as authenticated."""
+    device = options.get('device', '')
+    if device:
+        authenticated_peers.add(str(device))
+        log.info(f'Peer authenticated: {device}')
 
 
 # ============================================================
@@ -372,6 +432,7 @@ class WifiSetupService(Service):
         self.add_characteristic(WifiConfigCharacteristic(bus, 1, self))
         self.add_characteristic(WifiStatusCharacteristic(bus, 2, self))
         self.add_characteristic(DeviceInfoCharacteristic(bus, 3, self))
+        self.add_characteristic(AuthCharacteristic(bus, 4, self))
 
 
 class WifiScanCharacteristic(Characteristic):
@@ -382,6 +443,9 @@ class WifiScanCharacteristic(Characteristic):
                                 ['read', 'notify'], service)
 
     def ReadValue(self, options):
+        if not is_authenticated(options):
+            data = json.dumps({'error': 'not_authenticated'}).encode()
+            return dbus.Array([dbus.Byte(b) for b in data], signature='y')
         networks = scan_wifi_networks()
         data = json.dumps(networks).encode()
         log.info(f'WiFi scan: found {len(networks)} networks')
@@ -403,6 +467,10 @@ class WifiConfigCharacteristic(Characteristic):
             config = json.loads(self.write_buffer.decode())
             self.write_buffer = bytearray()
         except (json.JSONDecodeError, UnicodeDecodeError):
+            return
+
+        if not is_authenticated(options):
+            log.warning('WiFi config rejected: not authenticated')
             return
 
         ssid = config.get('ssid', '')
@@ -480,6 +548,63 @@ class DeviceInfoCharacteristic(Characteristic):
         return dbus.Array([dbus.Byte(b) for b in data], signature='y')
 
 
+class AuthCharacteristic(Characteristic):
+    """BLE authentication. Read returns {claimed, authenticated}.
+    Write accepts {action: 'set_pin'|'authenticate', pin: '...'}."""
+
+    def __init__(self, bus, index, service):
+        Characteristic.__init__(self, bus, index, AUTH_UUID,
+                                ['read', 'write', 'notify'], service)
+        self.write_buffer = bytearray()
+
+    def ReadValue(self, options):
+        device = options.get('device', '')
+        authed = str(device) in authenticated_peers if device else not is_claimed()
+        info = {
+            'claimed': is_claimed(),
+            'authenticated': authed,
+        }
+        data = json.dumps(info).encode()
+        return dbus.Array([dbus.Byte(b) for b in data], signature='y')
+
+    def WriteValue(self, value, options):
+        self.write_buffer.extend(bytes(value))
+        try:
+            msg = json.loads(self.write_buffer.decode())
+            self.write_buffer = bytearray()
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return
+
+        action = msg.get('action', '')
+        pin = msg.get('pin', '')
+
+        if action == 'set_pin':
+            if is_claimed():
+                result = {'success': False, 'error': 'already_claimed'}
+                log.warning('set_pin rejected: device already claimed')
+            elif len(pin) < 4 or len(pin) > 6:
+                result = {'success': False, 'error': 'pin_must_be_4_to_6_digits'}
+            else:
+                save_pin(pin)
+                mark_authenticated(options)
+                result = {'success': True}
+        elif action == 'authenticate':
+            if not is_claimed():
+                result = {'success': False, 'error': 'not_claimed'}
+            elif check_pin(pin):
+                mark_authenticated(options)
+                result = {'success': True}
+            else:
+                result = {'success': False, 'error': 'wrong_pin'}
+                log.warning('Authentication failed: wrong pin')
+        else:
+            result = {'success': False, 'error': 'unknown_action'}
+
+        data = json.dumps(result).encode()
+        self.send_notification(
+            dbus.Array([dbus.Byte(b) for b in data], signature='y'))
+
+
 # ============================================================
 # API Proxy Service
 # ============================================================
@@ -508,6 +633,13 @@ class APIRequestCharacteristic(Characteristic):
             request = json.loads(self.write_buffer.decode())
             self.write_buffer = bytearray()
         except (json.JSONDecodeError, UnicodeDecodeError):
+            return
+
+        if not is_authenticated(options):
+            request_id = request.get('id', 0)
+            err_response = json.dumps({'id': request_id, 'status': 403, 'body': {'error': 'not_authenticated'}}).encode()
+            self.response_chrc.send_notification(
+                dbus.Array([dbus.Byte(b) for b in err_response], signature='y'))
             return
 
         request_id = request.get('id', 0)

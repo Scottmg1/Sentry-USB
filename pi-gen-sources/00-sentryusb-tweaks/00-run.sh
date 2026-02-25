@@ -74,6 +74,28 @@ if [ -n "${RELEASE_TAG:-}" ]; then
     echo "Version: $RELEASE_TAG"
 fi
 
+# ── Install BLE peripheral daemon ──
+BLE_SCRIPT="${ROOTFS_DIR}/root/bin/sentryusb-ble.py"
+if [ -f "files/sentryusb-ble.py" ]; then
+    cp "files/sentryusb-ble.py" "${BLE_SCRIPT}"
+elif [ -f "../../server/ble/sentryusb-ble.py" ]; then
+    cp "../../server/ble/sentryusb-ble.py" "${BLE_SCRIPT}"
+else
+    curl -fsSL "https://raw.githubusercontent.com/${REPO}/main-dev/server/ble/sentryusb-ble.py" \
+        -o "${BLE_SCRIPT}" 2>/dev/null || echo "WARNING: Could not fetch BLE daemon script"
+fi
+chmod +x "${BLE_SCRIPT}" 2>/dev/null || true
+
+BLE_SERVICE="${ROOTFS_DIR}/lib/systemd/system/sentryusb-ble.service"
+if [ -f "files/sentryusb-ble.service" ]; then
+    cp "files/sentryusb-ble.service" "${BLE_SERVICE}"
+elif [ -f "../../server/ble/sentryusb-ble.service" ]; then
+    cp "../../server/ble/sentryusb-ble.service" "${BLE_SERVICE}"
+else
+    curl -fsSL "https://raw.githubusercontent.com/${REPO}/main-dev/server/ble/sentryusb-ble.service" \
+        -o "${BLE_SERVICE}" 2>/dev/null || echo "WARNING: Could not fetch BLE service file"
+fi
+
 # ── Install systemd service for the web UI ──
 cat > "${ROOTFS_DIR}/lib/systemd/system/sentryusb.service" << 'SERVICEEOF'
 [Unit]
@@ -97,10 +119,11 @@ SERVICEEOF
 on_chroot << EOF
 # Enable the web server service
 systemctl enable sentryusb.service
+systemctl enable sentryusb-ble.service 2>/dev/null || true
 
 # Install prerequisites needed by setup scripts
 apt-get update -qq
-apt-get install -y dos2unix parted fdisk sudo curl
+apt-get install -y dos2unix parted fdisk sudo curl python3-dbus python3-gi
 
 # Remove unwanted packages, disable unwanted services, and disable swap
 apt-get remove -y --purge triggerhappy userconf-pi dphys-swapfile firmware-libertas firmware-realtek firmware-atheros mkvtoolnix 2>/dev/null || true

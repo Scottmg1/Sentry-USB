@@ -13,6 +13,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Scottmg1/Sentry-USB/server/config"
+	"github.com/Scottmg1/Sentry-USB/server/shell"
 )
 
 // Pairing code charset — excludes ambiguous chars (0/O, 1/I)
@@ -100,12 +103,35 @@ func writeCredentialsToConfig(creds *NotificationCredentials) {
 		return
 	}
 
-	// Append notification credentials
-	addition := fmt.Sprintf("\n# Mobile push notification credentials (auto-generated)\nexport MOBILE_PUSH_DEVICE_ID='%s'\nexport MOBILE_PUSH_SECRET='%s'\n",
+	// Append notification credentials + enable mobile push
+	addition := fmt.Sprintf("\n# Mobile push notification credentials (auto-generated)\nexport MOBILE_PUSH_ENABLED='true'\nexport MOBILE_PUSH_DEVICE_ID='%s'\nexport MOBILE_PUSH_SECRET='%s'\n",
 		creds.DeviceID, creds.DeviceSecret)
 
 	if err := os.WriteFile(configPath, []byte(content+addition), 0600); err != nil {
 		log.Printf("[notifications] Failed to write credentials to config: %v", err)
+	}
+}
+
+// enableMobilePushInConfig ensures MOBILE_PUSH_ENABLED is set to true in the config file
+func enableMobilePushInConfig() {
+	configPath := config.FindConfigPath()
+
+	active, _, err := config.ParseFile(configPath)
+	if err != nil {
+		return
+	}
+
+	if active["MOBILE_PUSH_ENABLED"] == "true" {
+		return
+	}
+
+	// Use config.WriteFile to properly uncomment/add the variable
+	active["MOBILE_PUSH_ENABLED"] = "true"
+	shell.Run("bash", "-c", "/root/bin/remountfs_rw")
+	if err := config.WriteFile(configPath, active); err != nil {
+		log.Printf("[notifications] Failed to enable MOBILE_PUSH_ENABLED in config: %v", err)
+	} else {
+		log.Printf("[notifications] Auto-enabled MOBILE_PUSH_ENABLED in config")
 	}
 }
 
@@ -181,6 +207,9 @@ func (h *handlers) generateNotificationPairingCode(w http.ResponseWriter, r *htt
 	})
 
 	log.Printf("[notifications] Generated pairing code %s (expires %s)", code, expiresAt.Format(time.Kitchen))
+
+	// Auto-enable mobile push in config if not already enabled
+	go enableMobilePushInConfig()
 }
 
 // registerCodeWithBackend sends the pairing code to the notification relay server

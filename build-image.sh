@@ -111,10 +111,14 @@ bash "$SCRIPT_DIR/pi-gen-sources/prepare.sh"
 # Use the correct config for the target architecture
 cp "$SCRIPT_DIR/pi-gen-sources/$CONFIG_FILE" "$WORK_DIR/config"
 
-# ── Step 4: Inject the pre-built binary ──
+# ── Step 4: Inject the pre-built binary and BLE daemon ──
 info "Injecting SentryUSB binary into image build..."
 cp "$BINARY_PATH" "$WORK_DIR/stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-binary"
 chmod +x "$WORK_DIR/stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-binary"
+
+info "Injecting BLE daemon files..."
+cp "$SCRIPT_DIR/server/ble/sentryusb-ble.py" "$WORK_DIR/stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-ble.py"
+cp "$SCRIPT_DIR/server/ble/sentryusb-ble.service" "$WORK_DIR/stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-ble.service"
 
 # ── Step 5: Build the image ──
 info "Building image with Docker (this takes 15-30 minutes)..."
@@ -141,6 +145,7 @@ echo "    2. Configure WiFi, hostname (sentryusb), SSH, password in settings"
 echo "    3. Write to SD card"
 echo ""
 echo "  After first boot, open http://sentryusb.local in your browser."
+echo "  Or use the SentryUSB iOS app to set up via Bluetooth."
 echo ""
 
 # Cleanup
