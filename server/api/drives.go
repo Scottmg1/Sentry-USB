@@ -233,8 +233,9 @@ declare -F log > /dev/null 2>&1 || {
 }
 `
 
-// archiveShellPreamble is like awakeShellPreamble but also sets ARCHIVE_MOUNT
-// the same way archiveloop does so connect-archive.sh can mount the share.
+// archiveShellPreamble sources the system config, sets ARCHIVE_MOUNT, and
+// defines the helper functions that connect-archive.sh / disconnect-archive.sh
+// expect (these are normally only available inside the archiveloop process).
 const archiveShellPreamble = `source /root/bin/envsetup.sh 2>/dev/null || true
 export LOG_FILE="${LOG_FILE:-/mutable/archiveloop.log}"
 declare -F log > /dev/null 2>&1 || {
@@ -244,6 +245,37 @@ declare -F log > /dev/null 2>&1 || {
 if [ "${ARCHIVE_SYSTEM:-none}" = "cifs" ] || [ "${ARCHIVE_SYSTEM:-none}" = "nfs" ]; then
   [ -n "${SHARE_NAME:-}" ] && [ -f /backingfiles/cam_disk.bin ] && export ARCHIVE_MOUNT=/mnt/archive
 fi
+function ensure_mountpoint_is_mounted () {
+  local mount_point="$1"
+  if findmnt --mountpoint "$mount_point" > /dev/null; then
+    log "$mount_point is already mounted."
+  else
+    if timeout 10 mount "$mount_point" >> "$LOG_FILE" 2>&1; then
+      log "Mounted $mount_point."
+    else
+      log "Failed to mount $mount_point."
+      return 1
+    fi
+  fi
+}
+function retry () {
+  local attempts=0
+  while true; do
+    if "$@"; then return 0; fi
+    if [ "$attempts" -ge 10 ]; then log "Attempts exhausted."; return 1; fi
+    log "Sleeping before retry ..."
+    /bin/sleep 1
+    attempts=$((attempts + 1))
+    log "Retrying ($attempts) '$*' ..."
+  done
+}
+function ensure_mountpoint_is_mounted_with_retry () {
+  retry ensure_mountpoint_is_mounted "$1"
+}
+export -f ensure_mountpoint_is_mounted
+export -f retry
+export -f ensure_mountpoint_is_mounted_with_retry
+export -f log
 `
 
 // connectArchive mounts the archive share by running connect-archive.sh
