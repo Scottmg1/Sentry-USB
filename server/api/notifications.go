@@ -289,8 +289,8 @@ func (h *handlers) sendTestNotification(w http.ResponseWriter, r *http.Request) 
 	}
 
 	hostname, _ := os.Hostname()
-	payload := fmt.Sprintf(`{"device_id":"%s","device_secret":"%s","title":"SentryUSB Test","message":"Test notification from %s — push notifications are working!"}`,
-		creds.DeviceID, creds.DeviceSecret, hostname)
+	payload := fmt.Sprintf(`{"device_id":"%s","title":"SentryUSB Test","message":"Test notification from %s — push notifications are working!"}`,
+		creds.DeviceID, hostname)
 
 	httpClient := &http.Client{Timeout: 10 * time.Second}
 	testReq, err := http.NewRequest("POST", "https://notifications.sentry-six.com/send", strings.NewReader(payload))
@@ -299,6 +299,7 @@ func (h *handlers) sendTestNotification(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	testReq.Header.Set("Content-Type", "application/json")
+	testReq.Header.Set("X-Device-Secret", creds.DeviceSecret)
 
 	testResp, err := httpClient.Do(testReq)
 	if err != nil {
