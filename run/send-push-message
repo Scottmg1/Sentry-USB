@@ -92,6 +92,16 @@ function send_ntfy () {
     "$NTFY_URL"
 }
 
+function send_mobile_push () {
+  log "Sending mobile push notification."
+
+  curl -s -X POST \
+    -H "Content-Type: application/json" \
+    -H "X-Device-Secret: $MOBILE_PUSH_SECRET" \
+    -d "{\"title\":\"${title}\",\"message\":\"${message}\",\"device_id\":\"${MOBILE_PUSH_DEVICE_ID}\"}" \
+    "https://notifications.sentry-six.com/send"
+}
+
 function send_shell () {
   log "Sending Shell command."
   if [[ -n "$NOTIFICATION_COMMAND_START" && "$type" = "start" ]]; then
@@ -115,6 +125,7 @@ log "$message"
 [ "${MATRIX_ENABLED:-false}" = "true" ] && send_matrix
 [ "${SLACK_ENABLED:-false}" = "true" ] && send_slack
 [ "${NTFY_ENABLED:-false}" = "true" ] && send_ntfy
+[ "${MOBILE_PUSH_ENABLED:-false}" = "true" ] && send_mobile_push
 [ "${NOTIFICATION_COMMAND_ENABLED:-false}" = "true" ] && send_shell
 
 exit 0

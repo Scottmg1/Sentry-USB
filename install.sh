@@ -225,6 +225,9 @@ if [ "$CURRENT_HOSTNAME" != "$DESIRED_HOSTNAME" ]; then
         apt-get install -y avahi-daemon 2>/dev/null || true
     fi
     systemctl enable avahi-daemon 2>/dev/null || true
+    # Install SentryUSB mDNS service for iOS app discovery
+    mkdir -p /etc/avahi/services
+    cp "$SCRIPT_DIR/setup/pi/avahi-sentryusb.service" /etc/avahi/services/sentryusb.service 2>/dev/null || true
     systemctl restart avahi-daemon 2>/dev/null || true
     ok "Hostname set to '$DESIRED_HOSTNAME' — ${DESIRED_HOSTNAME}.local is now available"
 else
@@ -395,6 +398,34 @@ systemctl daemon-reload
 systemctl enable "$SERVICE_NAME"
 systemctl restart "$SERVICE_NAME"
 ok "Service installed and started"
+
+# ── Step 3b: Install BLE peripheral daemon ────────────────────────
+
+info "Installing BLE peripheral daemon..."
+# Install python3-dbus and python3-gi if not present
+for pkg in python3-dbus python3-gi bluez; do
+    if ! dpkg-query -W --showformat='${db:Status-Status}\n' "$pkg" 2>/dev/null | grep -q '^installed$'; then
+        apt-get install -y "$pkg" 2>/dev/null || warn "Failed to install $pkg"
+    fi
+done
+
+# Copy BLE daemon script
+cp "$SCRIPT_DIR/server/ble/sentryusb-ble.py" "$INSTALL_DIR/sentryusb-ble.py" 2>/dev/null || \
+    curl -fsSL "https://raw.githubusercontent.com/$REPO/$BRANCH/server/ble/sentryusb-ble.py" -o "$INSTALL_DIR/sentryusb-ble.py" 2>/dev/null || true
+chmod +x "$INSTALL_DIR/sentryusb-ble.py" 2>/dev/null || true
+
+# Install systemd service
+cp "$SCRIPT_DIR/server/ble/sentryusb-ble.service" /etc/systemd/system/sentryusb-ble.service 2>/dev/null || \
+    curl -fsSL "https://raw.githubusercontent.com/$REPO/$BRANCH/server/ble/sentryusb-ble.service" -o /etc/systemd/system/sentryusb-ble.service 2>/dev/null || true
+
+if [ -f /etc/systemd/system/sentryusb-ble.service ]; then
+    systemctl daemon-reload
+    systemctl enable sentryusb-ble 2>/dev/null || true
+    systemctl restart sentryusb-ble 2>/dev/null || true
+    ok "BLE peripheral daemon installed"
+else
+    warn "BLE peripheral daemon installation skipped (files not found)"
+fi
 
 # ── Step 4: Remove stale cached setup scripts ──────────────────────
 # Force fresh download on next setup run so latest fixes are used

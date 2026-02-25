@@ -1,0 +1,20 @@
+[Unit]
+Description=SentryUSB BLE Peripheral
+Documentation=https://github.com/Scottmg1/Sentry-USB
+After=bluetooth.target
+Requires=bluetooth.target
+ConditionPathExists=/usr/bin/python3
+
+[Service]
+Type=simple
+ExecStartPre=/usr/sbin/rfkill unblock bluetooth
+ExecStart=/usr/bin/python3 /root/bin/sentryusb-ble.py
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=sentryusb-ble
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

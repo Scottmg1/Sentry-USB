@@ -74,6 +74,11 @@ func RegisterRoutes(mux *http.ServeMux, hub *ws.Hub) {
 	// Block devices (for data drive selection)
 	mux.HandleFunc("GET /api/system/block-devices", h.listBlockDevices)
 
+	// Notification pairing (mobile app push notifications)
+	mux.HandleFunc("POST /api/notifications/generate-code", h.generateNotificationPairingCode)
+	mux.HandleFunc("GET /api/notifications/paired-devices", h.listNotificationPairedDevices)
+	mux.HandleFunc("DELETE /api/notifications/paired-devices/{id}", h.removeNotificationPairedDevice)
+
 	// Support chat (proxy to api.sentry-six.com)
 	mux.HandleFunc("GET /api/support/check", h.checkSupportAvailable)
 	mux.HandleFunc("POST /api/support/ticket", h.createSupportTicket)

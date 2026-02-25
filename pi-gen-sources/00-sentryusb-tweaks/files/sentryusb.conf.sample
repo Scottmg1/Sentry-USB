@@ -219,6 +219,12 @@ export CAM_SIZE=40G
 # export NTFY_TOKEN=your_token_if_needed
 # export NTFY_PRIORITY=3
 
+# Mobile App push notifications (auto-configured via pairing)
+# Do not edit these manually — they are generated during notification pairing.
+# export MOBILE_PUSH_ENABLED=true
+# export MOBILE_PUSH_DEVICE_ID=auto_generated_device_id
+# export MOBILE_PUSH_SECRET=auto_generated_secret
+
 # Uncomment if setting up shell notifications.
 # export NOTIFICATION_COMMAND_ENABLED=true
 # export NOTIFICATION_COMMAND_START="ssh root@remote-server 'command args'"

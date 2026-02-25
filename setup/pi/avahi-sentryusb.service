@@ -1,0 +1,17 @@
+<?xml version="1.0" standalone='no'?>
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<!--
+  Avahi/mDNS service advertisement for SentryUSB.
+  Allows the iOS app to discover the Pi on the local network via Bonjour.
+  Installed to /etc/avahi/services/sentryusb.service during setup.
+-->
+<service-group>
+  <name replace-wildcards="yes">%h</name>
+
+  <service>
+    <type>_sentryusb._tcp</type>
+    <port>8788</port>
+    <txt-record>version=1.0.0</txt-record>
+    <txt-record>path=/api</txt-record>
+  </service>
+</service-group>

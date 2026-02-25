@@ -93,6 +93,10 @@ const providers: NotificationProvider[] = [
       { key: "NTFY_PRIORITY", label: "Priority", placeholder: "3" },
     ],
   },
+  {
+    id: "mobile_push", label: "Mobile App", enableField: "MOBILE_PUSH_ENABLED",
+    fields: [],
+  },
 ]
 
 function ProviderCard({ provider, data, onChange, errorFields }: { provider: NotificationProvider; errorFields: Set<string> } & Pick<StepProps, "data" | "onChange">) {
@@ -124,7 +128,15 @@ function ProviderCard({ provider, data, onChange, errorFields }: { provider: Not
         {expanded ? <ChevronUp className="h-4 w-4 text-slate-600" /> : <ChevronDown className="h-4 w-4 text-slate-600" />}
       </button>
 
-      {expanded && (
+      {expanded && provider.id === "mobile_push" && (
+        <div className="border-t border-white/5 px-4 py-3">
+          <p className="text-xs text-slate-400">
+            Enable this to send notifications to the SentryUSB mobile app. After setup, open the app and go to Settings → Pair for Notifications to link your phone. You can also generate a pairing code from this web UI under Settings → Mobile Notifications.
+          </p>
+        </div>
+      )}
+
+      {expanded && provider.fields.length > 0 && (
         <div className="grid gap-3 border-t border-white/5 px-4 py-3 sm:grid-cols-2">
           {provider.fields.map((f) => {
             const hasError = enabled && errorFields.has(f.key)

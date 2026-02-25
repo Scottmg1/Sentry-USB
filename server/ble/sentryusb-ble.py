@@ -1,0 +1,686 @@
+#!/usr/bin/env python3
+"""
+SentryUSB BLE Peripheral Daemon
+
+Exposes a GATT server over Bluetooth LE so the SentryUSB iOS app can:
+  1. Discover the Pi and perform WiFi setup without prior network
+  2. Proxy API requests for on-the-go management (dashboard, logs, settings)
+
+Uses BlueZ D-Bus API — requires bluez >= 5.50 and python3-dbus.
+
+Run as: python3 sentryusb-ble.py
+Or via systemd: sentryusb-ble.service
+"""
+
+import dbus
+import dbus.exceptions
+import dbus.mainloop.glib
+import dbus.service
+import json
+import subprocess
+import os
+import sys
+import signal
+import logging
+import urllib.request
+import urllib.error
+
+try:
+    from gi.repository import GLib
+except ImportError:
+    import glib as GLib
+
+logging.basicConfig(level=logging.INFO, format='[BLE] %(levelname)s %(message)s')
+log = logging.getLogger('sentryusb-ble')
+
+# BlueZ D-Bus constants
+BLUEZ_SERVICE = 'org.bluez'
+LE_ADVERTISING_MANAGER_IFACE = 'org.bluez.LEAdvertisingManager1'
+LE_ADVERTISEMENT_IFACE = 'org.bluez.LEAdvertisement1'
+GATT_MANAGER_IFACE = 'org.bluez.GattManager1'
+GATT_SERVICE_IFACE = 'org.bluez.GattService1'
+GATT_CHRC_IFACE = 'org.bluez.GattCharacteristic1'
+GATT_DESC_IFACE = 'org.bluez.GattDescriptor1'
+DBUS_OM_IFACE = 'org.freedesktop.DBus.ObjectManager'
+DBUS_PROP_IFACE = 'org.freedesktop.DBus.Properties'
+
+# SentryUSB BLE UUIDs (matching iOS app Constants.swift)
+WIFI_SERVICE_UUID        = '6e400001-b5a3-f393-e0a9-e50e24dcca9e'
+WIFI_SCAN_UUID           = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'
+WIFI_CONFIG_UUID         = '6e400003-b5a3-f393-e0a9-e50e24dcca9e'
+WIFI_STATUS_UUID         = '6e400004-b5a3-f393-e0a9-e50e24dcca9e'
+DEVICE_INFO_UUID         = '6e400005-b5a3-f393-e0a9-e50e24dcca9e'
+
+API_SERVICE_UUID         = '6e400010-b5a3-f393-e0a9-e50e24dcca9e'
+API_REQUEST_UUID         = '6e400011-b5a3-f393-e0a9-e50e24dcca9e'
+API_RESPONSE_UUID        = '6e400012-b5a3-f393-e0a9-e50e24dcca9e'
+
+API_BASE = 'http://127.0.0.1:8788/api'
+
+mainloop = None
+
+
+# ============================================================
+# Helper: get hostname and version
+# ============================================================
+
+def get_hostname():
+    try:
+        return subprocess.check_output(['hostname'], text=True).strip()
+    except Exception:
+        return 'sentryusb'
+
+def get_version():
+    try:
+        resp = urllib.request.urlopen(f'{API_BASE}/system/version', timeout=3)
+        data = json.loads(resp.read())
+        return data.get('version', 'unknown')
+    except Exception:
+        return 'unknown'
+
+def is_setup_finished():
+    paths = [
+        '/sentryusb/SENTRYUSB_SETUP_FINISHED',
+        '/boot/firmware/SENTRYUSB_SETUP_FINISHED',
+        '/boot/SENTRYUSB_SETUP_FINISHED',
+    ]
+    return any(os.path.exists(p) for p in paths)
+
+
+# ============================================================
+# WiFi scanning and configuration
+# ============================================================
+
+def scan_wifi_networks():
+    """Scan for visible WiFi networks using iwlist."""
+    try:
+        output = subprocess.check_output(
+            ['iwlist', 'wlan0', 'scan'], text=True, timeout=15, stderr=subprocess.DEVNULL
+        )
+        networks = []
+        current = {}
+        for line in output.split('\n'):
+            line = line.strip()
+            if line.startswith('Cell '):
+                if current.get('ssid'):
+                    networks.append(current)
+                current = {}
+            elif 'ESSID:' in line:
+                ssid = line.split('ESSID:')[1].strip('"')
+                if ssid:
+                    current['ssid'] = ssid
+            elif 'Signal level=' in line:
+                try:
+                    sig = line.split('Signal level=')[1].split(' ')[0]
+                    current['signal'] = int(sig.replace('/100', ''))
+                except (ValueError, IndexError):
+                    current['signal'] = 0
+            elif 'Encryption key:on' in line:
+                current['encrypted'] = True
+            elif 'Encryption key:off' in line:
+                current['encrypted'] = False
+        if current.get('ssid'):
+            networks.append(current)
+        # Deduplicate by SSID, keep strongest signal
+        seen = {}
+        for net in networks:
+            ssid = net['ssid']
+            if ssid not in seen or net.get('signal', 0) > seen[ssid].get('signal', 0):
+                seen[ssid] = net
+        return list(seen.values())
+    except Exception as e:
+        log.error(f'WiFi scan failed: {e}')
+        return []
+
+def configure_wifi(ssid, password, hostname=None):
+    """Configure WiFi via wpa_supplicant and optionally set hostname."""
+    result = {'connected': False, 'ip': '', 'error': ''}
+    try:
+        # Write wpa_supplicant config
+        wpa_conf = f'''
+country=US
+ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
+update_config=1
+
+network={{
+    ssid="{ssid}"
+    psk="{password}"
+    key_mgmt=WPA-PSK
+}}
+'''
+        wpa_path = '/etc/wpa_supplicant/wpa_supplicant.conf'
+        # Remount rw if needed
+        subprocess.run(['/root/bin/remountfs_rw'], capture_output=True, timeout=5)
+        with open(wpa_path, 'w') as f:
+            f.write(wpa_conf)
+
+        # Set hostname if provided
+        if hostname:
+            subprocess.run(['hostnamectl', 'set-hostname', hostname], capture_output=True, timeout=5)
+
+        # Restart networking
+        subprocess.run(['wpa_cli', '-i', 'wlan0', 'reconfigure'], capture_output=True, timeout=10)
+
+        # Wait for connection (up to 20 seconds)
+        import time
+        for _ in range(20):
+            time.sleep(1)
+            try:
+                ip_output = subprocess.check_output(
+                    ['ip', '-4', 'addr', 'show', 'wlan0'], text=True, timeout=3
+                )
+                for line in ip_output.split('\n'):
+                    if 'inet ' in line:
+                        ip = line.strip().split(' ')[1].split('/')[0]
+                        result['connected'] = True
+                        result['ip'] = ip
+                        log.info(f'WiFi connected: {ssid} -> {ip}')
+                        return result
+            except Exception:
+                pass
+
+        result['error'] = 'Connection timed out'
+    except Exception as e:
+        result['error'] = str(e)
+        log.error(f'WiFi configure failed: {e}')
+    return result
+
+
+# ============================================================
+# API proxy: forward requests to the local Go server
+# ============================================================
+
+def proxy_api_request(method, path, body=None):
+    """Forward an API request to the local Go server."""
+    url = f'{API_BASE}{path}'
+    try:
+        data = json.dumps(body).encode() if body else None
+        req = urllib.request.Request(url, data=data, method=method)
+        req.add_header('Content-Type', 'application/json')
+        resp = urllib.request.urlopen(req, timeout=15)
+        response_body = resp.read()
+        return {'status': resp.getcode(), 'body': json.loads(response_body)}
+    except urllib.error.HTTPError as e:
+        body_text = e.read().decode() if e.fp else ''
+        return {'status': e.code, 'body': body_text}
+    except Exception as e:
+        return {'status': 500, 'body': {'error': str(e)}}
+
+
+# ============================================================
+# D-Bus / BlueZ GATT Application
+# ============================================================
+
+class InvalidArgsException(dbus.exceptions.DBusException):
+    _dbus_error_name = 'org.freedesktop.DBus.Error.InvalidArgs'
+
+class NotSupportedException(dbus.exceptions.DBusException):
+    _dbus_error_name = 'org.bluez.Error.NotSupported'
+
+class NotPermittedException(dbus.exceptions.DBusException):
+    _dbus_error_name = 'org.bluez.Error.NotPermitted'
+
+
+class Application(dbus.service.Object):
+    """BlueZ GATT Application."""
+
+    def __init__(self, bus):
+        self.path = '/'
+        self.services = []
+        dbus.service.Object.__init__(self, bus, self.path)
+        self.add_service(WifiSetupService(bus, 0))
+        self.add_service(APIProxyService(bus, 1))
+
+    def get_path(self):
+        return dbus.ObjectPath(self.path)
+
+    def add_service(self, service):
+        self.services.append(service)
+
+    @dbus.service.method(DBUS_OM_IFACE, out_signature='a{oa{sa{sv}}}')
+    def GetManagedObjects(self):
+        response = {}
+        for service in self.services:
+            response[service.get_path()] = service.get_properties()
+            chrcs = service.get_characteristics()
+            for chrc in chrcs:
+                response[chrc.get_path()] = chrc.get_properties()
+                descs = chrc.get_descriptors()
+                for desc in descs:
+                    response[desc.get_path()] = desc.get_properties()
+        return response
+
+
+class Service(dbus.service.Object):
+    PATH_BASE = '/org/bluez/sentryusb/service'
+
+    def __init__(self, bus, index, uuid, primary):
+        self.path = self.PATH_BASE + str(index)
+        self.bus = bus
+        self.uuid = uuid
+        self.primary = primary
+        self.characteristics = []
+        dbus.service.Object.__init__(self, bus, self.path)
+
+    def get_properties(self):
+        return {
+            GATT_SERVICE_IFACE: {
+                'UUID': self.uuid,
+                'Primary': self.primary,
+                'Characteristics': dbus.Array(
+                    self.get_characteristic_paths(), signature='o')
+            }
+        }
+
+    def get_path(self):
+        return dbus.ObjectPath(self.path)
+
+    def add_characteristic(self, characteristic):
+        self.characteristics.append(characteristic)
+
+    def get_characteristic_paths(self):
+        return [chrc.get_path() for chrc in self.characteristics]
+
+    def get_characteristics(self):
+        return self.characteristics
+
+    @dbus.service.method(DBUS_PROP_IFACE, in_signature='s', out_signature='a{sv}')
+    def GetAll(self, interface):
+        if interface != GATT_SERVICE_IFACE:
+            raise InvalidArgsException()
+        return self.get_properties()[GATT_SERVICE_IFACE]
+
+
+class Characteristic(dbus.service.Object):
+
+    def __init__(self, bus, index, uuid, flags, service):
+        self.path = service.path + '/char' + str(index)
+        self.bus = bus
+        self.uuid = uuid
+        self.service = service
+        self.flags = flags
+        self.descriptors = []
+        self.value = []
+        self.notifying = False
+        dbus.service.Object.__init__(self, bus, self.path)
+
+    def get_properties(self):
+        return {
+            GATT_CHRC_IFACE: {
+                'Service': self.service.get_path(),
+                'UUID': self.uuid,
+                'Flags': self.flags,
+                'Descriptors': dbus.Array(
+                    self.get_descriptor_paths(), signature='o')
+            }
+        }
+
+    def get_path(self):
+        return dbus.ObjectPath(self.path)
+
+    def add_descriptor(self, descriptor):
+        self.descriptors.append(descriptor)
+
+    def get_descriptor_paths(self):
+        return [desc.get_path() for desc in self.descriptors]
+
+    def get_descriptors(self):
+        return self.descriptors
+
+    @dbus.service.method(DBUS_PROP_IFACE, in_signature='s', out_signature='a{sv}')
+    def GetAll(self, interface):
+        if interface != GATT_CHRC_IFACE:
+            raise InvalidArgsException()
+        return self.get_properties()[GATT_CHRC_IFACE]
+
+    @dbus.service.method(GATT_CHRC_IFACE, in_signature='a{sv}', out_signature='ay')
+    def ReadValue(self, options):
+        return self.value
+
+    @dbus.service.method(GATT_CHRC_IFACE, in_signature='aya{sv}')
+    def WriteValue(self, value, options):
+        pass
+
+    @dbus.service.method(GATT_CHRC_IFACE)
+    def StartNotify(self):
+        self.notifying = True
+
+    @dbus.service.method(GATT_CHRC_IFACE)
+    def StopNotify(self):
+        self.notifying = False
+
+    @dbus.service.signal(DBUS_PROP_IFACE, signature='sa{sv}as')
+    def PropertiesChanged(self, interface, changed, invalidated):
+        pass
+
+    def send_notification(self, value):
+        if not self.notifying:
+            return
+        self.value = value
+        self.PropertiesChanged(
+            GATT_CHRC_IFACE, {'Value': value}, [])
+
+
+# ============================================================
+# WiFi Setup Service
+# ============================================================
+
+class WifiSetupService(Service):
+    def __init__(self, bus, index):
+        Service.__init__(self, bus, index, WIFI_SERVICE_UUID, True)
+        self.add_characteristic(WifiScanCharacteristic(bus, 0, self))
+        self.add_characteristic(WifiConfigCharacteristic(bus, 1, self))
+        self.add_characteristic(WifiStatusCharacteristic(bus, 2, self))
+        self.add_characteristic(DeviceInfoCharacteristic(bus, 3, self))
+
+
+class WifiScanCharacteristic(Characteristic):
+    """Returns JSON array of visible WiFi networks when read."""
+
+    def __init__(self, bus, index, service):
+        Characteristic.__init__(self, bus, index, WIFI_SCAN_UUID,
+                                ['read', 'notify'], service)
+
+    def ReadValue(self, options):
+        networks = scan_wifi_networks()
+        data = json.dumps(networks).encode()
+        log.info(f'WiFi scan: found {len(networks)} networks')
+        return dbus.Array([dbus.Byte(b) for b in data], signature='y')
+
+
+class WifiConfigCharacteristic(Characteristic):
+    """Receives WiFi credentials as JSON {ssid, password, hostname?}."""
+
+    def __init__(self, bus, index, service):
+        Characteristic.__init__(self, bus, index, WIFI_CONFIG_UUID,
+                                ['write'], service)
+        self.write_buffer = bytearray()
+
+    def WriteValue(self, value, options):
+        self.write_buffer.extend(bytes(value))
+        # Try to parse as JSON — if incomplete, wait for more chunks
+        try:
+            config = json.loads(self.write_buffer.decode())
+            self.write_buffer = bytearray()
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return
+
+        ssid = config.get('ssid', '')
+        password = config.get('password', '')
+        hostname = config.get('hostname')
+
+        if not ssid or not password:
+            log.warning('WiFi config missing ssid or password')
+            return
+
+        log.info(f'Configuring WiFi: ssid={ssid}, hostname={hostname}')
+
+        # Find the WifiStatusCharacteristic to send notifications
+        status_chrc = None
+        for chrc in self.service.get_characteristics():
+            if chrc.uuid == WIFI_STATUS_UUID:
+                status_chrc = chrc
+                break
+
+        # Send "connecting" status
+        if status_chrc:
+            status_data = json.dumps({'connected': False, 'ip': '', 'error': ''}).encode()
+            status_chrc.send_notification(
+                dbus.Array([dbus.Byte(b) for b in status_data], signature='y'))
+
+        # Configure WiFi in background
+        def do_configure():
+            result = configure_wifi(ssid, password, hostname)
+            if status_chrc:
+                status_data = json.dumps(result).encode()
+                status_chrc.send_notification(
+                    dbus.Array([dbus.Byte(b) for b in status_data], signature='y'))
+
+        GLib.idle_add(lambda: (GLib.timeout_add(100, do_configure), False)[-1])
+
+
+class WifiStatusCharacteristic(Characteristic):
+    """Notifies WiFi connection result {connected, ip, error}."""
+
+    def __init__(self, bus, index, service):
+        Characteristic.__init__(self, bus, index, WIFI_STATUS_UUID,
+                                ['read', 'notify'], service)
+
+    def ReadValue(self, options):
+        status = {'connected': False, 'ip': '', 'error': ''}
+        try:
+            ip_output = subprocess.check_output(
+                ['ip', '-4', 'addr', 'show', 'wlan0'], text=True, timeout=3)
+            for line in ip_output.split('\n'):
+                if 'inet ' in line:
+                    ip = line.strip().split(' ')[1].split('/')[0]
+                    status['connected'] = True
+                    status['ip'] = ip
+                    break
+        except Exception:
+            pass
+        data = json.dumps(status).encode()
+        return dbus.Array([dbus.Byte(b) for b in data], signature='y')
+
+
+class DeviceInfoCharacteristic(Characteristic):
+    """Returns device info: hostname, version, setup_finished."""
+
+    def __init__(self, bus, index, service):
+        Characteristic.__init__(self, bus, index, DEVICE_INFO_UUID,
+                                ['read'], service)
+
+    def ReadValue(self, options):
+        info = {
+            'hostname': get_hostname(),
+            'version': get_version(),
+            'setup_finished': is_setup_finished(),
+        }
+        data = json.dumps(info).encode()
+        return dbus.Array([dbus.Byte(b) for b in data], signature='y')
+
+
+# ============================================================
+# API Proxy Service
+# ============================================================
+
+class APIProxyService(Service):
+    def __init__(self, bus, index):
+        Service.__init__(self, bus, index, API_SERVICE_UUID, True)
+        self.response_chrc = APIResponseCharacteristic(bus, 1, self)
+        self.add_characteristic(APIRequestCharacteristic(bus, 0, self, self.response_chrc))
+        self.add_characteristic(self.response_chrc)
+
+
+class APIRequestCharacteristic(Characteristic):
+    """Receives API requests as JSON {id, method, path, body?}.
+    Forwards to local Go API and sends response via APIResponseCharacteristic."""
+
+    def __init__(self, bus, index, service, response_chrc):
+        Characteristic.__init__(self, bus, index, API_REQUEST_UUID,
+                                ['write'], service)
+        self.response_chrc = response_chrc
+        self.write_buffer = bytearray()
+
+    def WriteValue(self, value, options):
+        self.write_buffer.extend(bytes(value))
+        try:
+            request = json.loads(self.write_buffer.decode())
+            self.write_buffer = bytearray()
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return
+
+        request_id = request.get('id', 0)
+        method = request.get('method', 'GET')
+        path = request.get('path', '/status')
+        body = request.get('body')
+
+        log.info(f'API proxy: {method} {path} (id={request_id})')
+
+        def do_request():
+            result = proxy_api_request(method, path, body)
+            response = {
+                'id': request_id,
+                'status': result['status'],
+                'body': result['body'],
+            }
+            response_json = json.dumps(response).encode()
+
+            # Chunk if > 500 bytes
+            chunk_size = 500
+            if len(response_json) <= chunk_size:
+                self.response_chrc.send_notification(
+                    dbus.Array([dbus.Byte(b) for b in response_json], signature='y'))
+            else:
+                chunks = [response_json[i:i+chunk_size]
+                          for i in range(0, len(response_json), chunk_size)]
+                for idx, chunk in enumerate(chunks):
+                    chunk_msg = json.dumps({
+                        'id': request_id,
+                        'chunks': len(chunks),
+                        'chunk': idx,
+                        'data': chunk.decode('utf-8', errors='replace'),
+                    }).encode()
+                    self.response_chrc.send_notification(
+                        dbus.Array([dbus.Byte(b) for b in chunk_msg], signature='y'))
+
+        GLib.timeout_add(10, do_request)
+
+
+class APIResponseCharacteristic(Characteristic):
+    """Sends API responses as notifications."""
+
+    def __init__(self, bus, index, service):
+        Characteristic.__init__(self, bus, index, API_RESPONSE_UUID,
+                                ['notify'], service)
+
+
+# ============================================================
+# BLE Advertisement
+# ============================================================
+
+class Advertisement(dbus.service.Object):
+    PATH_BASE = '/org/bluez/sentryusb/advertisement'
+
+    def __init__(self, bus, index, advertising_type):
+        self.path = self.PATH_BASE + str(index)
+        self.bus = bus
+        self.ad_type = advertising_type
+        self.local_name = f'SentryUSB-{get_hostname()[-4:]}'
+        self.service_uuids = [WIFI_SERVICE_UUID, API_SERVICE_UUID]
+        self.include_tx_power = True
+        dbus.service.Object.__init__(self, bus, self.path)
+
+    def get_properties(self):
+        properties = {
+            LE_ADVERTISEMENT_IFACE: {
+                'Type': self.ad_type,
+                'LocalName': dbus.String(self.local_name),
+                'ServiceUUIDs': dbus.Array(self.service_uuids, signature='s'),
+                'IncludeTxPower': dbus.Boolean(self.include_tx_power),
+            }
+        }
+        return properties
+
+    def get_path(self):
+        return dbus.ObjectPath(self.path)
+
+    @dbus.service.method(DBUS_PROP_IFACE, in_signature='s', out_signature='a{sv}')
+    def GetAll(self, interface):
+        if interface != LE_ADVERTISEMENT_IFACE:
+            raise InvalidArgsException()
+        return self.get_properties()[LE_ADVERTISEMENT_IFACE]
+
+    @dbus.service.method(LE_ADVERTISEMENT_IFACE, in_signature='', out_signature='')
+    def Release(self):
+        log.info(f'Advertisement released: {self.path}')
+
+
+# ============================================================
+# Main
+# ============================================================
+
+def find_adapter(bus):
+    """Find the first Bluetooth adapter that supports LE."""
+    remote_om = dbus.Interface(
+        bus.get_object(BLUEZ_SERVICE, '/'), DBUS_OM_IFACE)
+    objects = remote_om.GetManagedObjects()
+    for path, interfaces in objects.items():
+        if LE_ADVERTISING_MANAGER_IFACE in interfaces:
+            return path
+    return None
+
+def register_ad_cb():
+    log.info('Advertisement registered')
+
+def register_ad_error_cb(error):
+    log.error(f'Failed to register advertisement: {error}')
+    mainloop.quit()
+
+def register_app_cb():
+    log.info('GATT application registered')
+
+def register_app_error_cb(error):
+    log.error(f'Failed to register GATT application: {error}')
+    mainloop.quit()
+
+
+def main():
+    global mainloop
+    dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
+    bus = dbus.SystemBus()
+
+    adapter_path = find_adapter(bus)
+    if not adapter_path:
+        log.error('No Bluetooth LE adapter found')
+        sys.exit(1)
+
+    log.info(f'Using adapter: {adapter_path}')
+
+    # Power on adapter
+    adapter_props = dbus.Interface(
+        bus.get_object(BLUEZ_SERVICE, adapter_path), DBUS_PROP_IFACE)
+    adapter_props.Set('org.bluez.Adapter1', 'Powered', dbus.Boolean(True))
+
+    # Register GATT application
+    service_manager = dbus.Interface(
+        bus.get_object(BLUEZ_SERVICE, adapter_path), GATT_MANAGER_IFACE)
+
+    app = Application(bus)
+    service_manager.RegisterApplication(
+        app.get_path(), {},
+        reply_handler=register_app_cb,
+        error_handler=register_app_error_cb)
+
+    # Register advertisement
+    ad_manager = dbus.Interface(
+        bus.get_object(BLUEZ_SERVICE, adapter_path), LE_ADVERTISING_MANAGER_IFACE)
+
+    adv = Advertisement(bus, 0, 'peripheral')
+    ad_manager.RegisterAdvertisement(
+        adv.get_path(), {},
+        reply_handler=register_ad_cb,
+        error_handler=register_ad_error_cb)
+
+    hostname = get_hostname()
+    log.info(f'SentryUSB BLE peripheral started: SentryUSB-{hostname[-4:]}')
+    log.info(f'WiFi Setup Service: {WIFI_SERVICE_UUID}')
+    log.info(f'API Proxy Service:  {API_SERVICE_UUID}')
+
+    mainloop = GLib.MainLoop()
+
+    def signal_handler(sig, frame):
+        log.info('Shutting down...')
+        mainloop.quit()
+
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
+    try:
+        mainloop.run()
+    except KeyboardInterrupt:
+        pass
+
+
+if __name__ == '__main__':
+    main()

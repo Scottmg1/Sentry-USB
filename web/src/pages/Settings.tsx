@@ -267,6 +267,143 @@ function BlePairButton() {
   )
 }
 
+type PairedDevice = { pairing_id: string; device_name: string; platform: string; paired_at: string }
+
+function MobileNotificationsSection() {
+  const [pairingCode, setPairingCode] = useState<string | null>(null)
+  const [expiresAt, setExpiresAt] = useState<string | null>(null)
+  const [pairedDevices, setPairedDevices] = useState<PairedDevice[]>([])
+  const [loading, setLoading] = useState(false)
+  const [devicesLoading, setDevicesLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [countdown, setCountdown] = useState(0)
+
+  useEffect(() => {
+    loadPairedDevices()
+  }, [])
+
+  useEffect(() => {
+    if (!expiresAt) return
+    const interval = setInterval(() => {
+      const remaining = Math.max(0, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000))
+      setCountdown(remaining)
+      if (remaining <= 0) {
+        setPairingCode(null)
+        setExpiresAt(null)
+      }
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [expiresAt])
+
+  async function loadPairedDevices() {
+    try {
+      const res = await fetch("/api/notifications/paired-devices")
+      if (res.ok) {
+        const data = await res.json()
+        setPairedDevices(data.devices || [])
+      }
+    } catch { /* ignore */ }
+    setDevicesLoading(false)
+  }
+
+  async function generateCode() {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch("/api/notifications/generate-code", { method: "POST" })
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || "Failed to generate code")
+      }
+      const data = await res.json()
+      setPairingCode(data.code)
+      setExpiresAt(data.expires_at)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to generate code")
+    }
+    setLoading(false)
+  }
+
+  async function removeDevice(pairingId: string) {
+    try {
+      const res = await fetch(`/api/notifications/paired-devices/${pairingId}`, { method: "DELETE" })
+      if (res.ok) {
+        setPairedDevices(prev => prev.filter(d => d.pairing_id !== pairingId))
+      }
+    } catch { /* ignore */ }
+  }
+
+  return (
+    <div>
+      <h2 className="mb-3 text-sm font-medium uppercase tracking-wider text-slate-500">
+        Mobile Notifications
+      </h2>
+      <div className="glass-card p-5 space-y-4">
+        <p className="text-sm text-slate-400">
+          Pair your phone with the SentryUSB mobile app to receive push notifications.
+        </p>
+
+        {/* Generate Code */}
+        <div className="flex items-center gap-3">
+          {pairingCode ? (
+            <div className="flex items-center gap-4">
+              <span className="font-mono text-2xl font-bold tracking-widest text-blue-400">{pairingCode}</span>
+              <span className="text-xs text-slate-500">
+                Expires in {Math.floor(countdown / 60)}:{String(countdown % 60).padStart(2, "0")}
+              </span>
+            </div>
+          ) : (
+            <button
+              onClick={generateCode}
+              disabled={loading}
+              className="rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-600 disabled:opacity-50"
+            >
+              {loading ? (
+                <Loader2 className="inline h-4 w-4 animate-spin mr-1.5" />
+              ) : null}
+              Generate Pairing Code
+            </button>
+          )}
+        </div>
+
+        {pairingCode && (
+          <p className="text-xs text-slate-600">
+            Enter this code in the SentryUSB mobile app under Settings → Pair for Notifications.
+          </p>
+        )}
+
+        {error && (
+          <p className="text-xs text-red-400">{error}</p>
+        )}
+
+        {/* Paired Devices */}
+        {devicesLoading ? (
+          <p className="text-xs text-slate-600">Loading paired devices...</p>
+        ) : pairedDevices.length > 0 ? (
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Paired Devices</p>
+            {pairedDevices.map(device => (
+              <div key={device.pairing_id} className="flex items-center gap-3 rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2">
+                <span className="text-sm text-slate-300">{device.device_name}</span>
+                <span className="text-xs text-slate-600">{device.platform.toUpperCase()}</span>
+                <span className="flex-1" />
+                <button
+                  onClick={() => removeDevice(device.pairing_id)}
+                  className="text-xs text-red-400/60 hover:text-red-400 transition-colors"
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-slate-600">No mobile devices paired yet.</p>
+        )}
+      </div>
+    </div>
+  )
+}
+
 type HealthItem = { name: string; status: "pass" | "warn" | "fail"; detail?: string }
 type HealthCategory = { name: string; items: HealthItem[] }
 type HealthReport = { summary: string; categories: HealthCategory[] }
@@ -723,6 +860,9 @@ export default function Settings() {
           </div>
         </div>
       </div>
+
+      {/* Mobile Notifications */}
+      <MobileNotificationsSection />
 
       {/* Quick Actions */}
       <div>
