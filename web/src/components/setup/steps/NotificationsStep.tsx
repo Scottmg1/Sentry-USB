@@ -85,6 +85,14 @@ const providers: NotificationProvider[] = [
       { key: "WEBHOOK_URL", label: "Webhook URL", placeholder: "http://example.com/webhook", secret: true },
     ],
   },
+  {
+    id: "ntfy", label: "ntfy", enableField: "NTFY_ENABLED",
+    fields: [
+      { key: "NTFY_URL", label: "URL & Topic", placeholder: "https://ntfy.sh/yourtopic" },
+      { key: "NTFY_TOKEN", label: "Access Token", placeholder: "optional", secret: true },
+      { key: "NTFY_PRIORITY", label: "Priority", placeholder: "3" },
+    ],
+  },
 ]
 
 function ProviderCard({ provider, data, onChange, errorFields }: { provider: NotificationProvider; errorFields: Set<string> } & Pick<StepProps, "data" | "onChange">) {
@@ -166,6 +174,7 @@ const requiredByProvider: Record<string, string[]> = {
   MATRIX_ENABLED: ["MATRIX_SERVER_URL", "MATRIX_USERNAME", "MATRIX_PASSWORD", "MATRIX_ROOM"],
   SNS_ENABLED: ["AWS_REGION", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SNS_TOPIC_ARN"],
   WEBHOOK_ENABLED: ["WEBHOOK_URL"],
+  NTFY_ENABLED: ["NTFY_URL"],
 }
 
 export function NotificationsStep({ data, onChange }: StepProps) {

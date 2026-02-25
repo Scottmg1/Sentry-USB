@@ -81,6 +81,17 @@ function send_slack () {
   curl -X POST --data-urlencode "payload=$payload" "$SLACK_WEBHOOK_URL"
 }
 
+function send_ntfy () {
+  log "Sending ntfy message."
+
+  curl -X POST \
+    -H "Title: $title" \
+    -H "Priority: ${NTFY_PRIORITY:-3}" \
+    ${NTFY_TOKEN:+-H "Authorization: Bearer $NTFY_TOKEN"} \
+    -d "$message" \
+    "$NTFY_URL"
+}
+
 function send_shell () {
   log "Sending Shell command."
   if [[ -n "$NOTIFICATION_COMMAND_START" && "$type" = "start" ]]; then
@@ -103,6 +114,7 @@ log "$message"
 [ "${TELEGRAM_ENABLED:-false}" = "true" ] && send_telegram
 [ "${MATRIX_ENABLED:-false}" = "true" ] && send_matrix
 [ "${SLACK_ENABLED:-false}" = "true" ] && send_slack
+[ "${NTFY_ENABLED:-false}" = "true" ] && send_ntfy
 [ "${NOTIFICATION_COMMAND_ENABLED:-false}" = "true" ] && send_shell
 
 exit 0

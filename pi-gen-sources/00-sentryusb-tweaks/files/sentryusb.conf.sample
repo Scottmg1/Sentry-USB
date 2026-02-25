@@ -213,6 +213,12 @@ export CAM_SIZE=40G
 # export MATRIX_PASSWORD='put_your_matrix_password_here'
 # export MATRIX_ROOM='put_the_matrix_target_room_id_here'
 
+# Uncomment if setting up ntfy notifications
+# export NTFY_ENABLED=true
+# export NTFY_URL=https://ntfy.example.com/yourtopic
+# export NTFY_TOKEN=your_token_if_needed
+# export NTFY_PRIORITY=3
+
 # Uncomment if setting up shell notifications.
 # export NOTIFICATION_COMMAND_ENABLED=true
 # export NOTIFICATION_COMMAND_START="ssh root@remote-server 'command args'"

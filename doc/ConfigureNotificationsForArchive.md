@@ -1,6 +1,6 @@
 # Configure Notifications for Archive
 
-Get push notifications when SentryUSB finishes archiving clips, encounters errors, or performs other important actions. You can enable any combination of the 10 supported providers.
+Get push notifications when SentryUSB finishes archiving clips, encounters errors, or performs other important actions. You can enable any combination of the 11 supported providers.
 
 ## Setup Wizard (Recommended)
 
@@ -147,6 +147,20 @@ Generic webhook for integration with Home Assistant, Node-RED, or any HTTP endpo
 | Wizard Field | Config Variable | Description |
 |-------------|----------------|-------------|
 | Webhook URL | `WEBHOOK_URL` | Full URL to POST notifications to |
+
+### ntfy
+
+Free, open-source pub-sub notification service. Works with [ntfy.sh](https://ntfy.sh) (hosted) or a self-hosted instance. iOS/Android apps available.
+
+1. Subscribe to a topic at [ntfy.sh](https://ntfy.sh) (e.g., `https://ntfy.sh/your-unique-topic`)
+2. Or self-host ntfy and use your own server URL
+3. If your topic is access-controlled, generate an **Access Token** in ntfy's account settings
+
+| Wizard Field | Config Variable | Description |
+|-------------|----------------|-------------|
+| URL & Topic | `NTFY_URL` | Full URL including topic (e.g., `https://ntfy.sh/yourtopic`) |
+| Access Token | `NTFY_TOKEN` | Optional auth token for protected topics |
+| Priority | `NTFY_PRIORITY` | Message priority 1–5 (default: `3`) |
 
 ---
 

@@ -13,7 +13,7 @@ SentryUSB turns a Raspberry Pi (or compatible SBC) into a smart USB drive for yo
 - **Multi-camera Viewer** — 6 layout options for synchronized playback of all Tesla camera angles
 - **Archive Support** — CIFS/SMB, rsync, rclone (cloud), and NFS
 - **Keep-Awake** — BLE, TeslaFi, Tessie, and Webhook methods
-- **10+ Notification Providers** — Pushover, Discord, Telegram, Slack, Signal, Matrix, AWS SNS, IFTTT, Gotify, Webhooks
+- **11+ Notification Providers** — Pushover, Discord, Telegram, Slack, Signal, Matrix, AWS SNS, IFTTT, Gotify, NTFY, Webhooks
 
 ## Documentation
 

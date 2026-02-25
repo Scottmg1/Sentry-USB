@@ -4,19 +4,16 @@ This guide covers installing SentryUSB on a Raspberry Pi. Supported boards:
 
 - **Raspberry Pi 4B / Pi 5** (recommended)
 - **Raspberry Pi Zero 2 W** (good budget option)
-- **Raspberry Pi Zero W** (works, but slower)
 
 ## What You Need
 
 | Part | Details |
 |------|---------|
-| **Raspberry Pi** | Pi 4B, Pi 5, Pi Zero 2 W, or Pi Zero W |
+| **Raspberry Pi** | Pi 4B, Pi 5, or Pi Zero 2 W |
 | **MicroSD card** | 128 GB+ recommended (64 GB minimum) |
-| **USB cable** | Pi 4/5: USB-A → USB-C · Pi Zero: USB-A → Micro-USB (use the **data** port, not PWR) |
+| **USB cable** | Pi 4/5: USB-A → USB-C · Pi Zero 2 W: USB-A → Micro-USB |
 | **Computer** | With an SD card reader, for flashing |
 | **WiFi** | Internet access for initial setup |
-
-> **Pi Zero users**: You must use the port labeled **USB** (not PWR). A micro-USB OTG data cable is required.
 
 There are two ways to install SentryUSB:
 
@@ -86,7 +83,6 @@ Use this if you want to start from a clean **Raspberry Pi OS Bookworm (64-bit Li
 1. Download [Raspberry Pi Imager](https://www.raspberrypi.com/software/)
 2. In Pi Imager:
    - **Operating System** → **Raspberry Pi OS (other)** → **Raspberry Pi OS Lite (64-bit)**
-     - For Pi Zero W (original): choose **Raspberry Pi OS Lite (32-bit)** instead
    - **Storage** → select your SD card
    - Click the **⚙️ settings gear** and configure:
      - **Hostname**: `sentryusb`
@@ -150,7 +146,7 @@ The install takes about 2–5 minutes. When it finishes, **open the web UI to co
 | **Storage** | Dashcam size (40G+), optional Music / LightShow / Boombox drives, external NVMe |
 | **Archive** | Where to back up clips: SMB/CIFS, rsync, rclone (cloud), NFS, or none |
 | **Keep Awake** | Keep car awake during archiving: BLE, TeslaFi, Tessie, or Webhook |
-| **Notifications** | Push alerts: Pushover, Discord, Telegram, Slack, Signal, Matrix, AWS SNS, Gotify, IFTTT, Webhook |
+| **Notifications** | Push alerts: Pushover, Discord, Telegram, Slack, Signal, Matrix, AWS SNS, Gotify, IFTTT, NTFY, Webhook |
 | **Security** | Web UI password, SSH public key, disable SSH password auth |
 | **Advanced** | Timezone, archive delay, temperature thresholds, CPU governor, update source repo/branch |
 | **Review** | Review all settings → **Apply & Run Setup** |
@@ -245,13 +241,12 @@ curl -fsSL https://usb.sentry-six.com | bash
 ### Pi won't connect to WiFi
 - Double-check SSID and password (case-sensitive, watch for special characters)
 - Connect a monitor + keyboard to debug
-- Pi Zero creates a USB gadget network interface — plug into your computer and try `ssh pi@169.254.x.x`
 
 ### Tesla doesn't see the USB drive
 - Use a **data** cable, not charge-only
-- Pi Zero: make sure you're plugged into the **USB** port, not **PWR**
 - Pi 4: the single USB-C port is used for both power and data, so only plug into the Tesla after setup
 - Wait 2–3 minutes. Check Dashboard → "USB Drives" should show "Connected"
+- Try a different USB 3.0 cable
 
 ### Web UI won't load
 ```bash
