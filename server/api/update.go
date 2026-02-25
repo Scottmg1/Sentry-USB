@@ -295,6 +295,19 @@ if [ -f "$TMPDIR/setup/pi/envsetup.sh" ]; then
   cp "$TMPDIR/setup/pi/envsetup.sh" "/root/bin/envsetup.sh"
   chmod +x "/root/bin/envsetup.sh"
 fi
+
+# Install/update Avahi mDNS service for iOS app discovery
+if [ -f "$TMPDIR/setup/pi/avahi-sentryusb.service" ]; then
+  if ! dpkg -s avahi-daemon >/dev/null 2>&1; then
+    apt-get update -qq && apt-get install -y -qq avahi-daemon avahi-utils >/dev/null 2>&1 || true
+  fi
+  if dpkg -s avahi-daemon >/dev/null 2>&1; then
+    mkdir -p /etc/avahi/services
+    cp "$TMPDIR/setup/pi/avahi-sentryusb.service" /etc/avahi/services/sentryusb.service
+    systemctl enable avahi-daemon 2>/dev/null || true
+    systemctl restart avahi-daemon 2>/dev/null || true
+  fi
+fi
 `, tarballURL)
 		scriptOut, scriptErr := shell.RunWithTimeout(120*time.Second, "bash", "-c", scriptUpdateCmd)
 		if scriptErr != nil {
