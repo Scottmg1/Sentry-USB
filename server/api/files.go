@@ -17,7 +17,12 @@ type fileEntry struct {
 	Path    string `json:"path"`
 	IsDir   bool   `json:"is_dir"`
 	Size    int64  `json:"size"`
-	Modified string `json:"modified"`
+	ModTime string `json:"mod_time"`
+}
+
+type fileListResponse struct {
+	Path    string      `json:"path"`
+	Entries []fileEntry `json:"entries"`
 }
 
 // Allowed base paths for file operations (security)
@@ -81,7 +86,7 @@ func (h *handlers) listFiles(w http.ResponseWriter, r *http.Request) {
 	entries, err := os.ReadDir(cleanPath)
 	if err != nil {
 		// If directory doesn't exist (e.g. gadget not mounted), return empty list
-		writeJSON(w, http.StatusOK, []fileEntry{})
+		writeJSON(w, http.StatusOK, fileListResponse{Path: reqPath, Entries: []fileEntry{}})
 		return
 	}
 
@@ -92,11 +97,11 @@ func (h *handlers) listFiles(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		files = append(files, fileEntry{
-			Name:     e.Name(),
-			Path:     filepath.Join(reqPath, e.Name()),
-			IsDir:    e.IsDir(),
-			Size:     info.Size(),
-			Modified: info.ModTime().Format("2006-01-02T15:04:05Z"),
+			Name:    e.Name(),
+			Path:    filepath.Join(reqPath, e.Name()),
+			IsDir:   e.IsDir(),
+			Size:    info.Size(),
+			ModTime: info.ModTime().Format("2006-01-02T15:04:05Z"),
 		})
 	}
 
@@ -104,7 +109,7 @@ func (h *handlers) listFiles(w http.ResponseWriter, r *http.Request) {
 		files = []fileEntry{}
 	}
 
-	writeJSON(w, http.StatusOK, files)
+	writeJSON(w, http.StatusOK, fileListResponse{Path: reqPath, Entries: files})
 }
 
 func (h *handlers) createDir(w http.ResponseWriter, r *http.Request) {

@@ -7,6 +7,8 @@ import (
 )
 
 var allowedLogs = map[string]string{
+	"syslog":       "/var/log/syslog",
+	"kern":         "/var/log/kern.log",
 	"archiveloop":  "/mutable/archiveloop.log",
 	"setup":        "/sentryusb/sentryusb-setup.log",
 	"diagnostics":  "/tmp/diagnostics.txt",

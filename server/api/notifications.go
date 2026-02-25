@@ -166,8 +166,14 @@ func (h *handlers) generateNotificationPairingCode(w http.ResponseWriter, r *htt
 		ExpiresAt: expiresAt,
 	})
 
-	// Register code with notification backend
-	go registerCodeWithBackend(creds, code)
+	// Register code with notification backend (synchronous — must succeed before returning code to user)
+	if err := registerCodeWithBackend(creds, code); err != nil {
+		// Remove the code we just added since registration failed
+		activeCodes = activeCodes[:len(activeCodes)-1]
+		log.Printf("[notifications] Failed to register code %s with backend: %v", code, err)
+		writeError(w, http.StatusBadGateway, "Failed to register pairing code with notification server. Check internet connection.")
+		return
+	}
 
 	writeJSON(w, http.StatusOK, map[string]string{
 		"code":       code,
@@ -178,29 +184,34 @@ func (h *handlers) generateNotificationPairingCode(w http.ResponseWriter, r *htt
 }
 
 // registerCodeWithBackend sends the pairing code to the notification relay server
-func registerCodeWithBackend(creds *NotificationCredentials, code string) {
-	body := fmt.Sprintf(`{"device_id":"%s","device_secret":"%s","code":"%s"}`,
-		creds.DeviceID, creds.DeviceSecret, code)
+func registerCodeWithBackend(creds *NotificationCredentials, code string) error {
+	hostname, _ := os.Hostname()
+	body := fmt.Sprintf(`{"device_id":"%s","device_secret":"%s","code":"%s","hostname":"%s"}`,
+		creds.DeviceID, creds.DeviceSecret, code, hostname)
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	req, err := http.NewRequest("POST", "https://notifications.sentry-six.com/register-code", strings.NewReader(body))
 	if err != nil {
 		log.Printf("[notifications] Failed to create register-code request: %v", err)
-		return
+		return fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Printf("[notifications] Failed to register code with backend: %v", err)
-		return
+		return fmt.Errorf("failed to reach notification server: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
 		respBody, _ := io.ReadAll(resp.Body)
 		log.Printf("[notifications] Backend register-code returned %d: %s", resp.StatusCode, string(respBody))
+		return fmt.Errorf("backend returned %d: %s", resp.StatusCode, string(respBody))
 	}
+
+	log.Printf("[notifications] Code %s registered with backend successfully", code)
+	return nil
 }
 
 // GET /api/notifications/paired-devices
