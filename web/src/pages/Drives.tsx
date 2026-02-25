@@ -4,7 +4,7 @@ import "leaflet/dist/leaflet.css"
 import {
   MapPin, Navigation, Clock, Gauge, Play,
   Download, Upload, Loader2, ChevronLeft, Search, List, X,
-  Tag, Plus, Layers, BarChart3, RefreshCw, Server, AlertTriangle,
+  Tag, Plus, Layers, BarChart3, RefreshCw, AlertTriangle,
   Eye, EyeOff,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -488,13 +488,13 @@ export default function Drives() {
   }, [showFSDPanel, fsdPeriod])
 
   // ── Process ──
-  async function triggerProcess(mode: "new" | "reprocess" | "reprocess-archive" = "new") {
+  async function triggerProcess(mode: "new" | "reprocess" = "new") {
     setProcessing(true)
     setShowProcessMenu(false)
-    const modeLabel = mode === "new" ? "Processing new drives" : mode === "reprocess" ? "Reprocessing all drives" : "Reprocessing from archive"
+    const modeLabel = mode === "new" ? "Processing new drives" : "Reprocessing all drives"
     setProcessMsg(`${modeLabel}...`)
     try {
-      const url = mode === "new" ? "/api/drives/process" : mode === "reprocess" ? "/api/drives/reprocess" : "/api/drives/reprocess-archive"
+      const url = mode === "new" ? "/api/drives/process" : "/api/drives/reprocess"
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -665,17 +665,6 @@ export default function Drives() {
                   <div>
                     <p className="font-medium">Reprocess All Drives</p>
                     <p className="text-[10px] text-slate-500">Re-extract existing clips on disk only</p>
-                  </div>
-                </button>
-                <button
-                  onClick={() => triggerProcess("reprocess-archive")}
-                  disabled={archiving}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-300 transition-colors hover:bg-white/5 disabled:opacity-40"
-                >
-                  <Server className="h-3 w-3 text-purple-400" />
-                  <div>
-                    <p className="font-medium">Reprocess from Archive</p>
-                    <p className="text-[10px] text-slate-500">Re-extract from archive server mount</p>
                   </div>
                 </button>
                 {archiving && (

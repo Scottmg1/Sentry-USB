@@ -15,3 +15,5 @@ web/node_modules/
 web/dist/
 deploy/
 internal/
+
+cmd/

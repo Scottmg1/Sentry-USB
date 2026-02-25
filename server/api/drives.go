@@ -51,7 +51,6 @@ func RegisterDriveRoutes(mux *http.ServeMux, dh *DriveHandlers) {
 	mux.HandleFunc("GET /api/drives/process", dh.processingStatus)
 	mux.HandleFunc("POST /api/drives/process", dh.processFiles)
 	mux.HandleFunc("POST /api/drives/reprocess", dh.reprocessAll)
-	mux.HandleFunc("POST /api/drives/reprocess-archive", dh.reprocessFromArchive)
 	mux.HandleFunc("GET /api/drives/status", dh.processingStatus)
 	mux.HandleFunc("GET /api/drives/data/download", dh.downloadData)
 	mux.HandleFunc("POST /api/drives/data/upload", dh.uploadData)
@@ -233,70 +232,6 @@ declare -F log > /dev/null 2>&1 || {
 }
 `
 
-// archiveShellPreamble sources the system config, sets ARCHIVE_MOUNT, and
-// defines the helper functions that connect-archive.sh / disconnect-archive.sh
-// expect (these are normally only available inside the archiveloop process).
-const archiveShellPreamble = `source /root/bin/envsetup.sh 2>/dev/null || true
-export LOG_FILE="${LOG_FILE:-/mutable/archiveloop.log}"
-declare -F log > /dev/null 2>&1 || {
-  function log { echo "$(date): $*" >> "$LOG_FILE" 2>/dev/null || true; }
-  export -f log
-}
-if [ "${ARCHIVE_SYSTEM:-none}" = "cifs" ] || [ "${ARCHIVE_SYSTEM:-none}" = "nfs" ]; then
-  [ -n "${SHARE_NAME:-}" ] && [ -f /backingfiles/cam_disk.bin ] && export ARCHIVE_MOUNT=/mnt/archive
-fi
-function ensure_mountpoint_is_mounted () {
-  local mount_point="$1"
-  if findmnt --mountpoint "$mount_point" > /dev/null; then
-    log "$mount_point is already mounted."
-  else
-    if timeout 10 mount "$mount_point" >> "$LOG_FILE" 2>&1; then
-      log "Mounted $mount_point."
-    else
-      log "Failed to mount $mount_point."
-      return 1
-    fi
-  fi
-}
-function retry () {
-  local attempts=0
-  while true; do
-    if "$@"; then return 0; fi
-    if [ "$attempts" -ge 10 ]; then log "Attempts exhausted."; return 1; fi
-    log "Sleeping before retry ..."
-    /bin/sleep 1
-    attempts=$((attempts + 1))
-    log "Retrying ($attempts) '$*' ..."
-  done
-}
-function ensure_mountpoint_is_mounted_with_retry () {
-  retry ensure_mountpoint_is_mounted "$1"
-}
-export -f ensure_mountpoint_is_mounted
-export -f retry
-export -f ensure_mountpoint_is_mounted_with_retry
-export -f log
-`
-
-// connectArchive mounts the archive share by running connect-archive.sh
-// with the same environment archiveloop uses. Returns nil on success.
-func connectArchive() error {
-	cmd := exec.Command("/bin/bash", "-c", archiveShellPreamble+"/root/bin/connect-archive.sh")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		log.Printf("[drives] connect-archive failed: %v: %s", err, string(out))
-		return fmt.Errorf("connect-archive failed: %w", err)
-	}
-	return nil
-}
-
-// disconnectArchive unmounts the archive share.
-func disconnectArchive() {
-	cmd := exec.Command("/bin/bash", "-c", archiveShellPreamble+"/root/bin/disconnect-archive.sh")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		log.Printf("[drives] disconnect-archive failed: %v: %s", err, string(out))
-	}
-}
-
 // startKeepAwake runs awake_start in the background to keep the car from sleeping.
 func startKeepAwake() {
 	go func() {
@@ -462,87 +397,6 @@ func (dh *DriveHandlers) reprocessAll(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]interface{}{
 		"status": "started",
 		"mode":   "reprocess",
-	})
-}
-
-// POST /api/drives/reprocess-archive — re-extract drives from the archive server mount.
-func (dh *DriveHandlers) reprocessFromArchive(w http.ResponseWriter, r *http.Request) {
-	if dh.processor.IsRunning() {
-		writeError(w, http.StatusConflict, "processing already in progress")
-		return
-	}
-	if isArchiving() {
-		writeError(w, http.StatusConflict, "archive is currently running — please wait until it finishes")
-		return
-	}
-
-	// Mount the archive share (it is normally only mounted during archiveloop)
-	if err := connectArchive(); err != nil {
-		writeError(w, http.StatusBadRequest, "failed to mount archive share — check archive configuration")
-		return
-	}
-
-	// Check if archive mount has a RecentClips directory (with or without TeslaCam subdirectory)
-	archiveClipsDir := ""
-	for _, candidate := range []string{
-		"/mnt/archive/TeslaCam/RecentClips",
-		"/mnt/archive/RecentClips",
-	} {
-		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
-			archiveClipsDir = candidate
-			break
-		}
-	}
-	if archiveClipsDir == "" {
-		disconnectArchive()
-		writeError(w, http.StatusBadRequest, "archive mounted but no RecentClips directory found")
-		return
-	}
-
-	// Clear and reprocess from archive
-	dh.store.ClearProcessedForReprocess()
-	if err := dh.store.Save(); err != nil {
-		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to save: %v", err))
-		return
-	}
-
-	go func() {
-		startKeepAwake()
-		defer stopKeepAwake()
-		defer disconnectArchive()
-
-		archiveLog("Starting reprocess from archive on %s", archiveClipsDir)
-		dh.hub.Broadcast("drive_process", map[string]interface{}{
-			"status": "started", "clips_dir": archiveClipsDir, "mode": "reprocess-archive",
-		})
-
-		result, err := dh.processor.ProcessDirectory(
-			context.Background(), archiveClipsDir, 15,
-			func(current, total int) {
-				dh.hub.Broadcast("drive_process", map[string]interface{}{
-					"status": "progress", "current": current, "total": total,
-				})
-			},
-		)
-
-		if err != nil {
-			archiveLog("Reprocess from archive error: %v", err)
-			dh.hub.Broadcast("drive_process", map[string]interface{}{
-				"status": "error", "error": err.Error(),
-			})
-			return
-		}
-		archiveLog("Reprocess from archive complete. Files: %d, GPS: %d, Drives: %d, Errors: %d (%s)",
-			result.FilesNew, result.FilesWithGPS, result.DrivesFound, result.Errors, result.Duration)
-
-		dh.hub.Broadcast("drive_process", map[string]interface{}{
-			"status": "complete", "result": result,
-		})
-	}()
-
-	writeJSON(w, http.StatusAccepted, map[string]interface{}{
-		"status": "started",
-		"mode":   "reprocess-archive",
 	})
 }
 
