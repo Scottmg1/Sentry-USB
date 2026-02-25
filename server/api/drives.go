@@ -233,6 +233,38 @@ declare -F log > /dev/null 2>&1 || {
 }
 `
 
+// archiveShellPreamble is like awakeShellPreamble but also sets ARCHIVE_MOUNT
+// the same way archiveloop does so connect-archive.sh can mount the share.
+const archiveShellPreamble = `source /root/bin/envsetup.sh 2>/dev/null || true
+export LOG_FILE="${LOG_FILE:-/mutable/archiveloop.log}"
+declare -F log > /dev/null 2>&1 || {
+  function log { echo "$(date): $*" >> "$LOG_FILE" 2>/dev/null || true; }
+  export -f log
+}
+if [ "${ARCHIVE_SYSTEM:-none}" = "cifs" ] || [ "${ARCHIVE_SYSTEM:-none}" = "nfs" ]; then
+  [ -n "${SHARE_NAME:-}" ] && [ -f /backingfiles/cam_disk.bin ] && export ARCHIVE_MOUNT=/mnt/archive
+fi
+`
+
+// connectArchive mounts the archive share by running connect-archive.sh
+// with the same environment archiveloop uses. Returns nil on success.
+func connectArchive() error {
+	cmd := exec.Command("/bin/bash", "-c", archiveShellPreamble+"/root/bin/connect-archive.sh")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		log.Printf("[drives] connect-archive failed: %v: %s", err, string(out))
+		return fmt.Errorf("connect-archive failed: %w", err)
+	}
+	return nil
+}
+
+// disconnectArchive unmounts the archive share.
+func disconnectArchive() {
+	cmd := exec.Command("/bin/bash", "-c", archiveShellPreamble+"/root/bin/disconnect-archive.sh")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		log.Printf("[drives] disconnect-archive failed: %v: %s", err, string(out))
+	}
+}
+
 // startKeepAwake runs awake_start in the background to keep the car from sleeping.
 func startKeepAwake() {
 	go func() {
@@ -412,15 +444,27 @@ func (dh *DriveHandlers) reprocessFromArchive(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Check if archive mount is available
-	archiveClipsDir := "/mnt/archive/TeslaCam/RecentClips"
-	if info, err := os.Stat(archiveClipsDir); err != nil || !info.IsDir() {
-		// Try SavedClips as fallback
-		archiveClipsDir = "/mnt/archive/TeslaCam/SavedClips"
-		if info, err := os.Stat(archiveClipsDir); err != nil || !info.IsDir() {
-			writeError(w, http.StatusBadRequest, "archive mount not available or no TeslaCam directory found")
-			return
+	// Mount the archive share (it is normally only mounted during archiveloop)
+	if err := connectArchive(); err != nil {
+		writeError(w, http.StatusBadRequest, "failed to mount archive share — check archive configuration")
+		return
+	}
+
+	// Check if archive mount has a RecentClips directory (with or without TeslaCam subdirectory)
+	archiveClipsDir := ""
+	for _, candidate := range []string{
+		"/mnt/archive/TeslaCam/RecentClips",
+		"/mnt/archive/RecentClips",
+	} {
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			archiveClipsDir = candidate
+			break
 		}
+	}
+	if archiveClipsDir == "" {
+		disconnectArchive()
+		writeError(w, http.StatusBadRequest, "archive mounted but no RecentClips directory found")
+		return
 	}
 
 	// Clear and reprocess from archive
@@ -433,6 +477,7 @@ func (dh *DriveHandlers) reprocessFromArchive(w http.ResponseWriter, r *http.Req
 	go func() {
 		startKeepAwake()
 		defer stopKeepAwake()
+		defer disconnectArchive()
 
 		archiveLog("Starting reprocess from archive on %s", archiveClipsDir)
 		dh.hub.Broadcast("drive_process", map[string]interface{}{
