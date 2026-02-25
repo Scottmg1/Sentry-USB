@@ -149,6 +149,8 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
     ARCHIVE_TRACKMODECLIPS: "true",
     DRIVE_MAP_ENABLED: "true",
     DRIVE_MAP_UNIT: "mi",
+    TEMPERATURE_POSTARCHIVE: "true",
+    USE_EXFAT: "true",
   }
   const [formData, setFormData] = useState<SetupFormData>({ ...defaults, ...(initialData ?? {}) })
   const [saving, setSaving] = useState(false)
