@@ -261,7 +261,8 @@ func (dh *DriveHandlers) processFiles(w http.ResponseWriter, r *http.Request) {
 	}
 	// post_archive=1 is set by post-archive-process.sh which runs after
 	// archiving is complete.  Skip the stale-file check in that case.
-	if r.URL.Query().Get("post_archive") != "1" && isArchiving() {
+	postArchive := r.URL.Query().Get("post_archive") == "1"
+	if !postArchive && isArchiving() {
 		writeError(w, http.StatusConflict, "archive is currently running — please wait until it finishes")
 		return
 	}
@@ -293,10 +294,13 @@ func (dh *DriveHandlers) processFiles(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Run in background with keep-awake
+	// Run in background. Skip keep-awake when post_archive=1 so the car can
+	// sleep after archiving; archiveloop will stop its own keep-awake task.
 	go func() {
-		startKeepAwake()
-		defer stopKeepAwake()
+		if !postArchive {
+			startKeepAwake()
+			defer stopKeepAwake()
+		}
 
 		archiveLog("Starting drive processing on %s", body.ClipsDir)
 		dh.hub.Broadcast("drive_process", map[string]interface{}{
