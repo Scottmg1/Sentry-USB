@@ -518,22 +518,42 @@ func buildDriveStats(clips []timedRoute, idx int) Drive {
 	}
 
 	// Compute distance and speeds
+	// Prefer actual vehicle speed sensor data (seiSpeed) over GPS-derived speed.
 	var totalDistanceM float64
 	var maxSpeedMps float64
 	var speeds []float64
 
+	hasSEISpeeds := false
+	for _, p := range allPoints {
+		if p.seiSpeed > 0 {
+			hasSEISpeeds = true
+			break
+		}
+	}
+
 	for i := 1; i < len(allPoints); i++ {
 		d := haversineM(allPoints[i-1].lat, allPoints[i-1].lng, allPoints[i].lat, allPoints[i].lng)
-		dt := (allPoints[i].timeMs - allPoints[i-1].timeMs) / 1000.0
 		totalDistanceM += d
 
-		if dt > 0 {
-			speed := d / dt
-			// Filter unreasonable speeds (GPS noise) > 70 m/s (~155 mph)
-			if speed < 70 {
+		if hasSEISpeeds {
+			// Use vehicle speedometer reading (m/s) from SEI protobuf
+			speed := float64(allPoints[i].seiSpeed)
+			if speed >= 0 && speed < 100 {
 				speeds = append(speeds, speed)
 				if speed > maxSpeedMps {
 					maxSpeedMps = speed
+				}
+			}
+		} else {
+			// Fallback: derive speed from GPS distance / interpolated time
+			dt := (allPoints[i].timeMs - allPoints[i-1].timeMs) / 1000.0
+			if dt > 0 {
+				speed := d / dt
+				if speed < 70 {
+					speeds = append(speeds, speed)
+					if speed > maxSpeedMps {
+						maxSpeedMps = speed
+					}
 				}
 			}
 		}
@@ -554,7 +574,9 @@ func buildDriveStats(clips []timedRoute, idx int) Drive {
 	hasFSDData := false
 	for i, p := range allPoints {
 		var speed float64
-		if i > 0 {
+		if hasSEISpeeds {
+			speed = float64(p.seiSpeed)
+		} else if i > 0 {
 			d := haversineM(allPoints[i-1].lat, allPoints[i-1].lng, p.lat, p.lng)
 			dt := (p.timeMs - allPoints[i-1].timeMs) / 1000.0
 			if dt > 0 {
