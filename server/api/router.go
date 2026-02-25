@@ -78,6 +78,7 @@ func RegisterRoutes(mux *http.ServeMux, hub *ws.Hub) {
 	mux.HandleFunc("POST /api/notifications/generate-code", h.generateNotificationPairingCode)
 	mux.HandleFunc("GET /api/notifications/paired-devices", h.listNotificationPairedDevices)
 	mux.HandleFunc("DELETE /api/notifications/paired-devices/{id}", h.removeNotificationPairedDevice)
+	mux.HandleFunc("POST /api/notifications/test", h.sendTestNotification)
 
 	// Support chat (proxy to api.sentry-six.com)
 	mux.HandleFunc("GET /api/support/check", h.checkSupportAvailable)

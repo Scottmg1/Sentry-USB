@@ -277,6 +277,7 @@ function MobileNotificationsSection() {
   const [devicesLoading, setDevicesLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [countdown, setCountdown] = useState(0)
+  const [testState, setTestState] = useState<"idle" | "loading" | "success" | "error">("idle")
 
   useEffect(() => {
     loadPairedDevices()
@@ -331,6 +332,21 @@ function MobileNotificationsSection() {
         setPairedDevices(prev => prev.filter(d => d.pairing_id !== pairingId))
       }
     } catch { /* ignore */ }
+  }
+
+  async function sendTest() {
+    setTestState("loading")
+    try {
+      const res = await fetch("/api/notifications/test", { method: "POST" })
+      if (res.ok) {
+        setTestState("success")
+      } else {
+        setTestState("error")
+      }
+    } catch {
+      setTestState("error")
+    }
+    setTimeout(() => setTestState("idle"), 3000)
   }
 
   return (
@@ -395,6 +411,13 @@ function MobileNotificationsSection() {
                 </button>
               </div>
             ))}
+            <button
+              onClick={sendTest}
+              disabled={testState === "loading"}
+              className="mt-1 w-full rounded-lg border border-white/5 bg-white/[0.03] px-3 py-2 text-xs text-slate-400 hover:bg-white/[0.06] hover:text-slate-300 transition-colors disabled:opacity-50"
+            >
+              {testState === "loading" ? "Sending..." : testState === "success" ? "✓ Test sent!" : testState === "error" ? "Failed to send" : "Send Test Notification"}
+            </button>
           </div>
         ) : (
           <p className="text-xs text-slate-600">No mobile devices paired yet.</p>
