@@ -254,7 +254,7 @@ function install_ble_daemon () {
   # org.bluez.Error.Failed on many Pi hardware/firmware combinations.
   # Detect actual bluetoothd binary path before writing override.
   BTDAEMON=$(systemctl cat bluetooth.service 2>/dev/null | grep '^ExecStart=' | head -1 | sed 's/ExecStart=//' | awk '{print $1}')
-  BTDAEMON=${BTDAEMON:-$(command -v bluetoothd || ls /usr/lib/bluetooth/bluetoothd /usr/sbin/bluetoothd 2>/dev/null | head -1)}
+  BTDAEMON=${BTDAEMON:-$(command -v bluetoothd || find /usr/lib/bluetooth /usr/sbin -maxdepth 1 -name bluetoothd -print -quit 2>/dev/null)}
   if [ -n "$BTDAEMON" ] && [ -x "$BTDAEMON" ]; then
     mkdir -p /etc/systemd/system/bluetooth.service.d
     cat > /etc/systemd/system/bluetooth.service.d/sentryusb-experimental.conf << EOF
