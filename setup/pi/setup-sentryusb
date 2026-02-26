@@ -741,6 +741,61 @@ function cmd_upgrade_finish {
   reboot
 }
 
+# Install or update just the BLE peripheral daemon and its dependencies.
+# Much faster than a full upgrade — use this to add BLE support to an
+# existing install without re-running the entire setup.
+#
+# Usage: setup-sentryusb install_ble
+function cmd_install_ble {
+  setup_progress "Installing/updating SentryUSB BLE peripheral daemon..."
+
+  # Install Python dependencies and ensure BlueZ is present
+  for pkg in python3-dbus python3-gi bluez avahi-daemon; do
+    if ! dpkg-query -W --showformat='${db:Status-Status}\n' "$pkg" 2>/dev/null | grep -q '^installed$'; then
+      setup_progress "Installing $pkg..."
+      DEBIAN_FRONTEND=noninteractive apt-get -y --force-yes install "$pkg" || \
+        setup_progress "WARNING: failed to install $pkg"
+    fi
+  done
+
+  # Download latest BLE daemon and service file
+  mkdir -p /root/bin
+  copy_script server/ble/sentryusb-ble.py /root/bin
+  chmod +x /root/bin/sentryusb-ble.py
+  copy_script server/ble/sentryusb-ble.service /etc/systemd/system
+
+  # Set up bluetoothd --experimental override with the correct detected path.
+  # --experimental enables LEAdvertisingManager1 on older BlueZ versions.
+  BTDAEMON=$(systemctl cat bluetooth.service 2>/dev/null | grep '^ExecStart=' | head -1 | sed 's/ExecStart=//' | awk '{print $1}')
+  BTDAEMON=${BTDAEMON:-$(command -v bluetoothd 2>/dev/null)}
+  if [ -n "$BTDAEMON" ] && [ -x "$BTDAEMON" ]; then
+    mkdir -p /etc/systemd/system/bluetooth.service.d
+    cat > /etc/systemd/system/bluetooth.service.d/sentryusb-experimental.conf << EOF
+[Service]
+ExecStart=
+ExecStart=$BTDAEMON --experimental
+EOF
+    setup_progress "bluetoothd experimental mode enabled ($BTDAEMON)"
+  else
+    setup_progress "WARNING: could not detect bluetoothd path, skipping --experimental override"
+  fi
+
+  # Install Avahi mDNS advertisement so the iOS app can discover the Pi over WiFi
+  copy_script setup/pi/avahi-sentryusb.service /tmp
+  mv /tmp/avahi-sentryusb.service /etc/avahi/services/sentryusb.service
+
+  systemctl daemon-reload
+  systemctl enable avahi-daemon 2>/dev/null || true
+  systemctl restart avahi-daemon 2>/dev/null || true
+  systemctl restart bluetooth 2>/dev/null || true
+  sleep 3
+  systemctl enable sentryusb-ble 2>/dev/null || true
+  systemctl restart sentryusb-ble
+
+  setup_progress "BLE daemon installed and started."
+  setup_progress "Check status with:  journalctl -u sentryusb-ble -n 20 --no-pager"
+}
+
 # Fix WiFi/networking on installs that used the old read-only setup (symlinks to
 # /mutable). Run after remounting root rw. Safe to run multiple times.
 function cmd_fix_networking {
