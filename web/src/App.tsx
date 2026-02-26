@@ -9,6 +9,7 @@ import Logs from "@/pages/Logs"
 import Settings from "@/pages/Settings"
 import Drives from "@/pages/Drives"
 import Support from "@/pages/Support"
+import Terminal from "@/pages/Terminal"
 import { SetupWizard } from "@/components/setup/SetupWizard"
 import { SetupProgress } from "@/components/setup/SetupProgress"
 
@@ -108,6 +109,7 @@ export default function App() {
           <Route path="/logs" element={<Logs />} />
           <Route path="/drives" element={<Drives />} />
           <Route path="/support" element={<Support />} />
+          <Route path="/terminal" element={<Terminal />} />
           <Route path="/settings" element={<Settings />} />
         </Route>
       </Routes>

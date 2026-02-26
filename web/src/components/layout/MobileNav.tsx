@@ -9,6 +9,7 @@ import {
   Settings,
   X,
   Shield,
+  TerminalSquare,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -24,6 +25,7 @@ const navItems = [
   { to: "/logs", icon: ScrollText, label: "Logs" },
   { to: "/drives", icon: MapPin, label: "Drives" },
   { to: "/support", icon: MessageCircle, label: "Support" },
+  { to: "/terminal", icon: TerminalSquare, label: "Terminal" },
   { to: "/settings", icon: Settings, label: "Settings" },
 ]
 
