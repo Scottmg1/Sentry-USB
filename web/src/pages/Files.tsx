@@ -119,7 +119,9 @@ export default function Files() {
         setError(data.error || "Failed to load directory")
         setFiles([])
       } else {
-        const data: FileEntry[] = await res.json()
+        const raw = await res.json()
+        // Server returns { path, entries: [...] } wrapper
+        const data: FileEntry[] = Array.isArray(raw) ? raw : (raw.entries ?? [])
         // Auto-navigate into the matching subfolder when at a drive's base path
         // (Music/LightShow/Boombox disk images have a root folder matching the
         // drive name, possibly alongside hidden macOS/Tesla metadata folders)
