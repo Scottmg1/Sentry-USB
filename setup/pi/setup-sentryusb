@@ -747,7 +747,15 @@ function cmd_upgrade_finish {
 #
 # Usage: setup-sentryusb install_ble
 function cmd_install_ble {
+  if [ ! -e /sentryusb/SENTRYUSB_SETUP_FINISHED ]
+  then
+    echo "STOP: run this only on a completed install. Run full setup first."
+    exit 1
+  fi
+
   setup_progress "Installing/updating SentryUSB BLE peripheral daemon..."
+
+  /root/bin/remountfs_rw
 
   # Install Python dependencies and ensure BlueZ is present
   for pkg in python3-dbus python3-gi bluez avahi-daemon; do
@@ -781,6 +789,7 @@ EOF
   fi
 
   # Install Avahi mDNS advertisement so the iOS app can discover the Pi over WiFi
+  mkdir -p /etc/avahi/services
   copy_script setup/pi/avahi-sentryusb.service /tmp
   mv /tmp/avahi-sentryusb.service /etc/avahi/services/sentryusb.service
 
