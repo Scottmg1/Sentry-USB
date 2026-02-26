@@ -694,10 +694,11 @@ class APIResponseCharacteristic(Characteristic):
 class Advertisement(dbus.service.Object):
     PATH_BASE = '/org/bluez/sentryusb/advertisement'
 
-    def __init__(self, bus, index, advertising_type):
+    def __init__(self, bus, index, advertising_type, ad_manager):
         self.path = self.PATH_BASE + str(index)
         self.bus = bus
         self.ad_type = advertising_type
+        self.ad_manager = ad_manager
         # Only advertise primary service UUID.
         # A 31-byte LE advertisement payload cannot fit two 128-bit UUIDs
         # (2+16+16=34 bytes) plus a local name and flags — doing so causes
@@ -727,6 +728,17 @@ class Advertisement(dbus.service.Object):
     @dbus.service.method(LE_ADVERTISEMENT_IFACE, in_signature='', out_signature='')
     def Release(self):
         log.info(f'Advertisement released: {self.path}')
+        # BlueZ released the advertisement (happens after a connection or internal
+        # timeout).  Schedule a re-registration so the Pi stays discoverable.
+        GLib.timeout_add(2000, self._reregister)
+
+    def _reregister(self):
+        log.info('Re-registering advertisement...')
+        self.ad_manager.RegisterAdvertisement(
+            self.get_path(), {},
+            reply_handler=register_ad_cb,
+            error_handler=register_ad_error_cb)
+        return False  # don't repeat
 
 
 # ============================================================
@@ -789,7 +801,7 @@ def main():
     ad_manager = dbus.Interface(
         bus.get_object(BLUEZ_SERVICE, adapter_path), LE_ADVERTISING_MANAGER_IFACE)
 
-    adv = Advertisement(bus, 0, 'peripheral')
+    adv = Advertisement(bus, 0, 'peripheral', ad_manager)
     ad_manager.RegisterAdvertisement(
         adv.get_path(), {},
         reply_handler=register_ad_cb,
