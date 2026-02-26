@@ -16,7 +16,7 @@ export default function TerminalPage() {
     const xtermRef = useRef<XTerm | null>(null)
     const fitRef = useRef<FitAddon | null>(null)
     const wsRef = useRef<WebSocket | null>(null)
-    const reconnectRef = useRef(false)
+    const pendingOutputRef = useRef<string[]>([])
 
     const disconnect = useCallback(() => {
         if (wsRef.current) {
@@ -36,6 +36,7 @@ export default function TerminalPage() {
 
         setState("connecting")
         setErrorMsg("")
+        pendingOutputRef.current = []
 
         const proto = window.location.protocol === "https:" ? "wss:" : "ws:"
         const ws = new WebSocket(`${proto}//${window.location.host}/api/terminal`)
@@ -56,7 +57,6 @@ export default function TerminalPage() {
             switch (msg.type) {
                 case "auth_ok":
                     setState("connected")
-                    initTerminal(ws)
                     break
                 case "auth_failed":
                     setState("error")
@@ -64,8 +64,13 @@ export default function TerminalPage() {
                     ws.close()
                     break
                 case "output":
-                    if (xtermRef.current && msg.data) {
-                        xtermRef.current.write(msg.data)
+                    if (msg.data) {
+                        if (xtermRef.current) {
+                            xtermRef.current.write(msg.data)
+                        } else {
+                            // Buffer output until xterm is initialized
+                            pendingOutputRef.current.push(msg.data)
+                        }
                     }
                     break
                 case "exit":
@@ -80,7 +85,7 @@ export default function TerminalPage() {
         }
 
         ws.onclose = () => {
-            if (state === "connected") {
+            if (wsRef.current) {
                 disconnect()
             }
         }
@@ -89,10 +94,13 @@ export default function TerminalPage() {
             setState("error")
             setErrorMsg("WebSocket connection failed")
         }
-    }, [username, password, disconnect]) // eslint-disable-line react-hooks/exhaustive-deps
+    }, [username, password, disconnect])
 
-    function initTerminal(ws: WebSocket) {
-        if (!termRef.current) return
+    // Initialize xterm AFTER React renders the terminal container div
+    useEffect(() => {
+        if (state !== "connected" || !termRef.current || xtermRef.current) return
+        const ws = wsRef.current
+        if (!ws) return
 
         const term = new XTerm({
             cursorBlink: true,
@@ -131,9 +139,15 @@ export default function TerminalPage() {
         xtermRef.current = term
         fitRef.current = fit
 
+        // Flush any buffered output that arrived before xterm was ready
+        for (const chunk of pendingOutputRef.current) {
+            term.write(chunk)
+        }
+        pendingOutputRef.current = []
+
         // Send terminal size
         const dims = fit.proposeDimensions()
-        if (dims) {
+        if (dims && ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: "resize", cols: dims.cols, rows: dims.rows }))
         }
 
@@ -145,6 +159,7 @@ export default function TerminalPage() {
         })
 
         // Handle resize
+        const container = termRef.current
         const resizeObserver = new ResizeObserver(() => {
             if (fitRef.current && xtermRef.current) {
                 fitRef.current.fit()
@@ -154,15 +169,14 @@ export default function TerminalPage() {
                 }
             }
         })
-        if (termRef.current) {
-            resizeObserver.observe(termRef.current)
-        }
+        resizeObserver.observe(container)
 
         term.focus()
 
-        // Cleanup on disconnect
-        reconnectRef.current = true
-    }
+        return () => {
+            resizeObserver.disconnect()
+        }
+    }, [state])
 
     // Cleanup on unmount
     useEffect(() => {
