@@ -231,7 +231,35 @@ function get_common_scripts () {
   copy_script run/mountimage /root/bin
   copy_script run/enable_gadget.sh /root/bin
   copy_script run/disable_gadget.sh /root/bin
+  copy_script server/ble/sentryusb-ble.py /root/bin
   ln -sf /root/bin/mountimage /sbin/mount.sentryusb
+}
+
+function install_ble_daemon () {
+  setup_progress "Installing SentryUSB BLE peripheral daemon..."
+
+  # Install required Python packages and BlueZ if not already present
+  for pkg in python3-dbus python3-gi bluez; do
+    if ! dpkg-query -W --showformat='${db:Status-Status}\n' "$pkg" 2>/dev/null | grep -q '^installed$'; then
+      setup_progress "Installing $pkg..."
+      DEBIAN_FRONTEND=noninteractive apt-get -y --force-yes install "$pkg" 2>/dev/null || \
+        setup_progress "WARNING: Failed to install $pkg"
+    fi
+  done
+
+  chmod +x /root/bin/sentryusb-ble.py 2>/dev/null || true
+
+  # Install the systemd service file
+  copy_script server/ble/sentryusb-ble.service /etc/systemd/system
+
+  if [ -f /etc/systemd/system/sentryusb-ble.service ]; then
+    systemctl daemon-reload
+    systemctl enable sentryusb-ble 2>/dev/null || true
+    systemctl restart sentryusb-ble 2>/dev/null || true
+    setup_progress "BLE peripheral daemon installed and started."
+  else
+    setup_progress "WARNING: sentryusb-ble.service not found, BLE daemon not started."
+  fi
 }
 
 # If only the dwc2 module is loaded at boot then the Pi will present
@@ -1096,6 +1124,8 @@ headless_setup_progress_flash 3
 mkdir -p /root/bin
 
 get_common_scripts
+
+install_ble_daemon
 
 pushd ~
 

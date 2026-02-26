@@ -409,14 +409,15 @@ for pkg in python3-dbus python3-gi bluez; do
     fi
 done
 
-# Copy BLE daemon script
-cp "$SCRIPT_DIR/server/ble/sentryusb-ble.py" "$INSTALL_DIR/sentryusb-ble.py" 2>/dev/null || \
-    curl -fsSL "https://raw.githubusercontent.com/$REPO/$BRANCH/server/ble/sentryusb-ble.py" -o "$INSTALL_DIR/sentryusb-ble.py" 2>/dev/null || true
-chmod +x "$INSTALL_DIR/sentryusb-ble.py" 2>/dev/null || true
+# Download BLE daemon script to /root/bin (matching sentryusb-ble.service ExecStart path)
+mkdir -p /root/bin
+curl -fsSL "https://raw.githubusercontent.com/$REPO/$BRANCH/server/ble/sentryusb-ble.py" -o /root/bin/sentryusb-ble.py 2>/dev/null || \
+    warn "Failed to download sentryusb-ble.py"
+chmod +x /root/bin/sentryusb-ble.py 2>/dev/null || true
 
-# Install systemd service
-cp "$SCRIPT_DIR/server/ble/sentryusb-ble.service" /etc/systemd/system/sentryusb-ble.service 2>/dev/null || \
-    curl -fsSL "https://raw.githubusercontent.com/$REPO/$BRANCH/server/ble/sentryusb-ble.service" -o /etc/systemd/system/sentryusb-ble.service 2>/dev/null || true
+# Download and install systemd service file
+curl -fsSL "https://raw.githubusercontent.com/$REPO/$BRANCH/server/ble/sentryusb-ble.service" -o /etc/systemd/system/sentryusb-ble.service 2>/dev/null || \
+    warn "Failed to download sentryusb-ble.service"
 
 if [ -f /etc/systemd/system/sentryusb-ble.service ]; then
     systemctl daemon-reload
@@ -424,7 +425,7 @@ if [ -f /etc/systemd/system/sentryusb-ble.service ]; then
     systemctl restart sentryusb-ble 2>/dev/null || true
     ok "BLE peripheral daemon installed"
 else
-    warn "BLE peripheral daemon installation skipped (files not found)"
+    warn "BLE peripheral daemon installation skipped (service file not found)"
 fi
 
 # ── Step 4: Remove stale cached setup scripts ──────────────────────
