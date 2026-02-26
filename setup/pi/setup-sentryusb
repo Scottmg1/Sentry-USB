@@ -262,6 +262,87 @@ function install_ble_daemon () {
   fi
 }
 
+function update_sentryusb_binary () {
+  setup_progress "Updating SentryUSB binary..."
+  local BINARY_INSTALL_DIR="/opt/sentryusb"
+  local BINARY_NAME="sentryusb"
+  local BINARY_SUFFIX
+
+  case "$(uname -m)" in
+    aarch64) BINARY_SUFFIX="linux-arm64" ;;
+    armv7l|armv6l) BINARY_SUFFIX="linux-armv7" ;;
+    x86_64) BINARY_SUFFIX="linux-amd64" ;;
+    *)
+      setup_progress "WARNING: Unsupported architecture $(uname -m), skipping binary update"
+      return
+      ;;
+  esac
+
+  local DOWNLOAD_URL="https://github.com/${REPO}/${REPO_NAME}/releases/latest/download/${BINARY_NAME}-${BINARY_SUFFIX}"
+  local TMP_BINARY="/tmp/sentryusb-new"
+
+  if curlwrapper -fsSL "$DOWNLOAD_URL" -o "$TMP_BINARY" 2>/dev/null; then
+    chmod +x "$TMP_BINARY"
+    mkdir -p "$BINARY_INSTALL_DIR"
+    mv "$TMP_BINARY" "$BINARY_INSTALL_DIR/$BINARY_NAME"
+    local RELEASE_TAG
+    RELEASE_TAG=$(curlwrapper -fsSL --max-time 10 \
+      "https://api.github.com/repos/${REPO}/${REPO_NAME}/releases/latest" 2>/dev/null \
+      | grep '"tag_name"' | head -1 \
+      | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/' || true)
+    if [ -n "${RELEASE_TAG:-}" ]; then
+      echo "$RELEASE_TAG" > "$BINARY_INSTALL_DIR/version"
+      setup_progress "Binary updated to $RELEASE_TAG"
+    else
+      setup_progress "Binary updated (version unknown)"
+    fi
+    systemctl restart sentryusb 2>/dev/null || true
+  else
+    setup_progress "WARNING: Could not download binary from $DOWNLOAD_URL — keeping existing binary"
+  fi
+}
+
+function update_sentryusb_service () {
+  setup_progress "Updating sentryusb systemd service definition..."
+  cat > /etc/systemd/system/sentryusb.service << 'EOF'
+[Unit]
+Description=SentryUSB Web Server
+After=network-online.target
+Wants=network-online.target
+Conflicts=nginx.service
+
+[Service]
+Type=simple
+ExecStartPre=-/bin/systemctl stop nginx
+ExecStartPre=-/bin/systemctl disable nginx
+ExecStart=/opt/sentryusb/sentryusb -port 80
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  systemctl daemon-reload
+  systemctl enable sentryusb 2>/dev/null || true
+  setup_progress "sentryusb.service updated."
+}
+
+function install_avahi_service () {
+  setup_progress "Installing Avahi mDNS service for iOS app discovery..."
+  if ! command -v avahi-daemon &>/dev/null; then
+    DEBIAN_FRONTEND=noninteractive apt-get -y --force-yes install avahi-daemon 2>/dev/null || \
+      setup_progress "WARNING: Failed to install avahi-daemon"
+  fi
+  mkdir -p /etc/avahi/services
+  copy_script setup/pi/avahi-sentryusb.service /tmp
+  mv /tmp/avahi-sentryusb.service /etc/avahi/services/sentryusb.service
+  systemctl enable avahi-daemon 2>/dev/null || true
+  systemctl restart avahi-daemon 2>/dev/null || true
+  setup_progress "Avahi mDNS service installed — iOS app can now discover this Pi."
+}
+
 # If only the dwc2 module is loaded at boot then the Pi will present
 # itself as a non-responsive USB device until a gadget is created.
 # When connected to a Windows host, this will show as a device with
@@ -1126,6 +1207,9 @@ mkdir -p /root/bin
 get_common_scripts
 
 install_ble_daemon
+update_sentryusb_binary
+update_sentryusb_service
+install_avahi_service
 
 pushd ~
 

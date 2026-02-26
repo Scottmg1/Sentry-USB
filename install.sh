@@ -220,27 +220,28 @@ if [ "$CURRENT_HOSTNAME" != "$DESIRED_HOSTNAME" ]; then
         sed -i "s/127\.0\.1\.1.*/127.0.1.1\t$DESIRED_HOSTNAME/" /etc/hosts 2>/dev/null || \
             echo "127.0.1.1	$DESIRED_HOSTNAME" >> /etc/hosts
     fi
-    # Ensure avahi-daemon is installed and running for mDNS
-    if ! command -v avahi-daemon &> /dev/null; then
-        apt-get install -y avahi-daemon 2>/dev/null || true
-    fi
     systemctl enable avahi-daemon 2>/dev/null || true
-    # Install SentryUSB mDNS service for iOS app discovery
-    mkdir -p /etc/avahi/services
-    cp "$SCRIPT_DIR/setup/pi/avahi-sentryusb.service" /etc/avahi/services/sentryusb.service 2>/dev/null || true
     systemctl restart avahi-daemon 2>/dev/null || true
     ok "Hostname set to '$DESIRED_HOSTNAME' — ${DESIRED_HOSTNAME}.local is now available"
 else
     # Still ensure avahi is running even if hostname is correct
-    if ! systemctl is-active --quiet avahi-daemon 2>/dev/null; then
-        if ! command -v avahi-daemon &> /dev/null; then
-            apt-get install -y avahi-daemon 2>/dev/null || true
-        fi
-        systemctl enable avahi-daemon 2>/dev/null || true
-        systemctl restart avahi-daemon 2>/dev/null || true
+    if ! command -v avahi-daemon &> /dev/null; then
+        apt-get install -y avahi-daemon 2>/dev/null || true
     fi
+    systemctl enable avahi-daemon 2>/dev/null || true
     ok "Hostname already set to '$DESIRED_HOSTNAME'"
 fi
+
+# Always install/refresh avahi mDNS service for iOS app discovery
+# (runs regardless of whether hostname changed, so upgrades get it too)
+if ! command -v avahi-daemon &> /dev/null; then
+    apt-get install -y avahi-daemon 2>/dev/null || true
+fi
+mkdir -p /etc/avahi/services
+curl -fsSL "https://raw.githubusercontent.com/$REPO/$BRANCH/setup/pi/avahi-sentryusb.service" \
+    -o /etc/avahi/services/sentryusb.service 2>/dev/null || \
+    warn "Failed to install avahi mDNS service (iOS auto-discovery may not work)"
+systemctl restart avahi-daemon 2>/dev/null || true
 
 # ── Step 2: Install SentryUSB Binary ───────────────────────────────
 
