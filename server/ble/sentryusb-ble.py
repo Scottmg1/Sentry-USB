@@ -698,18 +698,19 @@ class Advertisement(dbus.service.Object):
         self.path = self.PATH_BASE + str(index)
         self.bus = bus
         self.ad_type = advertising_type
-        self.local_name = f'SentryUSB-{get_hostname()[-4:]}'
-        self.service_uuids = [WIFI_SERVICE_UUID, API_SERVICE_UUID]
-        self.include_tx_power = True
+        # Only advertise primary service UUID.
+        # A 31-byte LE advertisement payload cannot fit two 128-bit UUIDs
+        # (2+16+16=34 bytes) plus a local name and flags — doing so causes
+        # BlueZ / the HCI controller to return "Invalid Parameters (0x0d)".
+        # The iOS app scans by WIFI_SERVICE_UUID only, so one UUID is enough.
+        self.service_uuids = [WIFI_SERVICE_UUID]
         dbus.service.Object.__init__(self, bus, self.path)
 
     def get_properties(self):
         properties = {
             LE_ADVERTISEMENT_IFACE: {
                 'Type': self.ad_type,
-                'LocalName': dbus.String(self.local_name),
                 'ServiceUUIDs': dbus.Array(self.service_uuids, signature='s'),
-                'IncludeTxPower': dbus.Boolean(self.include_tx_power),
             }
         }
         return properties
