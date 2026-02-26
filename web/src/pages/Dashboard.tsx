@@ -142,7 +142,7 @@ export default function Dashboard() {
           if (val !== null) setMetric(val === "km")
         }
       })
-      .catch(() => {})
+      .catch(() => { })
     const statusInterval = setInterval(fetchStatus, 4000)
     const statsInterval = setInterval(fetchDriveStats, 5000)
 
@@ -329,7 +329,7 @@ export default function Dashboard() {
 
         {driveStats ? (
           <>
-            <div className="mb-4 grid grid-cols-3 gap-3">
+            <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div>
                 <p className="text-xs text-slate-500">Lifetime Clips Processed</p>
                 <p className="mt-0.5 text-lg font-semibold text-slate-100">
@@ -352,7 +352,7 @@ export default function Dashboard() {
             </div>
 
             {driveStats.fsd_engaged_ms > 0 && (
-              <div className="mb-4 grid grid-cols-3 gap-3 rounded-lg border border-emerald-500/10 bg-emerald-500/5 p-3">
+              <div className="mb-4 grid grid-cols-1 gap-3 rounded-lg border border-emerald-500/10 bg-emerald-500/5 p-3 sm:grid-cols-3">
                 <div>
                   <p className="text-xs text-emerald-400/70">Lifetime FSD Usage</p>
                   <p className="mt-0.5 text-lg font-semibold text-emerald-400">

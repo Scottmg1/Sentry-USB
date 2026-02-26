@@ -75,11 +75,11 @@ function ActionButton({
         className={cn(
           "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-colors",
           state === "loading" ? "bg-blue-500/15 text-blue-400" :
-          state === "success" ? "bg-emerald-500/15 text-emerald-400" :
-          state === "error" ? "bg-red-500/15 text-red-400" :
-          variant === "danger"
-            ? "bg-red-500/15 text-red-400"
-            : "bg-blue-500/15 text-blue-400"
+            state === "success" ? "bg-emerald-500/15 text-emerald-400" :
+              state === "error" ? "bg-red-500/15 text-red-400" :
+                variant === "danger"
+                  ? "bg-red-500/15 text-red-400"
+                  : "bg-blue-500/15 text-blue-400"
         )}
       >
         {state === "loading" ? (
@@ -97,8 +97,8 @@ function ActionButton({
         <p className={cn(
           "mt-0.5 text-xs",
           state === "success" ? "text-emerald-400" :
-          state === "error" ? "text-red-400" :
-          "text-slate-500"
+            state === "error" ? "text-red-400" :
+              "text-slate-500"
         )}>
           {msg || description}
         </p>
@@ -125,7 +125,7 @@ function BlePairButton() {
           setBleMsg("Paired — click to re-pair")
         }
       })
-      .catch(() => {})
+      .catch(() => { })
   }, [])
 
   // Subscribe to WebSocket ble_status messages
@@ -234,9 +234,9 @@ function BlePairButton() {
         className={cn(
           "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-colors",
           bleState === "paired" ? "bg-emerald-500/15 text-emerald-400" :
-          bleState === "error" ? "bg-red-500/15 text-red-400" :
-          isActive ? "bg-amber-500/15 text-amber-400" :
-          "bg-blue-500/15 text-blue-400"
+            bleState === "error" ? "bg-red-500/15 text-red-400" :
+              isActive ? "bg-amber-500/15 text-amber-400" :
+                "bg-blue-500/15 text-blue-400"
         )}
       >
         {isActive ? (
@@ -256,9 +256,9 @@ function BlePairButton() {
         <p className={cn(
           "mt-0.5 text-xs",
           bleState === "paired" ? "text-emerald-400" :
-          bleState === "error" ? "text-red-400" :
-          bleState === "waiting" ? "text-amber-400 font-medium" :
-          "text-slate-500"
+            bleState === "error" ? "text-red-400" :
+              bleState === "waiting" ? "text-amber-400 font-medium" :
+                "text-slate-500"
         )}>
           {bleMsg || "Initiate Bluetooth Low Energy pairing with your car"}
         </p>
@@ -661,7 +661,7 @@ function RawConfigEditor({ config, onClose }: { config: Record<string, RawConfig
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="glass-card relative flex h-[85vh] w-full max-w-3xl flex-col overflow-hidden">
+      <div className="glass-card relative flex h-[90vh] w-full flex-col overflow-hidden sm:h-[85vh] sm:max-w-3xl">
         <div className="flex shrink-0 items-center justify-between border-b border-white/5 px-6 py-4">
           <h2 className="text-lg font-semibold text-slate-100">Raw Configuration</h2>
           <div className="flex gap-2">
@@ -681,7 +681,7 @@ function RawConfigEditor({ config, onClose }: { config: Record<string, RawConfig
                 <input type="checkbox" checked={entries[key].active}
                   onChange={e => setEntries(prev => ({ ...prev, [key]: { ...prev[key], active: e.target.checked } }))}
                   className="accent-blue-500" />
-                <span className={cn("w-48 shrink-0 truncate font-mono text-xs", entries[key].active ? "text-blue-400" : "text-slate-600")}>{key}</span>
+                <span className={cn("w-28 shrink-0 truncate font-mono text-xs sm:w-48", entries[key].active ? "text-blue-400" : "text-slate-600")}>{key}</span>
                 <input type="text" value={entries[key].value}
                   onChange={e => setEntries(prev => ({ ...prev, [key]: { ...prev[key], value: e.target.value } }))}
                   className="flex-1 rounded border border-white/10 bg-white/5 px-2 py-1 font-mono text-xs text-slate-200 outline-none focus:border-blue-500/50" />
@@ -728,7 +728,7 @@ export default function Settings() {
     fetch("/api/config")
       .then(r => r.json())
       .then(data => setPiConfig(data))
-      .catch(() => {})
+      .catch(() => { })
     // Check for cached update status
     fetch("/api/system/update-status")
       .then(r => r.json())
@@ -737,12 +737,12 @@ export default function Settings() {
           setUpdateAvailable({ latest_version: data.latest_version, release_url: data.release_url, release_notes: data.release_notes })
         }
       })
-      .catch(() => {})
+      .catch(() => { })
     // Load auto-update preference
     fetch("/api/config/preference?key=auto_update_check")
       .then(r => r.json())
       .then(data => setAutoUpdateEnabled(data.value !== "disabled"))
-      .catch(() => {})
+      .catch(() => { })
   }, [])
 
   async function handleUpdate() {
@@ -816,7 +816,7 @@ export default function Settings() {
 
       {/* Setup Wizard CTA */}
       <div className="glass-card overflow-hidden">
-        <div className="flex items-center gap-4 p-5">
+        <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
           <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-500/20">
             <Wand2 className="h-6 w-6 text-blue-400" />
           </div>
@@ -829,7 +829,7 @@ export default function Settings() {
               setup experience.
             </p>
           </div>
-          <div className="flex shrink-0 gap-2">
+          <div className="flex shrink-0 flex-wrap gap-2">
             <button
               onClick={async () => {
                 try {
@@ -922,7 +922,7 @@ export default function Settings() {
       {/* Update available banner */}
       {updateAvailable && updateStatus === "idle" && (
         <div className="glass-card overflow-hidden border border-amber-500/20 bg-amber-500/5">
-          <div className="flex items-center gap-4 p-5">
+          <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-amber-500/20">
               <Download className="h-6 w-6 text-amber-400" />
             </div>
@@ -949,7 +949,7 @@ export default function Settings() {
 
       {/* Update SentryUSB */}
       <div className="glass-card overflow-hidden">
-        <div className="flex items-center gap-4 p-5">
+        <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
           <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20">
             <Download className="h-6 w-6 text-emerald-400" />
           </div>
@@ -1003,7 +1003,7 @@ export default function Settings() {
                   method: "PUT",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({ key: "auto_update_check", value: enabled ? "enabled" : "disabled" }),
-                }).catch(() => {})
+                }).catch(() => { })
               }}
               className="h-4 w-4 rounded border-white/20 bg-white/5 accent-blue-500"
             />

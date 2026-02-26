@@ -187,7 +187,7 @@ export default function Drives() {
           if (val !== null) setMetric(val === "km")
         }
       })
-      .catch(() => {})
+      .catch(() => { })
   }, [])
   const [sliderIdx, setSliderIdx] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -287,7 +287,7 @@ export default function Drives() {
         const line = L.polyline(r.points as L.LatLngExpression[], {
           color: "#3b82f6", weight: 2, opacity: 0.4, smoothFactor: 1.5,
         }).addTo(map)
-        ;(line as any)._driveId = r.id
+          ; (line as any)._driveId = r.id
         line.on("click", () => selectDrive(r.id))
         overviewLayers.current.push(line)
       }
@@ -580,11 +580,11 @@ export default function Drives() {
   // Cumulative distances for slider
   const cumDist = selectedDrive
     ? selectedDrive.points.reduce<number[]>((acc, pt, i) => {
-        if (i === 0) return [0]
-        const prev = selectedDrive.points[i - 1]
-        acc.push(acc[i - 1] + haversine(prev[0], prev[1], pt[0], pt[1]))
-        return acc
-      }, [])
+      if (i === 0) return [0]
+      const prev = selectedDrive.points[i - 1]
+      acc.push(acc[i - 1] + haversine(prev[0], prev[1], pt[0], pt[1]))
+      return acc
+    }, [])
     : []
 
   const sliderPt = selectedDrive?.points[sliderIdx]
@@ -594,14 +594,14 @@ export default function Drives() {
   const isFiltered = tagFilter !== "" || search !== ""
   const filteredStats = isFiltered
     ? filtered.reduce(
-        (acc, d) => ({
-          count: acc.count + 1,
-          distKm: acc.distKm + d.distanceKm,
-          distMi: acc.distMi + d.distanceMi,
-          durMs: acc.durMs + d.durationMs,
-        }),
-        { count: 0, distKm: 0, distMi: 0, durMs: 0 }
-      )
+      (acc, d) => ({
+        count: acc.count + 1,
+        distKm: acc.distKm + d.distanceKm,
+        distMi: acc.distMi + d.distanceMi,
+        durMs: acc.durMs + d.durationMs,
+      }),
+      { count: 0, distKm: 0, distMi: 0, durMs: 0 }
+    )
     : null
   const displayCount = filteredStats ? filteredStats.count : stats?.drives_count ?? 0
   const totalDist = filteredStats
@@ -614,7 +614,7 @@ export default function Drives() {
   return (
     <div className="flex h-[calc(100vh-5rem)] flex-col gap-4 md:h-[calc(100vh-3rem)]">
       {/* Header bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3">
         <div className="flex items-center gap-3">
           <MapPin className="h-5 w-5 text-blue-400" />
           <h1 className="text-lg font-semibold text-slate-100">Drive Map</h1>
@@ -626,7 +626,7 @@ export default function Drives() {
             </div>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* FSD Stats */}
           {stats && stats.fsd_engaged_ms > 0 && (
             <button onClick={() => setShowFSDPanel(!showFSDPanel)} className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400 transition-colors hover:bg-emerald-500/20">
@@ -719,7 +719,7 @@ export default function Drives() {
           </div>
 
           {/* Percentage row */}
-          <div className="mb-4 grid grid-cols-3 gap-4 text-center">
+          <div className="mb-4 grid grid-cols-1 gap-4 text-center sm:grid-cols-3">
             <div>
               <p className={cn("text-2xl font-bold", fsdAnalytics.today_percent >= 95 ? "text-emerald-400" : fsdAnalytics.today_percent >= 80 ? "text-amber-400" : "text-slate-300")}>
                 {fsdAnalytics.today_percent}%
@@ -750,7 +750,7 @@ export default function Drives() {
                 style={{ width: `${Math.min(fsdAnalytics.fsd_percent, 100)}%` }}
               />
             </div>
-            <div className="grid grid-cols-2 gap-3 text-xs">
+            <div className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-2">
               <div className="flex items-center gap-2">
                 <div className="h-2.5 w-2.5 rounded-sm bg-purple-500" />
                 <span className="text-slate-400">Total FSD Distance</span>
@@ -804,7 +804,7 @@ export default function Drives() {
         {/* Mobile drive list toggle */}
         <button
           onClick={() => setMobileListOpen(!mobileListOpen)}
-          className="absolute left-3 bottom-3 z-[1000] flex items-center gap-1.5 rounded-lg border border-white/10 bg-slate-950/90 px-3 py-1.5 text-xs font-medium text-slate-300 backdrop-blur-sm transition-colors hover:bg-slate-900 md:hidden"
+          className="absolute left-3 bottom-3 z-[1000] flex items-center gap-1.5 rounded-lg border border-white/10 bg-slate-950/90 px-3 py-2 text-xs font-medium text-slate-300 backdrop-blur-sm transition-colors hover:bg-slate-900 md:hidden"
         >
           {mobileListOpen ? <X className="h-3.5 w-3.5" /> : <List className="h-3.5 w-3.5" />}
           {mobileListOpen ? "Hide Drives" : `Drives (${drives.length})`}
@@ -1200,7 +1200,7 @@ export default function Drives() {
                   </button>
                 )}
               </div>
-              <div className="mb-2 flex flex-wrap gap-x-6 gap-y-1">
+              <div className="mb-2 flex flex-wrap gap-x-4 gap-y-2 sm:gap-x-6">
                 <Stat icon={<Navigation className="h-3 w-3" />} label="Distance" value={dist(selectedDrive)} highlight />
                 <Stat icon={<Clock className="h-3 w-3" />} label="Duration" value={formatDuration(selectedDrive.durationMs)} />
                 <Stat label="Start" value={formatTime(selectedDrive.startTime)} />
@@ -1267,7 +1267,7 @@ export default function Drives() {
               </div>
 
               {sliderPt && (
-                <div className="mt-1.5 flex justify-center gap-5 text-[11px] text-slate-500">
+                <div className="mt-1.5 flex flex-wrap justify-center gap-x-4 gap-y-1 text-[11px] text-slate-500 sm:gap-5">
                   <span>Time: <span className="font-semibold text-blue-400">{formatTimeMs(sliderPt[2])}</span></span>
                   <span>Speed: <span className="font-semibold text-blue-400">{mpsToDisplay(sliderPt[3])} {speedUnit}</span></span>
                   <span>Dist: <span className="font-semibold text-blue-400">{sliderDistDisplay} {distUnit}</span></span>

@@ -98,7 +98,7 @@ export default function Viewer() {
   const [playbackSpeed, setPlaybackSpeed] = useState(1)
   const [currentTime, setCurrentTime] = useState(0)
   const [isFullscreen, setIsFullscreen] = useState(false)
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.innerWidth < 768)
   const [showPromo, setShowPromo] = useState(true)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
   const [segmentDurations, setSegmentDurations] = useState<number[]>([])
@@ -209,7 +209,7 @@ export default function Viewer() {
     if (!currentSet || !playing) return
     const timer = setTimeout(() => {
       videoRefs.current.forEach((v) => {
-        if (v) v.play().catch(() => {})
+        if (v) v.play().catch(() => { })
       })
     }, 100)
     return () => clearTimeout(timer)
@@ -227,7 +227,7 @@ export default function Viewer() {
     videoRefs.current.forEach((v) => {
       if (!v) return
       if (wasPlaying) v.pause()
-      else v.play().catch(() => {})
+      else v.play().catch(() => { })
     })
     setPlaying(!wasPlaying)
   }, [playing])
@@ -379,7 +379,7 @@ export default function Viewer() {
             <h1 className="text-2xl font-bold text-slate-100">Viewer</h1>
             <p className="mt-0.5 text-sm text-slate-500">
               Multi-camera clip viewer
-              <span className="ml-2 text-[10px] text-slate-600">
+              <span className="ml-2 hidden text-[10px] text-slate-600 md:inline">
                 Space: play &middot; ←→: seek &middot; F: fullscreen
               </span>
             </p>
@@ -555,7 +555,7 @@ export default function Viewer() {
               <div
                 className={cn(
                   "relative min-h-0 flex-1",
-                  focusedCamera ? "" : "grid grid-cols-3 grid-rows-2 gap-0.5"
+                  focusedCamera ? "" : "grid grid-cols-2 grid-rows-3 gap-0.5 md:grid-cols-3 md:grid-rows-2"
                 )}
               >
                 {camerasToShow.map((cam) => {
@@ -588,7 +588,7 @@ export default function Viewer() {
                               v.currentTime = pendingSeekRef.current
                               if (cam === "front" || !currentSet.cameras["front"]) pendingSeekRef.current = null
                             }
-                            if (playing) v.play().catch(() => {})
+                            if (playing) v.play().catch(() => { })
                           }}
                         />
                       ) : (
@@ -694,7 +694,7 @@ export default function Viewer() {
                   <div className="flex-1" />
 
                   {/* Speed selector */}
-                  <div className="flex items-center gap-0.5">
+                  <div className="hidden items-center gap-0.5 sm:flex">
                     {SPEED_OPTIONS.map((s) => (
                       <button
                         key={s}

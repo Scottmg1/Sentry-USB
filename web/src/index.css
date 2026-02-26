@@ -39,10 +39,22 @@ body {
   border-right: 1px solid rgba(255, 255, 255, 0.06);
 }
 
+/* Safe-area bottom padding for iOS notch devices */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
+}
+
+@media (pointer: coarse) {
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
 }
 
 ::-webkit-scrollbar-track {

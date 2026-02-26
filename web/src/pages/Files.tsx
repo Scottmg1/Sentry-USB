@@ -265,7 +265,7 @@ export default function Files() {
             Manage dashcam clips and media files
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button
             onClick={handleNewFolder}
             className="glass-card glass-card-hover flex items-center gap-1.5 px-3 py-1.5 text-sm text-slate-400 transition-colors hover:text-slate-200"
@@ -454,15 +454,15 @@ export default function Files() {
                       }
                     }}
                   >
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-3">
                       {f.is_dir ? (
                         <Folder className="h-4 w-4 text-blue-400" />
                       ) : (
                         <File className="h-4 w-4 text-slate-500" />
                       )}
                     </td>
-                    <td className="py-2 text-slate-300">{f.name}</td>
-                    <td className="px-3 py-2 text-right text-xs text-slate-600">
+                    <td className="min-w-0 truncate py-3 text-slate-300">{f.name}</td>
+                    <td className="px-3 py-3 text-right text-xs text-slate-600">
                       {f.is_dir ? "" : formatSize(f.size)}
                     </td>
                   </tr>

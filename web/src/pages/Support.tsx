@@ -104,7 +104,7 @@ export default function Support() {
           fetch(`/api/support/ticket/${ticket.ticketId}/mark-read`, {
             method: "POST",
             headers: { "X-Auth-Token": ticket.authToken },
-          }).catch(() => {})
+          }).catch(() => { })
         }
         if (data.status === "closed") {
           setTicketClosed(true)
@@ -127,7 +127,7 @@ export default function Support() {
     try {
       if (t) localStorage.setItem(STORAGE_KEY, JSON.stringify(t))
       else localStorage.removeItem(STORAGE_KEY)
-    } catch {}
+    } catch { }
   }
 
   async function handleSend() {
@@ -140,7 +140,7 @@ export default function Support() {
       if (includeDiagnostics) {
         setStatus({ text: "Collecting diagnostics...", type: "loading" })
         // Refresh diagnostics first
-        await fetch("/api/diagnostics/refresh", { method: "POST" }).catch(() => {})
+        await fetch("/api/diagnostics/refresh", { method: "POST" }).catch(() => { })
         const diagRes = await fetch("/api/diagnostics")
         let rawDiag = await diagRes.text()
         // Sanitize: strip ANSI escape codes and replace lone surrogates / invalid chars
@@ -350,7 +350,7 @@ export default function Support() {
               )}
               <div
                 className={cn(
-                  "max-w-[75%] rounded-xl px-4 py-2.5",
+                  "max-w-[90%] rounded-xl px-4 py-2.5 sm:max-w-[75%]",
                   msg.sender === "user"
                     ? "bg-blue-500/20 text-slate-200"
                     : "bg-white/5 text-slate-300"

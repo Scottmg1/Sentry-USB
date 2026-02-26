@@ -302,7 +302,6 @@ func (dh *DriveHandlers) processFiles(w http.ResponseWriter, r *http.Request) {
 			defer stopKeepAwake()
 		}
 
-		archiveLog("Starting drive processing on %s", body.ClipsDir)
 		dh.hub.Broadcast("drive_process", map[string]interface{}{
 			"status": "started", "clips_dir": body.ClipsDir,
 		})

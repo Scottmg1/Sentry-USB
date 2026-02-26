@@ -116,7 +116,7 @@ export default function Logs() {
 
   return (
     <div className="flex h-[calc(100vh-120px)] flex-col space-y-4 md:h-[calc(100vh-96px)]">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-2xl font-bold text-slate-100">Logs</h1>
           <p className="mt-1 text-sm text-slate-500">
