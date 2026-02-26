@@ -418,15 +418,23 @@ chmod +x /root/bin/sentryusb-ble.py 2>/dev/null || true
 
 # BlueZ 5.69+ on Raspberry Pi requires --experimental for reliable LE peripheral
 # advertisement registration (org.bluez.Error.Failed without it on many Pi models)
-mkdir -p /etc/systemd/system/bluetooth.service.d
-cat > /etc/systemd/system/bluetooth.service.d/sentryusb-experimental.conf << 'EOF'
+# Detect actual bluetoothd binary path from the running service to avoid wrong-path crash
+BTDAEMON=$(systemctl cat bluetooth.service 2>/dev/null | grep '^ExecStart=' | head -1 | sed 's/ExecStart=//' | awk '{print $1}')
+BTDAEMON=${BTDAEMON:-$(command -v bluetoothd || ls /usr/lib/bluetooth/bluetoothd /usr/sbin/bluetoothd 2>/dev/null | head -1)}
+if [ -n "$BTDAEMON" ] && [ -x "$BTDAEMON" ]; then
+    mkdir -p /etc/systemd/system/bluetooth.service.d
+    cat > /etc/systemd/system/bluetooth.service.d/sentryusb-experimental.conf << EOF
 [Service]
 ExecStart=
-ExecStart=/usr/lib/bluetooth/bluetoothd --experimental
+ExecStart=$BTDAEMON --experimental
 EOF
-systemctl daemon-reload
-systemctl restart bluetooth 2>/dev/null || true
-sleep 2
+    systemctl daemon-reload
+    systemctl restart bluetooth 2>/dev/null || true
+    sleep 2
+    ok "bluetoothd experimental mode enabled ($BTDAEMON)"
+else
+    warn "Could not find bluetoothd binary, skipping --experimental override"
+fi
 
 # Download and install systemd service file
 curl -fsSL "https://raw.githubusercontent.com/$REPO/$BRANCH/server/ble/sentryusb-ble.service" -o /etc/systemd/system/sentryusb-ble.service 2>/dev/null || \
