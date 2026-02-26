@@ -747,14 +747,14 @@ def register_ad_cb():
 
 def register_ad_error_cb(error):
     log.error(f'Failed to register advertisement: {error}')
-    mainloop.quit()
+    sys.exit(1)  # non-zero so systemd Restart=on-failure triggers
 
 def register_app_cb():
     log.info('GATT application registered')
 
 def register_app_error_cb(error):
     log.error(f'Failed to register GATT application: {error}')
-    mainloop.quit()
+    sys.exit(1)  # non-zero so systemd Restart=on-failure triggers
 
 
 def main():

@@ -416,6 +416,18 @@ curl -fsSL "https://raw.githubusercontent.com/$REPO/$BRANCH/server/ble/sentryusb
     warn "Failed to download sentryusb-ble.py"
 chmod +x /root/bin/sentryusb-ble.py 2>/dev/null || true
 
+# BlueZ 5.69+ on Raspberry Pi requires --experimental for reliable LE peripheral
+# advertisement registration (org.bluez.Error.Failed without it on many Pi models)
+mkdir -p /etc/systemd/system/bluetooth.service.d
+cat > /etc/systemd/system/bluetooth.service.d/sentryusb-experimental.conf << 'EOF'
+[Service]
+ExecStart=
+ExecStart=/usr/lib/bluetooth/bluetoothd --experimental
+EOF
+systemctl daemon-reload
+systemctl restart bluetooth 2>/dev/null || true
+sleep 2
+
 # Download and install systemd service file
 curl -fsSL "https://raw.githubusercontent.com/$REPO/$BRANCH/server/ble/sentryusb-ble.service" -o /etc/systemd/system/sentryusb-ble.service 2>/dev/null || \
     warn "Failed to download sentryusb-ble.service"

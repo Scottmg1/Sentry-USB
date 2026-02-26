@@ -249,6 +249,19 @@ function install_ble_daemon () {
 
   chmod +x /root/bin/sentryusb-ble.py 2>/dev/null || true
 
+  # BlueZ 5.69+ on Raspberry Pi requires --experimental for reliable LE peripheral
+  # advertisement registration. Without it, RegisterAdvertisement returns
+  # org.bluez.Error.Failed on many Pi hardware/firmware combinations.
+  mkdir -p /etc/systemd/system/bluetooth.service.d
+  cat > /etc/systemd/system/bluetooth.service.d/sentryusb-experimental.conf << 'EOF'
+[Service]
+ExecStart=
+ExecStart=/usr/lib/bluetooth/bluetoothd --experimental
+EOF
+  systemctl daemon-reload
+  systemctl restart bluetooth 2>/dev/null || true
+  sleep 2
+
   # Install the systemd service file
   copy_script server/ble/sentryusb-ble.service /etc/systemd/system
 
