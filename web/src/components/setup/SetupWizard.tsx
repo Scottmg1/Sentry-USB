@@ -143,6 +143,7 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
   // in the config file yet. Without this, untouched defaults never get saved.
   const defaults: SetupFormData = {
     CAM_SIZE: "40",
+    ARCHIVE_SYSTEM: "cifs",
     ARCHIVE_SAVEDCLIPS: "true",
     ARCHIVE_SENTRYCLIPS: "true",
     ARCHIVE_RECENTCLIPS: "true",
