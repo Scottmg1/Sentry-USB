@@ -144,6 +144,7 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
   const defaults: SetupFormData = {
     CAM_SIZE: "40",
     ARCHIVE_SYSTEM: "cifs",
+    TEMPERATURE_UNIT: "C",
     ARCHIVE_SAVEDCLIPS: "true",
     ARCHIVE_SENTRYCLIPS: "true",
     ARCHIVE_RECENTCLIPS: "true",

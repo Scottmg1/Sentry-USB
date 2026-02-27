@@ -40,19 +40,31 @@ const sections = [
     title: "Advanced",
     fields: [
       "TIME_ZONE", "ARCHIVE_DELAY", "SNAPSHOT_INTERVAL",
-      "TEMPERATURE_WARNING", "TEMPERATURE_CAUTION", "TEMPERATURE_INTERVAL", "TEMPERATURE_POSTARCHIVE",
+      "TEMPERATURE_UNIT", "TEMPERATURE_WARNING", "TEMPERATURE_CAUTION", "TEMPERATURE_INTERVAL", "TEMPERATURE_POSTARCHIVE",
       "INCREASE_ROOT_SIZE", "CPU_GOVERNOR", "REPO", "BRANCH",
     ],
   },
 ]
 
-function maskValue(key: string, value: string): string {
+function formatReviewValue(key: string, value: string, data: StepProps["data"]): string {
   const sensitiveKeys = ["WIFIPASS", "SHARE_PASSWORD", "AP_PASS", "WEB_PASSWORD",
     "TESLAFI_API_TOKEN", "TESSIE_API_TOKEN", "AWS_SECRET_ACCESS_KEY",
     "MATRIX_PASSWORD", "PUSHOVER_APP_KEY", "GOTIFY_APP_TOKEN",
     "TELEGRAM_BOT_TOKEN", "IFTTT_KEY"]
   if (sensitiveKeys.includes(key) && value) {
     return "••••••••"
+  }
+  if ((key === "TEMPERATURE_WARNING" || key === "TEMPERATURE_CAUTION") && value) {
+    const num = parseFloat(value)
+    if (!isNaN(num)) {
+      if (data.TEMPERATURE_UNIT === "F") {
+        return ((num * 9) / 5 + 32).toFixed(1) + "°F"
+      }
+      return num.toFixed(1) + "°C"
+    }
+  }
+  if (key === "TEMPERATURE_UNIT") {
+    return value === "F" ? "Fahrenheit" : "Celsius"
   }
   return value
 }
@@ -89,7 +101,7 @@ export function ReviewStep({ data }: StepProps) {
                 <div key={field} className="flex items-center justify-between px-4 py-2">
                   <span className="font-mono text-xs text-slate-500">{field}</span>
                   <span className="max-w-[200px] truncate text-right text-sm text-slate-300">
-                    {maskValue(field, data[field])}
+                    {formatReviewValue(field, data[field], data)}
                   </span>
                 </div>
               ))}

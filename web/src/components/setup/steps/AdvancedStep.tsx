@@ -198,7 +198,7 @@ function TempInput({
 
 export function AdvancedStep({ data, onChange }: StepProps) {
   const [tzSearch, setTzSearch] = useState("")
-  const [useFahrenheit, setUseFahrenheit] = useState(false)
+  const useFahrenheit = data.TEMPERATURE_UNIT === "F"
 
   const filteredTz = tzSearch
     ? TIMEZONES.filter(tz => tz.toLowerCase().includes(tzSearch.toLowerCase()))
@@ -260,11 +260,11 @@ export function AdvancedStep({ data, onChange }: StepProps) {
             </h3>
           </div>
           <div className="flex overflow-hidden rounded-lg border border-white/10">
-            <button type="button" onClick={() => setUseFahrenheit(false)}
+            <button type="button" onClick={() => onChange("TEMPERATURE_UNIT", "C")}
               className={`px-2.5 py-1 text-xs font-medium transition-colors ${!useFahrenheit ? "bg-blue-500 text-white" : "text-slate-500 hover:text-slate-300"}`}>
               °C
             </button>
-            <button type="button" onClick={() => setUseFahrenheit(true)}
+            <button type="button" onClick={() => onChange("TEMPERATURE_UNIT", "F")}
               className={`px-2.5 py-1 text-xs font-medium transition-colors ${useFahrenheit ? "bg-blue-500 text-white" : "text-slate-500 hover:text-slate-300"}`}>
               °F
             </button>

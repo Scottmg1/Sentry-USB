@@ -86,6 +86,7 @@ export default function Dashboard() {
   const [processing, setProcessing] = useState(false)
   const [processProgress, setProcessProgress] = useState<ProcessProgress | null>(null)
   const [metric, setMetric] = useState(false)
+  const [useFahrenheit, setUseFahrenheit] = useState(false)
 
   const active = archiveProgress !== null || processing
 
@@ -140,6 +141,13 @@ export default function Dashboard() {
             ? (entry.active ? entry.value : null)
             : entry
           if (val !== null) setMetric(val === "km")
+        }
+        const tempEntry = cfg.TEMPERATURE_UNIT
+        if (tempEntry) {
+          const val = typeof tempEntry === "object"
+            ? (tempEntry.active ? tempEntry.value : null)
+            : tempEntry
+          if (val !== null) setUseFahrenheit(val === "F")
         }
       })
       .catch(() => { })
@@ -229,7 +237,7 @@ export default function Dashboard() {
         <StatCard
           icon={Thermometer}
           label="CPU Temperature"
-          value={cpuTemp > 0 ? formatTemp(cpuTemp) : "N/A"}
+          value={cpuTemp > 0 ? formatTemp(cpuTemp, useFahrenheit) : "N/A"}
           color={cpuTemp > 0 ? getTempColor(cpuTemp) : "blue"}
         />
 

@@ -32,6 +32,10 @@ export function formatBytes(bytes: number): string {
   return (bytes / (1024 * 1024)).toFixed(0) + " MB"
 }
 
-export function formatTemp(milliCelsius: number): string {
-  return (milliCelsius / 1000).toFixed(1) + "°C"
+export function formatTemp(milliCelsius: number, useFahrenheit = false): string {
+  const celsius = milliCelsius / 1000
+  if (useFahrenheit) {
+    return ((celsius * 9) / 5 + 32).toFixed(1) + "°F"
+  }
+  return celsius.toFixed(1) + "°C"
 }
