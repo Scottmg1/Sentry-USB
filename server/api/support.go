@@ -197,6 +197,52 @@ func (h *handlers) markSupportRead(w http.ResponseWriter, r *http.Request) {
 	w.Write(respBody)
 }
 
+// POST /api/support/ticket/{id}/register-device — register iOS device for push notifications
+func (h *handlers) registerSupportDevice(w http.ResponseWriter, r *http.Request) {
+	ticketId := r.PathValue("id")
+	authToken := r.Header.Get("X-Auth-Token")
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Failed to read body")
+		return
+	}
+	defer r.Body.Close()
+
+	respBody, status, err := supportProxy("POST", fmt.Sprintf("/chat/ticket/%s/register-device", ticketId), body, authToken, 15*time.Second)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "Support server unreachable")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	w.Write(respBody)
+}
+
+// POST /api/support/ticket/{id}/unregister-device — unregister iOS device from push notifications
+func (h *handlers) unregisterSupportDevice(w http.ResponseWriter, r *http.Request) {
+	ticketId := r.PathValue("id")
+	authToken := r.Header.Get("X-Auth-Token")
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Failed to read body")
+		return
+	}
+	defer r.Body.Close()
+
+	respBody, status, err := supportProxy("POST", fmt.Sprintf("/chat/ticket/%s/unregister-device", ticketId), body, authToken, 15*time.Second)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "Support server unreachable")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	w.Write(respBody)
+}
+
 // GET /api/support/check — check if support server is reachable (and internet is available)
 func (h *handlers) checkSupportAvailable(w http.ResponseWriter, r *http.Request) {
 	client := &http.Client{Timeout: 5 * time.Second}

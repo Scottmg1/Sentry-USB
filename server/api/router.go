@@ -88,6 +88,8 @@ func RegisterRoutes(mux *http.ServeMux, hub *ws.Hub) {
 	mux.HandleFunc("GET /api/support/ticket/{id}/messages", h.fetchSupportMessages)
 	mux.HandleFunc("POST /api/support/ticket/{id}/close", h.closeSupportTicket)
 	mux.HandleFunc("POST /api/support/ticket/{id}/mark-read", h.markSupportRead)
+	mux.HandleFunc("POST /api/support/ticket/{id}/register-device", h.registerSupportDevice)
+	mux.HandleFunc("POST /api/support/ticket/{id}/unregister-device", h.unregisterSupportDevice)
 
 	// Web terminal (PTY over WebSocket)
 	mux.HandleFunc("/api/terminal", h.handleTerminal)
