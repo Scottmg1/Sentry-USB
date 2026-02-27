@@ -82,11 +82,19 @@ done
 _resolv_target=$(readlink -f /etc/resolv.conf 2>/dev/null || true)
 if [ "$_resolv_target" != "/tmp/resolv.conf" ]; then
   log_progress "Redirecting resolv.conf to /tmp (was: ${_resolv_target:-empty})"
+  # Seed /tmp/resolv.conf with current DNS so resolution keeps working.
+  # Try multiple sources: nmcli (NetworkManager), existing resolv.conf, fallback.
   > /tmp/resolv.conf
   if command -v nmcli &>/dev/null; then
     nmcli --terse --fields IP4.DNS dev show 2>/dev/null \
       | sed -n 's/^IP4\.DNS\[.*\]:/nameserver /p' \
       | head -3 >> /tmp/resolv.conf || true
+  fi
+  if ! grep -q '^nameserver' /tmp/resolv.conf 2>/dev/null; then
+    [ -f "$_resolv_target" ] && grep '^nameserver' "$_resolv_target" >> /tmp/resolv.conf 2>/dev/null || true
+  fi
+  if ! grep -q '^nameserver' /tmp/resolv.conf 2>/dev/null; then
+    echo "nameserver 1.1.1.1" >> /tmp/resolv.conf
   fi
   rm -f /etc/resolv.conf 2>/dev/null || true
   ln -sf /tmp/resolv.conf /etc/resolv.conf
@@ -94,37 +102,32 @@ fi
 
 # ---- tmpfiles.d: seed /tmp/resolv.conf on every boot ----
 # /tmp is a tmpfs that is empty after reboot, so without this rule the
-# resolv.conf symlink dangles and DNS breaks until NM rewrites it.
-# Note: no fallback nameserver is written here — NM will populate
-# the file with DHCP-provided DNS (e.g. PiHole). Hardcoding 8.8.8.8 would
-# bypass custom DNS setups on the user's network.
-if [ ! -e /etc/tmpfiles.d/resolv-fallback.conf ]; then
-  log_progress "Installing tmpfiles.d rule for resolv.conf"
-  mkdir -p /etc/tmpfiles.d
-  echo 'f /tmp/resolv.conf 0644 root root -' > /etc/tmpfiles.d/resolv-fallback.conf
-fi
+# resolv.conf symlink dangles and DNS breaks.
+# Seed with a public DNS fallback so basic resolution works during early boot;
+# dhcpcd / NetworkManager will overwrite with DHCP-provided servers (e.g. PiHole)
+# once a lease is obtained.
+log_progress "Installing tmpfiles.d rule for resolv.conf"
+mkdir -p /etc/tmpfiles.d
+echo 'f /tmp/resolv.conf 0644 root root - nameserver 1.1.1.1' > /etc/tmpfiles.d/resolv-fallback.conf
 
-# ---- NetworkManager: dns=none + dispatcher to write resolv.conf ----
-# NM's atomic-write for resolv.conf (temp file + rename in /etc/) always fails
-# on a read-only root because /etc/ is not writable.  Use dns=none so NM does
-# not attempt to write resolv.conf itself, and install a dispatcher script that
-# writes DHCP-provided DNS servers directly to /tmp/resolv.conf instead.
-log_progress "Configuring NetworkManager DNS handling (dns=none + dispatcher)"
-mkdir -p /etc/NetworkManager/conf.d
-cat > /etc/NetworkManager/conf.d/sentryusb-dns.conf << 'EOF'
+# ---- DHCP client hooks to populate /tmp/resolv.conf ----
+# On a read-only root, /etc/resolv.conf is a symlink to /tmp/resolv.conf.
+# Install hooks for whichever DHCP client is present so DNS gets populated
+# when a lease is obtained.  Multiple hooks can coexist harmlessly.
+
+# -- NetworkManager: dns=none + dispatcher --
+if command -v nmcli &>/dev/null; then
+  log_progress "Configuring NetworkManager DNS handling (dns=none + dispatcher)"
+  mkdir -p /etc/NetworkManager/conf.d
+  cat > /etc/NetworkManager/conf.d/sentryusb-dns.conf << 'EOF'
 [main]
 dns=none
 EOF
 
-# ---- Install NM dispatcher to populate /tmp/resolv.conf ----
-log_progress "Installing NetworkManager dispatcher for resolv.conf"
-mkdir -p /etc/NetworkManager/dispatcher.d
-cat > /etc/NetworkManager/dispatcher.d/50-write-resolv-conf << 'DISPATCHER'
+  mkdir -p /etc/NetworkManager/dispatcher.d
+  cat > /etc/NetworkManager/dispatcher.d/50-write-resolv-conf << 'DISPATCHER'
 #!/bin/bash
 # Populate /tmp/resolv.conf with DHCP-provided DNS servers.
-# Required because the root filesystem is read-only and NM cannot
-# atomically write to /etc/resolv.conf (it needs a writable /etc/).
-# /etc/resolv.conf is a symlink to /tmp/resolv.conf.
 case "$2" in
   up|dhcp4-change)
     _servers="${DHCP4_DOMAIN_NAME_SERVERS:-${IP4_NAMESERVERS:-}}"
@@ -140,7 +143,48 @@ case "$2" in
     ;;
 esac
 DISPATCHER
-chmod 0755 /etc/NetworkManager/dispatcher.d/50-write-resolv-conf
+  chmod 0755 /etc/NetworkManager/dispatcher.d/50-write-resolv-conf
+fi
+
+# -- dhcpcd: hook to write DHCP-provided DNS --
+# DietPi and Raspberry Pi OS Lite use dhcpcd instead of NetworkManager.
+if command -v dhcpcd &>/dev/null; then
+  log_progress "Installing dhcpcd hook for resolv.conf"
+  mkdir -p /lib/dhcpcd/dhcpcd-hooks
+  cat > /lib/dhcpcd/dhcpcd-hooks/90-sentryusb-resolv << 'DHCPHOOK'
+# Write DHCP-provided DNS servers to /tmp/resolv.conf.
+# /etc/resolv.conf is a symlink to /tmp/resolv.conf on SentryUSB.
+if [ -n "${new_domain_name_servers:-}" ]; then
+  {
+    for ns in $new_domain_name_servers; do
+      echo "nameserver $ns"
+    done
+    [ -n "${new_domain_name:-}" ] && echo "search $new_domain_name"
+  } > /tmp/resolv.conf
+fi
+DHCPHOOK
+  chmod 0644 /lib/dhcpcd/dhcpcd-hooks/90-sentryusb-resolv
+fi
+
+# -- ifupdown: hook for systems using /etc/network/interfaces + dhclient --
+# dhclient normally writes /etc/resolv.conf directly (following the symlink).
+# Install a hook as a safety net in case resolvconf intercepts that write.
+if [ -d /etc/network ] && ! command -v nmcli &>/dev/null && ! command -v dhcpcd &>/dev/null; then
+  log_progress "Installing ifupdown hook for resolv.conf"
+  mkdir -p /etc/dhcp/dhclient-exit-hooks.d
+  cat > /etc/dhcp/dhclient-exit-hooks.d/sentryusb-resolv << 'DHCLIENTHOOK'
+# Write DHCP-provided DNS to /tmp/resolv.conf (SentryUSB read-only root).
+if [ -n "${new_domain_name_servers:-}" ]; then
+  {
+    for ns in $new_domain_name_servers; do
+      echo "nameserver $ns"
+    done
+    [ -n "${new_domain_name:-}" ] && echo "search $new_domain_name"
+  } > /tmp/resolv.conf
+fi
+DHCLIENTHOOK
+  chmod 0755 /etc/dhcp/dhclient-exit-hooks.d/sentryusb-resolv
+fi
 
 # ---- Disable systemd-resolved (conflicts with our resolv.conf management) ----
 if systemctl is-active --quiet systemd-resolved 2>/dev/null; then
