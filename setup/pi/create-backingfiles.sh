@@ -354,6 +354,7 @@ fi
 # shut down everything that might be using any of the drive images
 release_all_images
 
+CAM_NEEDS_RECREATE=false
 NEEDS_RECREATE=false
 for pair in \
   "cam:CAM:$CAM_DISK_SIZE:$CAM_DISK_FILE_NAME" \
@@ -366,6 +367,7 @@ do
   if image_matches_params "$_file" "$_size" &> /dev/null; then continue; fi
   if [ "$_size" -gt 0 ] && [ -e "$_file" ] && try_resize_image "$_file" "$_size"; then continue; fi
   NEEDS_RECREATE=true
+  if [ "$_name" = "cam" ]; then CAM_NEEDS_RECREATE=true; fi
 done
 
 if [ "$NEEDS_RECREATE" = true ]
@@ -385,9 +387,15 @@ then
 fi
 
 add_drive "cam" "CAM" "$CAM_DISK_SIZE" "$CAM_DISK_FILE_NAME" "$USE_EXFAT"
-if [ "$CAM_DISK_SIZE" -eq 0 ]
+if [ "$CAM_DISK_SIZE" -eq 0 ] || [ "$CAM_NEEDS_RECREATE" = true ]
 then
   rm -rf "$BACKINGFILES_MOUNTPOINT/snapshots" &> /dev/null
+  # Clean stale TeslaCam symlinks that pointed into the old snapshots
+  if [ -d /mutable/TeslaCam ]
+  then
+    rm -rf /mutable/TeslaCam/RecentClips /mutable/TeslaCam/SavedClips /mutable/TeslaCam/SentryClips /mutable/TeslaCam/TeslaTrackMode
+    rm -f /mutable/sentry_files_archived
+  fi
 fi
 
 add_drive "music" "MUSIC" "$MUSIC_DISK_SIZE" "$MUSIC_DISK_FILE_NAME" "$USE_EXFAT"

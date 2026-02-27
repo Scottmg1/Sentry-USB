@@ -459,19 +459,23 @@ function create_usb_drive_backing_files () {
     setup_progress "Mounted the mutable partition."
   fi
 
-  # Clean up old TeslaCam symlinks and snapshots from any previous install.
-  # Without this, the viewer will show stale clips after re-setup because the
-  # old symlinks in /mutable/TeslaCam/ still resolve to old snapshot files.
-  if [ -d "$MUTABLE_MOUNTPOINT/TeslaCam" ]
+  # Only clean up snapshots and TeslaCam symlinks when the cam disk image
+  # doesn't exist yet (fresh install).  For re-runs where the image is
+  # recreated due to a size change, create-backingfiles.sh handles cleanup
+  # so that data is preserved when nothing actually changed.
+  if [ ! -e "$BACKINGFILES_MOUNTPOINT/cam_disk.bin" ]
   then
-    setup_progress "Cleaning old TeslaCam symlinks..."
-    rm -rf "$MUTABLE_MOUNTPOINT/TeslaCam/RecentClips" "$MUTABLE_MOUNTPOINT/TeslaCam/SavedClips" "$MUTABLE_MOUNTPOINT/TeslaCam/SentryClips" "$MUTABLE_MOUNTPOINT/TeslaCam/TeslaTrackMode"
-    rm -f "$MUTABLE_MOUNTPOINT/sentry_files_archived"
-  fi
-  if [ -d "$BACKINGFILES_MOUNTPOINT/snapshots" ]
-  then
-    setup_progress "Cleaning old snapshots..."
-    rm -rf "$BACKINGFILES_MOUNTPOINT/snapshots"
+    if [ -d "$MUTABLE_MOUNTPOINT/TeslaCam" ]
+    then
+      setup_progress "Cleaning old TeslaCam symlinks..."
+      rm -rf "$MUTABLE_MOUNTPOINT/TeslaCam/RecentClips" "$MUTABLE_MOUNTPOINT/TeslaCam/SavedClips" "$MUTABLE_MOUNTPOINT/TeslaCam/SentryClips" "$MUTABLE_MOUNTPOINT/TeslaCam/TeslaTrackMode"
+      rm -f "$MUTABLE_MOUNTPOINT/sentry_files_archived"
+    fi
+    if [ -d "$BACKINGFILES_MOUNTPOINT/snapshots" ]
+    then
+      setup_progress "Cleaning old snapshots..."
+      rm -rf "$BACKINGFILES_MOUNTPOINT/snapshots"
+    fi
   fi
 
   setup_progress "Creating backing disk files."
