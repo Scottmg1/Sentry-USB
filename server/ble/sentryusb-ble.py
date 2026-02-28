@@ -170,34 +170,38 @@ def is_setup_finished():
 AVAHI_SERVICE_PATH = '/etc/avahi/services/sentryusb.service'
 
 def update_avahi_service_name(name):
-    """Rewrite the Avahi mDNS service file with a fixed name instead of %h,
-    so the iOS app discovers this Pi as e.g. 'SentryUSB-EC92' over WiFi."""
+    """Rewrite the Avahi mDNS service file to include the device suffix as a
+    TXT record. The service name stays as %h (hostname) so .local resolution
+    keeps working. The iOS app reads the 'suffix' TXT record to build a
+    display name like 'SentryUSB-EC92'."""
+    suffix = get_device_suffix()
     service_xml = f'''<?xml version="1.0" standalone='no'?>
 <!DOCTYPE service-group SYSTEM "avahi-service.dtd">
 <service-group>
-  <name>{name}</name>
+  <name replace-wildcards="yes">%h</name>
   <service>
     <type>_sentryusb._tcp</type>
     <port>80</port>
     <txt-record>version=1.0.0</txt-record>
     <txt-record>path=/api</txt-record>
+    <txt-record>suffix={suffix}</txt-record>
   </service>
 </service-group>
 '''
     try:
-        # Only rewrite if the name actually changed
+        # Only rewrite if the suffix record is missing or different
         if os.path.exists(AVAHI_SERVICE_PATH):
             with open(AVAHI_SERVICE_PATH, 'r') as f:
                 current = f.read()
-            if f'<name>{name}</name>' in current:
-                log.info(f'Avahi service already has name: {name}')
+            if f'suffix={suffix}' in current:
+                log.info(f'Avahi service already has suffix: {suffix}')
                 return
         with open(AVAHI_SERVICE_PATH, 'w') as f:
             f.write(service_xml)
         # Restart avahi to pick up the change
         subprocess.run(['systemctl', 'restart', 'avahi-daemon'],
                        capture_output=True, timeout=10)
-        log.info(f'Avahi mDNS service name updated to: {name}')
+        log.info(f'Avahi mDNS service updated with suffix={suffix}')
     except Exception as e:
         log.warning(f'Failed to update Avahi service: {e}')
 
