@@ -38,7 +38,7 @@ export function AppShell() {
           >
             <Menu className="h-5 w-5" />
           </button>
-          <span className="text-sm font-semibold text-slate-100">SentryUSB</span>
+          <span className="text-sm font-semibold text-slate-100">Sentry USB</span>
         </div>
 
         <div className="p-4 pb-safe md:p-6">

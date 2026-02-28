@@ -86,7 +86,7 @@ function NasSSHKey() {
         <h4 className="text-sm font-medium text-slate-300">NAS SSH Key (rsync)</h4>
       </div>
       <p className="text-xs text-slate-500">
-        Generate an SSH keypair so SentryUSB can connect to your NAS for rsync
+        Generate an SSH keypair so Sentry USB can connect to your NAS for rsync
         archiving without a password. Copy the public key below and add it to
         your NAS's <code className="rounded bg-white/10 px-1">~/.ssh/authorized_keys</code> file.
       </p>

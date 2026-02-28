@@ -1,6 +1,6 @@
-## Building a SentryUSB Image
+## Building a Sentry USB Image
 
-The SentryUSB image is a custom Raspberry Pi OS image with everything pre-installed. Users just flash it, configure WiFi in Pi Imager, boot, and open the web UI — no SSH required.
+The Sentry USB image is a custom Raspberry Pi OS image with everything pre-installed. Users just flash it, configure WiFi in Pi Imager, boot, and open the web UI — no SSH required.
 
 ### Quick Method (recommended)
 
@@ -11,7 +11,7 @@ From the repo root, run:
 ```
 
 This will:
-1. Build the SentryUSB binary (or download from releases)
+1. Build the Sentry USB binary (or download from releases)
 2. Clone pi-gen and inject the binary
 3. Build the image using Docker
 4. Output a compressed `.img.gz` in `deploy/`
@@ -33,7 +33,7 @@ You can also pass a pre-built binary:
 
 ### GitHub Actions (CI)
 
-Images are automatically built on every GitHub Release. You can also trigger a build manually from the Actions tab → "Build SentryUSB Image" → "Run workflow".
+Images are automatically built on every GitHub Release. You can also trigger a build manually from the Actions tab → "Build Sentry USB Image" → "Run workflow".
 
 ### What's in the image
 
@@ -48,7 +48,7 @@ Images are automatically built on every GitHub Release. You can also trigger a b
 ### User experience after flashing
 
 1. User flashes image with Pi Imager, configures WiFi + password in settings
-2. Boots Pi → WiFi connects → SentryUSB web server starts on port 80
+2. Boots Pi → WiFi connects → Sentry USB web server starts on port 80
 3. User opens `http://sentryusb.local` → sees the dashboard
 4. Completes Setup Wizard → Pi reboots several times (10–20 min) → done
 5. Plugs into Tesla

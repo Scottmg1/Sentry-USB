@@ -131,7 +131,7 @@ function ProviderCard({ provider, data, onChange, errorFields }: { provider: Not
       {expanded && provider.id === "mobile_push" && (
         <div className="border-t border-white/5 px-4 py-3">
           <p className="text-xs text-slate-400">
-            Enable this to send notifications to the SentryUSB mobile app. After setup, open the app and go to Settings → Pair for Notifications to link your phone. You can also generate a pairing code from this web UI under Settings → Mobile Notifications.
+            Enable this to send notifications to the Sentry USB mobile app. After setup, open the app and go to Settings → Pair for Notifications to link your phone. You can also generate a pairing code from this web UI under Settings → Mobile Notifications.
           </p>
         </div>
       )}

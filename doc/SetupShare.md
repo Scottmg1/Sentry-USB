@@ -4,7 +4,7 @@ Back up your Tesla dashcam clips to a shared folder on a computer or NAS on your
 
 ## Prerequisites
 
-Before configuring SentryUSB, set up a file share on your archive server:
+Before configuring Sentry USB, set up a file share on your archive server:
 
 1. **Create a shared folder** on your Windows PC, Mac, or Linux/NAS device (e.g., a share named `SentryArchive`).
 2. **Create a user** with read/write access to the share (or use an existing one). Note the username and password.

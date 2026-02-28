@@ -1,6 +1,6 @@
-# SentryUSB — Raspberry Pi Setup Guide
+# Sentry USB — Raspberry Pi Setup Guide
 
-This guide covers installing SentryUSB on a Raspberry Pi. Supported boards:
+This guide covers installing Sentry USB on a Raspberry Pi. Supported boards:
 
 - **Raspberry Pi 4B / Pi 5** (recommended)
 - **Raspberry Pi Zero 2 W** (good budget option)
@@ -15,19 +15,19 @@ This guide covers installing SentryUSB on a Raspberry Pi. Supported boards:
 | **Computer** | With an SD card reader, for flashing |
 | **WiFi** | Internet access for initial setup |
 
-There are two ways to install SentryUSB:
+There are two ways to install Sentry USB:
 
-- **[Method A: SentryUSB Image](#method-a-sentryusb-image-recommended)** — Flash our pre-built image. Fastest way to get started.
-- **[Method B: Manual Install on Raspberry Pi OS](#method-b-manual-install-on-raspberry-pi-os)** — Start from a stock Raspberry Pi OS Bookworm (64-bit Lite) install and add SentryUSB yourself.
+- **[Method A: Sentry USB Image](#method-a-sentryusb-image-recommended)** — Flash our pre-built image. Fastest way to get started.
+- **[Method B: Manual Install on Raspberry Pi OS](#method-b-manual-install-on-raspberry-pi-os)** — Start from a stock Raspberry Pi OS Bookworm (64-bit Lite) install and add Sentry USB yourself.
 
 ---
 
-# Method A: SentryUSB Image (Recommended)
+# Method A: Sentry USB Image (Recommended)
 
 ## Quick Overview
 
 ```
-1. Flash the SentryUSB image to SD card
+1. Flash the Sentry USB image to SD card
 2. Boot the Pi on your home network
 3. Open the web UI → Settings → Setup Wizard
 4. Configure everything in the browser
@@ -36,7 +36,7 @@ There are two ways to install SentryUSB:
 
 ## A1. Flash the Image
 
-1. Download the latest [SentryUSB image](https://github.com/Scottmg1/Sentry-USB/releases/latest)
+1. Download the latest [Sentry USB image](https://github.com/Scottmg1/Sentry-USB/releases/latest)
 2. Download [Raspberry Pi Imager](https://www.raspberrypi.com/software/)
 3. In Pi Imager:
    - **Operating System** → scroll all the way down → **Use custom** → select the downloaded `.img.gz`
@@ -101,7 +101,7 @@ Use this if you want to start from a clean **Raspberry Pi OS Bookworm (64-bit Li
 4. SSH in:
    Check your router for the Pi's IP and use `ssh pi@<ip-address>`.
 
-## B3. Install SentryUSB
+## B3. Install Sentry USB
 
 Run the one-line installer as root:
 
@@ -122,7 +122,7 @@ The install takes about 2–5 minutes. When it finishes, **open the web UI to co
 ## B4. Open the Web UI & Configure
 
 1. Open your browser and go to **http://sentryusb.local**
-2. You should see the SentryUSB dashboard
+2. You should see the Sentry USB dashboard
 3. Click **Settings** → **Open Wizard**
 4. The wizard will detect your existing WiFi configuration and pre-fill it — you can keep it or change it
 5. Walk through all 9 steps (see [Setup Wizard Steps](#setup-wizard-steps) below)
@@ -155,11 +155,11 @@ The install takes about 2–5 minutes. When it finishes, **open the web UI to co
 
 # Advanced: Headless Configuration (No Web UI)
 
-If you prefer to pre-configure SentryUSB without using the web UI — for example, for automated deployments or if you can't reach the web interface — you can place a `sentryusb.conf` file on the boot partition of the SD card before first boot.
+If you prefer to pre-configure Sentry USB without using the web UI — for example, for automated deployments or if you can't reach the web interface — you can place a `sentryusb.conf` file on the boot partition of the SD card before first boot.
 
 ## How It Works
 
-1. Flash the SentryUSB image (Method A above)
+1. Flash the Sentry USB image (Method A above)
 2. Before ejecting the SD card, mount the `boot` partition on your computer
 3. Create or edit `boot/sentryusb.conf` with your settings (see the [sample config](https://github.com/Scottmg1/Sentry-USB/blob/main-dev/pi-gen-sources/00-sentryusb-tweaks/files/sentryusb.conf.sample))
 4. Eject and boot the Pi — setup will run automatically using the conf file values
@@ -222,12 +222,12 @@ The Pi stores sensitive information including your WiFi password and potentially
 | **On the road** | Connect to the WiFi AP you configured in the wizard, then go to `http://192.168.66.1` |
 | **Via USB** | Plug Pi into your computer, SSH to `pi@169.254.x.x` |
 
-# Updating SentryUSB
+# Updating Sentry USB
 
 ### From the Web UI (recommended)
 1. Go to **Settings**
 2. Click **Check for Updates**
-3. SentryUSB will check internet, remount the filesystem read-write, download the latest release, and restart automatically
+3. Sentry USB will check internet, remount the filesystem read-write, download the latest release, and restart automatically
 
 ### From SSH
 ```bash

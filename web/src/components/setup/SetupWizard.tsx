@@ -181,7 +181,7 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
           // Transition to "finalizing" which keeps the spinner and
           // waits for the server to come back before showing dashboard.
           setPhase("finalizing")
-          setSetupMessage("SentryUSB has finished setting up. The device is now rebooting one last time...")
+          setSetupMessage("Sentry USB has finished setting up. The device is now rebooting one last time...")
           if (pollRef.current) clearInterval(pollRef.current)
         } else if (!data.setup_running && phase === "running") {
           setPhase("rebooting")
@@ -217,7 +217,7 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
       } catch {
         // Server unreachable — Pi is rebooting
         wentDown = true
-        setSetupMessage("Waiting for SentryUSB to come back online after final reboot...")
+        setSetupMessage("Waiting for Sentry USB to come back online after final reboot...")
       }
     }, 3000)
     return () => clearInterval(poll)
@@ -242,7 +242,7 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
               setSetupMessage("Running setup... This may take several minutes.")
             } else if (d.status === "complete") {
               setPhase("finalizing")
-              setSetupMessage("SentryUSB has finished setting up. The device is now rebooting one last time...")
+              setSetupMessage("Sentry USB has finished setting up. The device is now rebooting one last time...")
             } else if (d.status === "rebooting") {
               setPhase("rebooting")
               setSetupMessage(d.message || "System is rebooting to continue setup...")
@@ -330,7 +330,7 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
               </div>
               <div>
                 <h2 className="text-xl font-semibold text-slate-100">
-                  {phase === "finalizing" ? "Almost Done!" : "Setting Up SentryUSB"}
+                  {phase === "finalizing" ? "Almost Done!" : "Setting Up Sentry USB"}
                 </h2>
                 <p className="mt-2 text-sm text-slate-400">{setupMessage}</p>
                 {phase !== "finalizing" && (
@@ -343,7 +343,7 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
                 )}
                 {phase === "finalizing" && (
                   <p className="mt-4 text-xs text-slate-600">
-                    SentryUSB is performing its final reboot. This page will automatically
+                    Sentry USB is performing its final reboot. This page will automatically
                     redirect you to the dashboard once the device is back online.
                   </p>
                 )}

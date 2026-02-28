@@ -48,7 +48,7 @@ export function MobileNav({ open, onClose }: MobileNavProps) {
               <Shield className="h-5 w-5 text-blue-400" />
             </div>
             <span className="text-lg font-semibold tracking-tight text-slate-100">
-              SentryUSB
+              Sentry USB
             </span>
           </div>
           <button

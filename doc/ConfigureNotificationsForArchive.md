@@ -1,6 +1,6 @@
 # Configure Notifications for Archive
 
-Get push notifications when SentryUSB finishes archiving clips, encounters errors, or performs other important actions. You can enable any combination of the 11 supported providers.
+Get push notifications when Sentry USB finishes archiving clips, encounters errors, or performs other important actions. You can enable any combination of the 11 supported providers.
 
 ## Setup Wizard (Recommended)
 
@@ -10,7 +10,7 @@ The easiest way to configure notifications is through the web UI:
 2. Go to **Settings** → **Open Wizard**
 3. Navigate to the **Notifications** step
 4. Enable one or more providers and fill in the required fields
-5. Optionally set a **Notification Title** (defaults to "SentryUSB")
+5. Optionally set a **Notification Title** (defaults to "Sentry USB")
 6. Continue through the remaining wizard steps and click **Apply & Run Setup**
 
 The wizard supports all providers listed below. The rest of this document explains how to obtain the API keys and tokens needed for each provider.

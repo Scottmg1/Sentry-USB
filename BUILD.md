@@ -1,4 +1,4 @@
-# SentryUSB Build & Release Guide
+# Sentry USB Build & Release Guide
 
 ## Prerequisites
 
@@ -62,7 +62,7 @@ cd web; npm run build; cd ..; Remove-Item -Recurse -Force "server\static\*"; Cop
 
 1. Build both binaries using the steps above
 2. Commit all changes (frontend source, server source, setup scripts)
-3. Push to the repo — the SentryUSB update mechanism on devices will pull new binaries and scripts
+3. Push to the repo — the Sentry USB update mechanism on devices will pull new binaries and scripts
 
 ## Common Issues
 

@@ -45,7 +45,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         </div>
         {!collapsed && (
           <span className="text-lg font-semibold tracking-tight text-slate-100">
-            SentryUSB
+            Sentry USB
           </span>
         )}
       </div>

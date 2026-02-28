@@ -1,6 +1,6 @@
 # Using an External USB/NVMe Drive
 
-This guide explains how to use an external USB drive or NVMe SSD with SentryUSB instead of (or in addition to) the SD card for storing dashcam recordings.
+This guide explains how to use an external USB drive or NVMe SSD with Sentry USB instead of (or in addition to) the SD card for storing dashcam recordings.
 
 ## When to Use an External Drive
 
@@ -30,7 +30,7 @@ This guide explains how to use an external USB drive or NVMe SSD with SentryUSB 
 7. Configure drive sizes (Dashcam, Music, LightShow, Boombox) as desired
 8. Continue through the remaining wizard steps and click **Apply & Run Setup**
 
-SentryUSB will partition the external drive and use it for `/backingfiles` and `/mutable`. The SD card remains read-only and is used only for boot.
+Sentry USB will partition the external drive and use it for `/backingfiles` and `/mutable`. The SD card remains read-only and is used only for boot.
 
 ## Method B: Manual Configuration (SSH)
 

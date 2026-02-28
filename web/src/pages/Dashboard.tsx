@@ -102,7 +102,7 @@ export default function Dashboard() {
         setUptime(parseFloat(data.uptime))
         setError(null)
       } catch {
-        if (mounted) setError("Unable to connect to SentryUSB")
+        if (mounted) setError("Unable to connect to Sentry USB")
       }
     }
 
@@ -190,7 +190,7 @@ export default function Dashboard() {
         <Activity className="mb-4 h-12 w-12 text-slate-600" />
         <p className="text-lg font-medium text-slate-400">{error}</p>
         <p className="mt-1 text-sm text-slate-600">
-          Make sure the SentryUSB API server is running
+          Make sure the Sentry USB API server is running
         </p>
       </div>
     )

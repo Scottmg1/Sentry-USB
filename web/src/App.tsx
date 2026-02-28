@@ -75,7 +75,7 @@ export default function App() {
             <Loader2 className="h-8 w-8 animate-spin text-blue-400" />
           </div>
           <div>
-            <h2 className="text-xl font-semibold text-slate-100">Setting Up SentryUSB</h2>
+            <h2 className="text-xl font-semibold text-slate-100">Setting Up Sentry USB</h2>
             <p className="mt-2 text-sm text-slate-400">
               Setup is in progress. The device will reboot several times — this is normal.
             </p>

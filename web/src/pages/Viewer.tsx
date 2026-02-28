@@ -13,7 +13,7 @@ interface ClipSet {
   cameras: Record<string, string>
 }
 
-// Camera grid layout: pillars top, repeaters bottom (matches Sentry Six)
+// Camera grid layout: pillars top, repeaters bottom (matches Sentry Studio)
 const CAMERAS_GRID = ["left_pillar", "front", "right_pillar", "left_repeater", "back", "right_repeater"]
 const CAMERA_LABELS: Record<string, string> = {
   front: "Front",
@@ -512,7 +512,7 @@ export default function Viewer() {
               )}
             </div>
 
-            {/* Sentry Six promo */}
+            {/* Sentry Studio promo */}
             {showPromo && (
               <div className="border-t border-white/5 p-2">
                 <div className="relative rounded-lg bg-gradient-to-r from-blue-500/10 to-purple-500/10 p-2.5">
@@ -526,7 +526,7 @@ export default function Viewer() {
                     <Car className="mt-0.5 h-4 w-4 shrink-0 text-blue-400" />
                     <div>
                       <p className="text-[11px] font-medium text-slate-300">
-                        Want more? Try Sentry Six
+                        Want more? Try Sentry Studio
                       </p>
                       <p className="mt-0.5 text-[10px] leading-tight text-slate-500">
                         SEI telemetry, GPS maps, export with overlays, and more.

@@ -11,7 +11,7 @@ Back up your Tesla dashcam clips to cloud storage (Google Drive, S3, Dropbox, On
 
 ## Method A: Setup Wizard + SSH rclone Config (Recommended)
 
-### Step 1: Set up SentryUSB with rclone selected
+### Step 1: Set up Sentry USB with rclone selected
 
 1. Open **http://sentryusb.local** in your browser
 2. Go to **Settings** → **Open Wizard**

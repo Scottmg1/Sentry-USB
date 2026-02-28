@@ -1,6 +1,6 @@
-# SentryUSB Web Frontend
+# Sentry USB Web Frontend
 
-The SentryUSB web interface — a React single-page application with a dark glassmorphism design.
+The Sentry USB web interface — a React single-page application with a dark glassmorphism design.
 
 ## Tech Stack
 

@@ -72,7 +72,7 @@ export default function Logs() {
         }
       } catch {
         if (mounted) {
-          setContent("Unable to connect to SentryUSB. Is the device online?")
+          setContent("Unable to connect to Sentry USB. Is the device online?")
           setLoading(false)
         }
       }

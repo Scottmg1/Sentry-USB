@@ -70,7 +70,7 @@ export function NetworkStep({ data, onChange, onBatchChange }: StepProps) {
             <p className="mt-1 text-xs leading-relaxed text-slate-400">
               Set your WiFi network name, password, and country code in
               <span className="font-medium text-slate-300"> Raspberry Pi Imager </span>
-              before flashing your SD card. SentryUSB will use that WiFi configuration automatically.
+              before flashing your SD card. Sentry USB will use that WiFi configuration automatically.
             </p>
             <p className="mt-2 text-xs text-slate-500">
               If you need to change WiFi later, re-flash the SD card with updated settings or
@@ -108,7 +108,7 @@ export function NetworkStep({ data, onChange, onBatchChange }: StepProps) {
           <span className="text-xs text-slate-600">(optional)</span>
         </div>
         <p className="mb-3 text-xs text-slate-500">
-          Create a WiFi hotspot so you can access SentryUSB on the road.
+          Create a WiFi hotspot so you can access Sentry USB on the road.
         </p>
 
         <label className="mb-3 flex cursor-pointer items-center gap-2">

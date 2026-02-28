@@ -356,7 +356,7 @@ function MobileNotificationsSection() {
       </h2>
       <div className="glass-card p-5 space-y-4">
         <p className="text-sm text-slate-400">
-          Pair your phone with the SentryUSB mobile app to receive push notifications.
+          Pair your phone with the Sentry USB mobile app to receive push notifications.
         </p>
 
         {/* Generate Code */}
@@ -384,7 +384,7 @@ function MobileNotificationsSection() {
 
         {pairingCode && (
           <p className="text-xs text-slate-600">
-            Enter this code in the SentryUSB mobile app under Settings → Pair for Notifications.
+            Enter this code in the Sentry USB mobile app under Settings → Pair for Notifications.
           </p>
         )}
 
@@ -837,7 +837,7 @@ export default function Settings() {
                   if (!res.ok) throw new Error("Failed")
                   const data = await res.json()
                   // Build conf file content
-                  let content = "# sentryusb.conf - exported from SentryUSB UI\n"
+                  let content = "# sentryusb.conf - exported from Sentry USB UI\n"
                   for (const [k, v] of Object.entries(data)) {
                     const entry = v as { value: string; active: boolean }
                     if (entry.active) {
@@ -931,7 +931,7 @@ export default function Settings() {
                 Update Available: {updateAvailable.latest_version}
               </h2>
               <p className="mt-0.5 text-sm text-slate-400">
-                A new version of SentryUSB is ready to install.
+                A new version of Sentry USB is ready to install.
                 {" "}
                 <a href={updateAvailable.release_url} target="_blank" rel="noopener noreferrer"
                   className="text-blue-400 hover:text-blue-300 underline">View on GitHub</a>
@@ -947,7 +947,7 @@ export default function Settings() {
         </div>
       )}
 
-      {/* Update SentryUSB */}
+      {/* Update Sentry USB */}
       <div className="glass-card overflow-hidden">
         <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
           <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20">
@@ -955,7 +955,7 @@ export default function Settings() {
           </div>
           <div className="flex-1">
             <h2 className="text-lg font-semibold text-slate-100">
-              Update SentryUSB
+              Update Sentry USB
             </h2>
             <p className="mt-0.5 text-sm text-slate-400">
               {updateStatus === "idle" && "Check for and install the latest version."}
@@ -1023,7 +1023,7 @@ export default function Settings() {
             description={
               confirmReboot
                 ? "This will reboot the device immediately"
-                : "Reboot the SentryUSB device"
+                : "Reboot the Sentry USB device"
             }
             variant={confirmReboot ? "danger" : "default"}
             onClick={handleReboot}
@@ -1055,7 +1055,7 @@ export default function Settings() {
             {version || "loading..."}
           </p>
           <p className="text-slate-300">
-            <span className="text-slate-500">Project:</span> SentryUSB
+            <span className="text-slate-500">Project:</span> Sentry USB
           </p>
           <p className="text-slate-300">
             <span className="text-slate-500">Based on:</span>{" "}
