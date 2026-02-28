@@ -26,10 +26,19 @@ type piStatus struct {
 	WifiIP         string `json:"wifi_ip"`
 	EtherIP        string `json:"ether_ip"`
 	EtherSpeed     string `json:"ether_speed"`
+	DeviceSuffix   string `json:"device_suffix"`
 }
 
 func (h *handlers) getStatus(w http.ResponseWriter, r *http.Request) {
 	status := piStatus{}
+
+	// Unique device suffix from machine-id
+	if data, err := os.ReadFile("/etc/machine-id"); err == nil {
+		mid := strings.TrimSpace(string(data))
+		if len(mid) >= 4 {
+			status.DeviceSuffix = strings.ToUpper(mid[len(mid)-4:])
+		}
+	}
 
 	// CPU temperature
 	if data, err := os.ReadFile("/sys/class/thermal/thermal_zone0/temp"); err == nil {

@@ -121,7 +121,7 @@ def mark_authenticated(options):
 
 
 # ============================================================
-# Helper: get hostname and version
+# Helper: get hostname, version, and unique device suffix
 # ============================================================
 
 def get_hostname():
@@ -129,6 +129,27 @@ def get_hostname():
         return subprocess.check_output(['hostname'], text=True).strip()
     except Exception:
         return 'sentryusb'
+
+def get_device_suffix():
+    """Return a stable 4-character uppercase hex suffix unique to this Pi,
+    derived from /etc/machine-id. Used for display names like SentryUSB-A3F1."""
+    try:
+        with open('/etc/machine-id', 'r') as f:
+            machine_id = f.read().strip()
+        # Use last 4 hex chars — unique enough for a handful of Pis
+        return machine_id[-4:].upper()
+    except Exception:
+        # Fallback: derive from Bluetooth adapter MAC
+        try:
+            mac = subprocess.check_output(
+                ['hciconfig', 'hci0'], text=True)
+            for line in mac.splitlines():
+                if 'BD Address' in line:
+                    addr = line.split('BD Address:')[1].split()[0]
+                    return addr.replace(':', '')[-4:].upper()
+        except Exception:
+            pass
+    return '0000'
 
 def get_version():
     try:
@@ -250,21 +271,33 @@ network={{
 # API proxy: forward requests to the local Go server
 # ============================================================
 
-def proxy_api_request(method, path, body=None):
-    """Forward an API request to the local Go server."""
+def proxy_api_request(method, path, body=None, retries=2, retry_delay=1.5):
+    """Forward an API request to the local Go server.
+    Retries on connection errors (e.g. server still starting up)."""
+    import time
     url = f'{API_BASE}{path}'
-    try:
-        data = json.dumps(body).encode() if body else None
-        req = urllib.request.Request(url, data=data, method=method)
-        req.add_header('Content-Type', 'application/json')
-        resp = urllib.request.urlopen(req, timeout=15)
-        response_body = resp.read()
-        return {'status': resp.getcode(), 'body': json.loads(response_body)}
-    except urllib.error.HTTPError as e:
-        body_text = e.read().decode() if e.fp else ''
-        return {'status': e.code, 'body': body_text}
-    except Exception as e:
-        return {'status': 500, 'body': {'error': str(e)}}
+    last_error = None
+    for attempt in range(1 + retries):
+        try:
+            data = json.dumps(body).encode() if body else None
+            req = urllib.request.Request(url, data=data, method=method)
+            req.add_header('Content-Type', 'application/json')
+            resp = urllib.request.urlopen(req, timeout=15)
+            response_body = resp.read()
+            return {'status': resp.getcode(), 'body': json.loads(response_body)}
+        except urllib.error.HTTPError as e:
+            body_text = e.read().decode() if e.fp else ''
+            return {'status': e.code, 'body': body_text}
+        except (urllib.error.URLError, ConnectionRefusedError, OSError) as e:
+            last_error = e
+            if attempt < retries:
+                log.warning(f'API proxy: {method} {path} attempt {attempt+1} failed ({e}), retrying in {retry_delay}s...')
+                time.sleep(retry_delay)
+            else:
+                log.error(f'API proxy: {method} {path} failed after {retries+1} attempts: {e}')
+        except Exception as e:
+            return {'status': 500, 'body': {'error': str(e)}}
+    return {'status': 503, 'body': {'error': f'Local server unavailable: {last_error}'}}
 
 
 # ============================================================
@@ -532,7 +565,7 @@ class WifiStatusCharacteristic(Characteristic):
 
 
 class DeviceInfoCharacteristic(Characteristic):
-    """Returns device info: hostname, version, setup_finished."""
+    """Returns device info: hostname, version, setup_finished, device_suffix."""
 
     def __init__(self, bus, index, service):
         Characteristic.__init__(self, bus, index, DEVICE_INFO_UUID,
@@ -543,6 +576,7 @@ class DeviceInfoCharacteristic(Characteristic):
             'hostname': get_hostname(),
             'version': get_version(),
             'setup_finished': is_setup_finished(),
+            'device_suffix': get_device_suffix(),
         }
         data = json.dumps(info).encode()
         return dbus.Array([dbus.Byte(b) for b in data], signature='y')
@@ -782,10 +816,13 @@ def main():
 
     log.info(f'Using adapter: {adapter_path}')
 
-    # Power on adapter
+    # Power on adapter and set unique BLE name
     adapter_props = dbus.Interface(
         bus.get_object(BLUEZ_SERVICE, adapter_path), DBUS_PROP_IFACE)
     adapter_props.Set('org.bluez.Adapter1', 'Powered', dbus.Boolean(True))
+    ble_name = f'SentryUSB-{get_device_suffix()}'
+    adapter_props.Set('org.bluez.Adapter1', 'Alias', dbus.String(ble_name))
+    log.info(f'BLE adapter alias set to: {ble_name}')
 
     # Register GATT application
     service_manager = dbus.Interface(
@@ -807,8 +844,7 @@ def main():
         reply_handler=register_ad_cb,
         error_handler=register_ad_error_cb)
 
-    hostname = get_hostname()
-    log.info(f'SentryUSB BLE peripheral started: SentryUSB-{hostname[-4:]}')
+    log.info(f'SentryUSB BLE peripheral started: {ble_name}')
     log.info(f'WiFi Setup Service: {WIFI_SERVICE_UUID}')
     log.info(f'API Proxy Service:  {API_SERVICE_UUID}')
 
