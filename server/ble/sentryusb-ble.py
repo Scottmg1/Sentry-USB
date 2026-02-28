@@ -167,6 +167,40 @@ def is_setup_finished():
     ]
     return any(os.path.exists(p) for p in paths)
 
+AVAHI_SERVICE_PATH = '/etc/avahi/services/sentryusb.service'
+
+def update_avahi_service_name(name):
+    """Rewrite the Avahi mDNS service file with a fixed name instead of %h,
+    so the iOS app discovers this Pi as e.g. 'SentryUSB-EC92' over WiFi."""
+    service_xml = f'''<?xml version="1.0" standalone='no'?>
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<service-group>
+  <name>{name}</name>
+  <service>
+    <type>_sentryusb._tcp</type>
+    <port>80</port>
+    <txt-record>version=1.0.0</txt-record>
+    <txt-record>path=/api</txt-record>
+  </service>
+</service-group>
+'''
+    try:
+        # Only rewrite if the name actually changed
+        if os.path.exists(AVAHI_SERVICE_PATH):
+            with open(AVAHI_SERVICE_PATH, 'r') as f:
+                current = f.read()
+            if f'<name>{name}</name>' in current:
+                log.info(f'Avahi service already has name: {name}')
+                return
+        with open(AVAHI_SERVICE_PATH, 'w') as f:
+            f.write(service_xml)
+        # Restart avahi to pick up the change
+        subprocess.run(['systemctl', 'restart', 'avahi-daemon'],
+                       capture_output=True, timeout=10)
+        log.info(f'Avahi mDNS service name updated to: {name}')
+    except Exception as e:
+        log.warning(f'Failed to update Avahi service: {e}')
+
 
 # ============================================================
 # WiFi scanning and configuration
@@ -728,25 +762,30 @@ class APIResponseCharacteristic(Characteristic):
 class Advertisement(dbus.service.Object):
     PATH_BASE = '/org/bluez/sentryusb/advertisement'
 
-    def __init__(self, bus, index, advertising_type, ad_manager):
+    def __init__(self, bus, index, advertising_type, ad_manager, local_name=None):
         self.path = self.PATH_BASE + str(index)
         self.bus = bus
         self.ad_type = advertising_type
         self.ad_manager = ad_manager
+        self.local_name = local_name
         # Only advertise primary service UUID.
         # A 31-byte LE advertisement payload cannot fit two 128-bit UUIDs
         # (2+16+16=34 bytes) plus a local name and flags — doing so causes
         # BlueZ / the HCI controller to return "Invalid Parameters (0x0d)".
         # The iOS app scans by WIFI_SERVICE_UUID only, so one UUID is enough.
+        # The LocalName is placed in the scan response by BlueZ automatically.
         self.service_uuids = [WIFI_SERVICE_UUID]
         dbus.service.Object.__init__(self, bus, self.path)
 
     def get_properties(self):
+        props = {
+            'Type': self.ad_type,
+            'ServiceUUIDs': dbus.Array(self.service_uuids, signature='s'),
+        }
+        if self.local_name:
+            props['LocalName'] = dbus.String(self.local_name)
         properties = {
-            LE_ADVERTISEMENT_IFACE: {
-                'Type': self.ad_type,
-                'ServiceUUIDs': dbus.Array(self.service_uuids, signature='s'),
-            }
+            LE_ADVERTISEMENT_IFACE: props
         }
         return properties
 
@@ -824,6 +863,9 @@ def main():
     adapter_props.Set('org.bluez.Adapter1', 'Alias', dbus.String(ble_name))
     log.info(f'BLE adapter alias set to: {ble_name}')
 
+    # Update Avahi mDNS service name to match the unique BLE name
+    update_avahi_service_name(ble_name)
+
     # Register GATT application
     service_manager = dbus.Interface(
         bus.get_object(BLUEZ_SERVICE, adapter_path), GATT_MANAGER_IFACE)
@@ -838,7 +880,7 @@ def main():
     ad_manager = dbus.Interface(
         bus.get_object(BLUEZ_SERVICE, adapter_path), LE_ADVERTISING_MANAGER_IFACE)
 
-    adv = Advertisement(bus, 0, 'peripheral', ad_manager)
+    adv = Advertisement(bus, 0, 'peripheral', ad_manager, local_name=ble_name)
     ad_manager.RegisterAdvertisement(
         adv.get_path(), {},
         reply_handler=register_ad_cb,
