@@ -155,7 +155,7 @@ if [ -x /root/bin/send-push-message ]; then
 
       /root/bin/send-push-message "${NOTIFICATION_TITLE:-SentryUSB}:" \
         "${NEW_DRIVES} new ${DRIVE_WORD} mapped (${NEW_DIST} ${DIST_LABEL})." \
-        info || log "Failed to send notification"
+        info drives || log "Failed to send notification"
     else
       log "No new drives found, skipping drive stats notification."
     fi
@@ -176,7 +176,7 @@ if [ "$AUTO_UPDATE_CHECK" != "disabled" ]; then
       if [ ! -f "$NOTIFIED_FILE" ] && [ -x /root/bin/send-push-message ]; then
         /root/bin/send-push-message "${NOTIFICATION_TITLE:-SentryUSB}:" \
           "Update available: ${LATEST_VER}. Open Settings to install." \
-          info || log "Failed to send update notification"
+          info update || log "Failed to send update notification"
         touch "$NOTIFIED_FILE"
       fi
       log "Update available: ${LATEST_VER}"

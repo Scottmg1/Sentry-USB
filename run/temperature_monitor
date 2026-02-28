@@ -44,7 +44,7 @@ do
     then
       set_warning=1
       message="Temperature Monitor: WARNING threshold exceeded ($(readable "$TEMPERATURE_WARNING"))!!!"
-      /root/bin/send-push-message "$NOTIFICATION_TITLE:" "$message" || log "Temperature Monitor: Failed to send push message; likely no internet connection presently."
+      /root/bin/send-push-message "$NOTIFICATION_TITLE:" "$message" "" temperature || log "Temperature Monitor: Failed to send push message; likely no internet connection presently."
     fi
   fi
 
@@ -59,7 +59,7 @@ do
     then
       set_caution=1
       message="Temperature Monitor: CAUTION threshold exceeded ($(readable "$TEMPERATURE_CAUTION"))!!!"
-      /root/bin/send-push-message "$NOTIFICATION_TITLE:" "$message" || log "Temperature Monitor: Failed to send push message; likely no internet connection presently."
+      /root/bin/send-push-message "$NOTIFICATION_TITLE:" "$message" "" temperature || log "Temperature Monitor: Failed to send push message; likely no internet connection presently."
     fi
   fi
 
@@ -80,7 +80,7 @@ do
     if [[ "${TEMPERATURE_POSTARCHIVE:-false}" = "true" ]]
     then
       message="Temperature Monitor: $(readable "$raw_temp") (max=$(readable "$peak_temp") $peak_time)"
-      /root/bin/send-push-message "$NOTIFICATION_TITLE:" "$message" || log "Temperature Monitor: Failed to send push message."
+      /root/bin/send-push-message "$NOTIFICATION_TITLE:" "$message" "" temperature || log "Temperature Monitor: Failed to send push message."
     fi
   fi
 

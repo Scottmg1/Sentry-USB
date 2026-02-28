@@ -3,6 +3,7 @@
 title="$1"
 message="$2"
 type="${3:-}"
+notification_type="${4:-}"
 
 function send_signal () {
   log "Sending Signal message."
@@ -95,10 +96,16 @@ function send_ntfy () {
 function send_mobile_push () {
   log "Sending mobile push notification."
 
+  local payload="{\"title\":\"${title}\",\"message\":\"${message}\",\"device_id\":\"${MOBILE_PUSH_DEVICE_ID}\""
+  if [ -n "$notification_type" ]; then
+    payload+=",\"notification_type\":\"${notification_type}\""
+  fi
+  payload+="}"
+
   curl -s -X POST \
     -H "Content-Type: application/json" \
     -H "X-Device-Secret: $MOBILE_PUSH_SECRET" \
-    -d "{\"title\":\"${title}\",\"message\":\"${message}\",\"device_id\":\"${MOBILE_PUSH_DEVICE_ID}\"}" \
+    -d "$payload" \
     "https://notifications.sentry-six.com/send"
 }
 
