@@ -4,6 +4,10 @@
   Avahi/mDNS service advertisement for SentryUSB.
   Allows the iOS app to discover the Pi on the local network via Bonjour.
   Installed to /etc/avahi/services/sentryusb.service during setup.
+
+  NOTE: sentryusb-ble.py rewrites this file on startup to add a
+  suffix=XXXX TXT record derived from /etc/machine-id. The iOS app
+  uses that suffix to display unique names like SentryUSB-EC92.
 -->
 <service-group>
   <name replace-wildcards="yes">%h</name>

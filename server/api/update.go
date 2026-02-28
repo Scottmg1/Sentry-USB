@@ -306,6 +306,8 @@ if [ -f "$TMPDIR/setup/pi/avahi-sentryusb.service" ]; then
     cp "$TMPDIR/setup/pi/avahi-sentryusb.service" /etc/avahi/services/sentryusb.service
     systemctl enable avahi-daemon 2>/dev/null || true
     systemctl restart avahi-daemon 2>/dev/null || true
+    # Restart BLE service so it re-adds the dynamic suffix TXT record
+    systemctl restart sentryusb-ble 2>/dev/null || true
   fi
 fi
 `, tarballURL)
