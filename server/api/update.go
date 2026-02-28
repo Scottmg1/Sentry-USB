@@ -296,6 +296,16 @@ if [ -f "$TMPDIR/setup/pi/envsetup.sh" ]; then
   chmod +x "/root/bin/envsetup.sh"
 fi
 
+# Update BLE peripheral script from server/ble/
+if [ -f "$TMPDIR/server/ble/sentryusb-ble.py" ]; then
+  cp "$TMPDIR/server/ble/sentryusb-ble.py" "/root/bin/sentryusb-ble.py"
+  chmod +x "/root/bin/sentryusb-ble.py"
+fi
+if [ -f "$TMPDIR/server/ble/sentryusb-ble.service" ]; then
+  cp "$TMPDIR/server/ble/sentryusb-ble.service" "/etc/systemd/system/sentryusb-ble.service"
+  systemctl daemon-reload
+fi
+
 # Install/update Avahi mDNS service for iOS app discovery
 if [ -f "$TMPDIR/setup/pi/avahi-sentryusb.service" ]; then
   if ! dpkg -s avahi-daemon >/dev/null 2>&1; then
@@ -306,10 +316,11 @@ if [ -f "$TMPDIR/setup/pi/avahi-sentryusb.service" ]; then
     cp "$TMPDIR/setup/pi/avahi-sentryusb.service" /etc/avahi/services/sentryusb.service
     systemctl enable avahi-daemon 2>/dev/null || true
     systemctl restart avahi-daemon 2>/dev/null || true
-    # Restart BLE service so it re-adds the dynamic suffix TXT record
-    systemctl restart sentryusb-ble 2>/dev/null || true
   fi
 fi
+
+# Restart BLE service so it picks up new code and re-adds dynamic Avahi suffix
+systemctl restart sentryusb-ble 2>/dev/null || true
 `, tarballURL)
 		scriptOut, scriptErr := shell.RunWithTimeout(120*time.Second, "bash", "-c", scriptUpdateCmd)
 		if scriptErr != nil {
