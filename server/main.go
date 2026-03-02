@@ -23,6 +23,12 @@ func main() {
 	staticDir := flag.String("static", "", "Path to static files directory (overrides embedded)")
 	flag.Parse()
 
+	// Self-heal: update peripheral files (scripts, BLE daemon, etc.) if the
+	// binary is newer than the last migration.  Runs in the background so the
+	// HTTP server starts immediately.  Safe to run repeatedly; never touches
+	// setup-wizard configuration.
+	go runStartupMigration()
+
 	hub := ws.NewHub()
 	go hub.Run()
 

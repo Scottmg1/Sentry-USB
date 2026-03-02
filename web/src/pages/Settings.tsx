@@ -607,7 +607,7 @@ function SpeedTestButton() {
   )
 }
 
-type UpdateStatus = "idle" | "checking" | "downloading" | "installing" | "updating_scripts" | "restarting" | "done" | "error"
+type UpdateStatus = "idle" | "checking_internet" | "checking" | "downloading" | "installing" | "updating_scripts" | "restarting" | "reconnecting" | "done" | "error"
 
 interface RawConfigEntry {
   value: string
@@ -712,6 +712,8 @@ export default function Settings() {
   const [rawConfig, setRawConfig] = useState<Record<string, RawConfigEntry> | null>(null)
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>("idle")
   const [updateError, setUpdateError] = useState<string | null>(null)
+  const [updateMessage, setUpdateMessage] = useState<string | null>(null)
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false)
   const [version, setVersion] = useState<string | null>(null)
   const [piConfig, setPiConfig] = useState<{ uses_ble: string } | null>(null)
   const [updateAvailable, setUpdateAvailable] = useState<{ latest_version: string; release_url: string; release_notes: string } | null>(null)
@@ -745,9 +747,65 @@ export default function Settings() {
       .catch(() => { })
   }, [])
 
-  async function handleUpdate() {
-    setUpdateStatus("checking")
+  async function handleCheckForUpdate() {
+    setIsCheckingUpdate(true)
+    setUpdateAvailable(null)
     setUpdateError(null)
+    try {
+      const res = await fetch("/api/system/check-update", { method: "POST" })
+      if (!res.ok) throw new Error("Failed to check for updates")
+      const data = await res.json()
+      if (data.error) {
+        setUpdateError(data.error)
+      } else if (data.update_available) {
+        setUpdateAvailable({
+          latest_version: data.latest_version,
+          release_url: data.release_url,
+          release_notes: data.release_notes,
+        })
+      } else {
+        // Already up to date — briefly show "done" state
+        setUpdateStatus("done")
+        setUpdateMessage(`You're up to date (${data.current_version || version})`)
+        setTimeout(() => { setUpdateStatus("idle"); setUpdateMessage(null) }, 4000)
+      }
+    } catch (err) {
+      setUpdateError(err instanceof Error ? err.message : "Failed to check for updates")
+    } finally {
+      setIsCheckingUpdate(false)
+    }
+  }
+
+  async function handleInstallUpdate() {
+    setUpdateStatus("checking_internet")
+    setUpdateError(null)
+    setUpdateMessage("Checking internet connection...")
+
+    // Subscribe to real-time progress from the Go server via WebSocket
+    const unsubscribe = wsClient.subscribe("update_status", (data: unknown) => {
+      const msg = data as { status?: string; message?: string; error?: string }
+      if (msg.error) {
+        setUpdateStatus("error")
+        setUpdateError(msg.error)
+        setUpdateMessage(null)
+        return
+      }
+      if (msg.status) {
+        const statusMap: Record<string, UpdateStatus> = {
+          checking_internet: "checking_internet",
+          checking: "checking",
+          remounting: "installing",
+          downloading: "downloading",
+          installing: "installing",
+          updating_scripts: "updating_scripts",
+          restarting: "restarting",
+        }
+        setUpdateStatus(statusMap[msg.status] || "installing")
+      }
+      if (msg.message) {
+        setUpdateMessage(msg.message)
+      }
+    })
 
     try {
       // Check internet first
@@ -756,41 +814,55 @@ export default function Settings() {
       if (!checkData.connected) {
         setUpdateStatus("error")
         setUpdateError("No internet connection. Connect to WiFi first.")
+        setUpdateMessage(null)
+        unsubscribe()
         return
       }
 
-      setUpdateStatus("downloading")
-
-      // Trigger the update
+      // Trigger the update — the backend broadcasts real-time progress over WebSocket
       const res = await fetch("/api/system/update", { method: "POST" })
       if (!res.ok) throw new Error("Failed to start update")
 
-      // Poll for completion (the server will restart, so we watch for disconnect)
-      setUpdateStatus("installing")
+      // The server will restart itself as the last step, killing our WebSocket.
+      // After a delay, start polling until it comes back.
+      let reconnected = false
       setTimeout(() => {
-        setUpdateStatus("updating_scripts")
-      }, 5000)
-      setTimeout(() => {
-        setUpdateStatus("restarting")
-        // After restart, poll until the server comes back
+        unsubscribe()
+        setUpdateStatus("reconnecting")
+        setUpdateMessage("Waiting for device to come back online...")
+
         const pollInterval = setInterval(async () => {
           try {
             const r = await fetch("/api/system/version")
             if (r.ok) {
+              const data = await r.json()
+              reconnected = true
               clearInterval(pollInterval)
+              setUpdateAvailable(null)
               setUpdateStatus("done")
-              setTimeout(() => setUpdateStatus("idle"), 5000)
+              setUpdateMessage(`Update complete — now running ${data.version || "latest"}`)
+              setVersion(data.version || "unknown")
+              setTimeout(() => { setUpdateStatus("idle"); setUpdateMessage(null) }, 6000)
             }
           } catch {
             // Still restarting, keep polling
           }
         }, 3000)
-        // Give up after 2 minutes
-        setTimeout(() => clearInterval(pollInterval), 120000)
-      }, 15000)
+        // Give up after 3 minutes
+        setTimeout(() => {
+          if (!reconnected) {
+            clearInterval(pollInterval)
+            setUpdateStatus("idle")
+            setUpdateMessage(null)
+            setUpdateError("Update may still be in progress. Refresh the page in a moment.")
+          }
+        }, 180000)
+      }, 20000)
     } catch (err) {
+      unsubscribe()
       setUpdateStatus("error")
       setUpdateError(err instanceof Error ? err.message : "Update failed")
+      setUpdateMessage(null)
     }
   }
 
@@ -931,15 +1003,20 @@ export default function Settings() {
                 Update Available: {updateAvailable.latest_version}
               </h2>
               <p className="mt-0.5 text-sm text-slate-400">
-                A new version of Sentry USB is ready to install.
+                Updates the server, shell scripts, and BLE daemon. No setup changes are made.
                 {" "}
                 <a href={updateAvailable.release_url} target="_blank" rel="noopener noreferrer"
-                  className="text-blue-400 hover:text-blue-300 underline">View on GitHub</a>
+                  className="text-blue-400 hover:text-blue-300 underline">View release notes</a>
               </p>
+              {updateAvailable.release_notes && (
+                <pre className="mt-2 max-h-32 overflow-y-auto whitespace-pre-wrap rounded-lg bg-black/20 p-3 text-xs text-slate-400">
+                  {updateAvailable.release_notes}
+                </pre>
+              )}
             </div>
             <button
-              onClick={handleUpdate}
-              className="shrink-0 rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-600"
+              onClick={handleInstallUpdate}
+              className="shrink-0 self-start rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-600"
             >
               Install Update
             </button>
@@ -951,41 +1028,41 @@ export default function Settings() {
       <div className="glass-card overflow-hidden">
         <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
           <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20">
-            <Download className="h-6 w-6 text-emerald-400" />
+            {updateStatus === "error" ? (
+              <AlertCircle className="h-6 w-6 text-red-400" />
+            ) : updateStatus === "done" ? (
+              <CheckCircle className="h-6 w-6 text-emerald-400" />
+            ) : updateStatus !== "idle" ? (
+              <Loader2 className="h-6 w-6 animate-spin text-blue-400" />
+            ) : (
+              <Download className="h-6 w-6 text-emerald-400" />
+            )}
           </div>
           <div className="flex-1">
             <h2 className="text-lg font-semibold text-slate-100">
               Update Sentry USB
             </h2>
             <p className="mt-0.5 text-sm text-slate-400">
-              {updateStatus === "idle" && "Check for and install the latest version."}
-              {updateStatus === "checking" && "Checking internet connection..."}
-              {updateStatus === "downloading" && "Downloading latest release..."}
-              {updateStatus === "installing" && "Installing update..."}
-              {updateStatus === "updating_scripts" && "Updating shell scripts..."}
-              {updateStatus === "restarting" && "Restarting service..."}
-              {updateStatus === "done" && "Update complete!"}
-              {updateStatus === "error" && (updateError || "Update failed.")}
+              {updateStatus === "idle" && !updateError && "Check for and install the latest version."}
+              {updateStatus === "idle" && updateError && <span className="text-red-400">{updateError}</span>}
+              {updateStatus === "error" && <span className="text-red-400">{updateError || "Update failed."}</span>}
+              {updateStatus === "done" && <span className="text-emerald-400">{updateMessage || "Update complete!"}</span>}
+              {updateStatus !== "idle" && updateStatus !== "error" && updateStatus !== "done" && (
+                updateMessage || "Working..."
+              )}
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            {updateStatus === "error" && (
-              <AlertCircle className="h-5 w-5 text-red-400" />
-            )}
-            {updateStatus === "done" && (
-              <CheckCircle className="h-5 w-5 text-emerald-400" />
-            )}
-            {(updateStatus === "checking" || updateStatus === "downloading" || updateStatus === "installing" || updateStatus === "updating_scripts" || updateStatus === "restarting") && (
-              <Loader2 className="h-5 w-5 animate-spin text-blue-400" />
-            )}
             <button
-              onClick={handleUpdate}
-              disabled={updateStatus !== "idle" && updateStatus !== "error" && updateStatus !== "done"}
+              onClick={handleCheckForUpdate}
+              disabled={isCheckingUpdate || (updateStatus !== "idle" && updateStatus !== "error" && updateStatus !== "done")}
               className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-600 disabled:opacity-50"
             >
-              {updateStatus === "idle" || updateStatus === "done" || updateStatus === "error"
-                ? "Check for Updates"
-                : "Updating..."}
+              {isCheckingUpdate ? (
+                <span className="flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Checking...
+                </span>
+              ) : "Check for Updates"}
             </button>
           </div>
         </div>

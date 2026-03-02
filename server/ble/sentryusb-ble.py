@@ -24,6 +24,7 @@ import signal
 import logging
 import urllib.request
 import urllib.error
+import threading
 
 try:
     from gi.repository import GLib
@@ -57,7 +58,8 @@ API_SERVICE_UUID         = '6e400010-b5a3-f393-e0a9-e50e24dcca9e'
 API_REQUEST_UUID         = '6e400011-b5a3-f393-e0a9-e50e24dcca9e'
 API_RESPONSE_UUID        = '6e400012-b5a3-f393-e0a9-e50e24dcca9e'
 
-API_BASE = 'http://127.0.0.1:8788/api'
+# Auto-detected at startup — production uses port 80, dev uses 8788
+API_BASE = None
 
 PIN_FILE = '/root/.sentryusb/ble-pin'
 BOOT_PIN_FILE = '/boot/firmware/BLE_PIN'
@@ -66,6 +68,24 @@ BOOT_PIN_FILE = '/boot/firmware/BLE_PIN'
 authenticated_peers = set()
 
 mainloop = None
+
+
+def detect_api_base():
+    """Detect which port the Go server is listening on.
+    Production runs on port 80, dev on 8788."""
+    for port in (80, 8788):
+        try:
+            url = f'http://127.0.0.1:{port}/api/system/version'
+            resp = urllib.request.urlopen(url, timeout=3)
+            resp.read()
+            base = f'http://127.0.0.1:{port}/api'
+            log.info(f'API server detected on port {port}: {base}')
+            return base
+        except Exception:
+            continue
+    # Default to port 80 (production) even if not yet reachable
+    log.warning('API server not yet reachable on port 80 or 8788, defaulting to port 80')
+    return 'http://127.0.0.1:80/api'
 
 
 def load_pin():
@@ -733,8 +753,11 @@ class APIRequestCharacteristic(Characteristic):
             # Chunk if > 500 bytes
             chunk_size = 500
             if len(response_json) <= chunk_size:
-                self.response_chrc.send_notification(
-                    dbus.Array([dbus.Byte(b) for b in response_json], signature='y'))
+                def send_single():
+                    self.response_chrc.send_notification(
+                        dbus.Array([dbus.Byte(b) for b in response_json], signature='y'))
+                    return False
+                GLib.idle_add(send_single)
             else:
                 chunks = [response_json[i:i+chunk_size]
                           for i in range(0, len(response_json), chunk_size)]
@@ -745,10 +768,16 @@ class APIRequestCharacteristic(Characteristic):
                         'chunk': idx,
                         'data': chunk.decode('utf-8', errors='replace'),
                     }).encode()
-                    self.response_chrc.send_notification(
-                        dbus.Array([dbus.Byte(b) for b in chunk_msg], signature='y'))
+                    def send_chunk(msg=chunk_msg):
+                        self.response_chrc.send_notification(
+                            dbus.Array([dbus.Byte(b) for b in msg], signature='y'))
+                        return False
+                    # Stagger chunk notifications by 50ms to prevent BlueZ drops
+                    GLib.timeout_add(50 * idx, send_chunk)
 
-        GLib.timeout_add(10, do_request)
+        # Run the blocking HTTP proxy call in a background thread
+        # so the GLib main loop stays responsive for BLE operations
+        threading.Thread(target=do_request, daemon=True).start()
 
 
 class APIResponseCharacteristic(Characteristic):
@@ -848,9 +877,12 @@ def register_app_error_cb(error):
 
 
 def main():
-    global mainloop
+    global mainloop, API_BASE
     dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
     bus = dbus.SystemBus()
+
+    # Detect which port the Go API server is on (80 production, 8788 dev)
+    API_BASE = detect_api_base()
 
     adapter_path = find_adapter(bus)
     if not adapter_path:

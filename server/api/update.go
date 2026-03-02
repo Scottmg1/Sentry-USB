@@ -330,6 +330,11 @@ systemctl restart sentryusb-ble 2>/dev/null || true
 			log.Printf("[update] Shell scripts updated from %s", scriptRef)
 		}
 
+		// Write startup-migration marker so the new binary doesn't redundantly
+		// re-run the migration on next boot (we just did the same work above).
+		migrateMarker := fmt.Sprintf("/opt/sentryusb/.migrated-%s", versionTag)
+		os.WriteFile(migrateMarker, []byte("migrated\n"), 0644)
+
 		// Send telemetry: "updated to new version" (synchronous so it completes before restart)
 		sendTelemetrySync(versionTag, false, "")
 
