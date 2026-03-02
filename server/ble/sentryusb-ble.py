@@ -342,7 +342,11 @@ def proxy_api_request(method, path, body=None, retries=2, retry_delay=1.5):
             req.add_header('Content-Type', 'application/json')
             resp = urllib.request.urlopen(req, timeout=15)
             response_body = resp.read()
-            return {'status': resp.getcode(), 'body': json.loads(response_body)}
+            try:
+                parsed = json.loads(response_body)
+            except (json.JSONDecodeError, ValueError):
+                parsed = response_body.decode('utf-8', errors='replace')
+            return {'status': resp.getcode(), 'body': parsed}
         except urllib.error.HTTPError as e:
             body_text = e.read().decode() if e.fp else ''
             return {'status': e.code, 'body': body_text}
