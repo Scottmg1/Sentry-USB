@@ -926,11 +926,17 @@ function snapshotloop {
 
 function freespacemanager {
   echo -n freespacemanager > /proc/self/comm
-  # 10G
+  # 10G Minimum space
   local reserve=10737418240
-  local threepctoftotalspace
-  threepctoftotalspace=$(eval "$(stat --file-system --format="echo \$((%b*%S/33))" /backingfiles/cam_disk.bin)")
-  reserve=$((reserve+threepctoftotalspace))
+
+  local percent_reserve
+  # Calculate percentage-based reserve. Default to 20% if not set.
+  # change from 3%+10Gb to larger of 10Gb or 20%
+  local percent=${FREE_SPACE_PERCENT:-20}
+  percent_reserve=$(eval "$(stat --file-system --format="echo \$((%b*%S * $percent / 100))" /backingfiles/cam_disk.bin)")
+  if [ "$percent_reserve" -gt "$reserve" ]; then                                                     │
+    reserve=$percent_reserve                                                                               │
+  fi
 
   while true
   do
@@ -1046,6 +1052,8 @@ then
 fi
 
 connect_usb_drives_to_host
+# quick hack to process video on every boot up after taking snapshots
+/root/bin/post-archive-process.sh || log "ERROR: post-snapshot video process failed"
 
 if archive_is_reachable
 then
