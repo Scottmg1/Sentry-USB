@@ -342,7 +342,11 @@ def proxy_api_request(method, path, body=None, retries=2, retry_delay=1.5):
             req.add_header('Content-Type', 'application/json')
             resp = urllib.request.urlopen(req, timeout=15)
             response_body = resp.read()
-            return {'status': resp.getcode(), 'body': json.loads(response_body)}
+            try:
+                parsed = json.loads(response_body)
+            except (json.JSONDecodeError, ValueError):
+                parsed = response_body.decode('utf-8', errors='replace')
+            return {'status': resp.getcode(), 'body': parsed}
         except urllib.error.HTTPError as e:
             body_text = e.read().decode() if e.fp else ''
             return {'status': e.code, 'body': body_text}
@@ -838,12 +842,22 @@ class Advertisement(dbus.service.Object):
         # timeout).  Schedule a re-registration so the Pi stays discoverable.
         GLib.timeout_add(2000, self._reregister)
 
-    def _reregister(self):
-        log.info('Re-registering advertisement...')
+    def _reregister(self, retry_count=0):
+        max_retries = 5
+        log.info(f'Re-registering advertisement... (attempt {retry_count + 1})')
+
+        def on_reregister_error(error):
+            if retry_count < max_retries:
+                delay = min(2000 * (2 ** retry_count), 30000)  # exponential backoff, max 30s
+                log.warning(f'Advertisement re-registration failed (attempt {retry_count + 1}/{max_retries + 1}): {error} — retrying in {delay}ms')
+                GLib.timeout_add(delay, self._reregister, retry_count + 1)
+            else:
+                log.error(f'Advertisement re-registration failed after {max_retries + 1} attempts: {error} — GATT server still running but Pi is not discoverable')
+
         self.ad_manager.RegisterAdvertisement(
             self.get_path(), {},
             reply_handler=register_ad_cb,
-            error_handler=register_ad_error_cb)
+            error_handler=on_reregister_error)
         return False  # don't repeat
 
 
