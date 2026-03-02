@@ -1,0 +1,55 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build Frontend
+        run: |
+          cd web
+          npm ci
+          npm run build
+
+      - name: Build Binaries
+        run: |
+          # Prepare static folder for Go embed
+          mkdir -p server/static
+          rm -rf server/static/*
+          cp -r web/dist/* server/static/
+          
+          cd server
+          # Build for Rock Pi 4 / Pi 4 / Pi 5 (64-bit)
+          GOOS=linux GOARCH=arm64 go build -o ../sentryusb-linux-arm64 .
+          
+          # Build for Pi Zero 2 / Pi 3 (32-bit armv7)
+          GOOS=linux GOARCH=arm GOARM=7 go build -o ../sentryusb-linux-armv7 .
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            sentryusb-linux-arm64
+            sentryusb-linux-armv7
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
