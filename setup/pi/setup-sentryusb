@@ -249,6 +249,13 @@ function install_ble_daemon () {
 
   chmod +x /root/bin/sentryusb-ble.py 2>/dev/null || true
 
+  # Install D-Bus policy file so BlueZ can call GATT methods on our daemon.
+  # Required on Pi 5 / Bookworm where D-Bus policies are stricter.
+  copy_script server/ble/com.sentryusb.ble.conf /etc/dbus-1/system.d
+  if [ -f /etc/dbus-1/system.d/com.sentryusb.ble.conf ]; then
+    setup_progress "D-Bus policy installed for BLE daemon"
+  fi
+
   # BlueZ 5.69+ on Raspberry Pi requires --experimental for reliable LE peripheral
   # advertisement registration. Without it, RegisterAdvertisement returns
   # org.bluez.Error.Failed on many Pi hardware/firmware combinations.

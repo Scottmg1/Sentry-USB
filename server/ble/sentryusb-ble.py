@@ -403,6 +403,7 @@ class Application(dbus.service.Object):
                 descs = chrc.get_descriptors()
                 for desc in descs:
                     response[desc.get_path()] = desc.get_properties()
+        log.info(f'GetManagedObjects called — returning {len(response)} objects: {list(response.keys())}')
         return response
 
 
@@ -420,8 +421,8 @@ class Service(dbus.service.Object):
     def get_properties(self):
         return {
             GATT_SERVICE_IFACE: {
-                'UUID': self.uuid,
-                'Primary': self.primary,
+                'UUID': dbus.String(self.uuid),
+                'Primary': dbus.Boolean(self.primary),
                 'Characteristics': dbus.Array(
                     self.get_characteristic_paths(), signature='o')
             }
@@ -463,8 +464,8 @@ class Characteristic(dbus.service.Object):
         return {
             GATT_CHRC_IFACE: {
                 'Service': self.service.get_path(),
-                'UUID': self.uuid,
-                'Flags': self.flags,
+                'UUID': dbus.String(self.uuid),
+                'Flags': dbus.Array(self.flags, signature='s'),
                 'Descriptors': dbus.Array(
                     self.get_descriptor_paths(), signature='o')
             }
@@ -890,10 +891,45 @@ def register_app_error_cb(error):
     sys.exit(1)  # non-zero so systemd Restart=on-failure triggers
 
 
+def verify_gatt_objects(app):
+    """Self-test: verify GATT objects are properly structured after registration."""
+    try:
+        objects = app.GetManagedObjects()
+        service_uuids = []
+        chrc_uuids = []
+        for path, ifaces in objects.items():
+            if GATT_SERVICE_IFACE in ifaces:
+                service_uuids.append(ifaces[GATT_SERVICE_IFACE].get('UUID', '?'))
+            if GATT_CHRC_IFACE in ifaces:
+                chrc_uuids.append(ifaces[GATT_CHRC_IFACE].get('UUID', '?'))
+        log.info(f'GATT self-test: {len(objects)} objects, '
+                 f'{len(service_uuids)} services {service_uuids}, '
+                 f'{len(chrc_uuids)} characteristics')
+        if len(service_uuids) < 2:
+            log.error(f'GATT self-test FAILED: expected 2 services, got {len(service_uuids)}')
+        if len(chrc_uuids) < 7:
+            log.error(f'GATT self-test FAILED: expected 7+ characteristics, got {len(chrc_uuids)}')
+    except Exception as e:
+        log.error(f'GATT self-test exception: {e}')
+    return False  # don't repeat GLib timeout
+
+
 def main():
     global mainloop, API_BASE
     dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
     bus = dbus.SystemBus()
+
+    # Claim a well-known bus name so the D-Bus policy file takes effect.
+    # This allows BlueZ to call GetManagedObjects and GATT methods on us
+    # even on systems with strict D-Bus policies (e.g. Pi 5 / Bookworm).
+    try:
+        bus_name = dbus.service.BusName('com.sentryusb.ble', bus,
+                                        do_not_queue=True)
+        log.info('Claimed D-Bus bus name: com.sentryusb.ble')
+    except dbus.exceptions.NameExistsException:
+        log.warning('D-Bus bus name com.sentryusb.ble already claimed, using unique name')
+    except Exception as e:
+        log.warning(f'Could not claim D-Bus bus name: {e} — using unique name')
 
     # Detect which port the Go API server is on (80 production, 8788 dev)
     API_BASE = detect_api_base()
@@ -939,6 +975,9 @@ def main():
     log.info(f'SentryUSB BLE peripheral started: {ble_name}')
     log.info(f'WiFi Setup Service: {WIFI_SERVICE_UUID}')
     log.info(f'API Proxy Service:  {API_SERVICE_UUID}')
+
+    # Run self-test after 3s to verify GATT objects are properly registered
+    GLib.timeout_add(3000, verify_gatt_objects, app)
 
     mainloop = GLib.MainLoop()
 
