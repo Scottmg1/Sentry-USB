@@ -905,7 +905,22 @@ function set_time () {
     then
       local -r uptime_end=$(awk '{print $1}' /proc/uptime)
       local -r clocktime_end=$(date +%s.%N)
-      log "$(awk "BEGIN {printf \"Time adjusted by %f seconds after %f seconds\", $clocktime_end-$clocktime_start, $uptime_end-$uptime_start}")"
+      local -r diff=$(awk "BEGIN {print $clocktime_end-$clocktime_start}")
+      # Calculate absolute difference for formatting
+      local -r abs_diff=$(awk "BEGIN { d=$diff; if(d<0) d=-d; print d }")
+      
+      local -r days=$(awk "BEGIN {print int($abs_diff/86400)}")
+      local -r hours=$(awk "BEGIN {print int(($abs_diff%86400)/3600)}")
+      local -r minutes=$(awk "BEGIN {print int(($abs_diff%3600)/60)}")
+      local -r seconds=$(awk "BEGIN {printf \"%.2f\", $abs_diff%60}")
+
+      local readable_diff=""
+      [ "$days" -gt 0 ] && readable_diff+="${days} days, "
+      [ "$hours" -gt 0 ] && readable_diff+="${hours} hours, "
+      [ "$minutes" -gt 0 ] && readable_diff+="${minutes} minutes, "
+      readable_diff+="${seconds} seconds"
+      
+      log "$(awk "BEGIN {printf \"Time adjusted by %s (%f seconds) after %f seconds\", \"$readable_diff\", $diff, $uptime_end-$uptime_start}")"
       fake-hwclock save || true
       return
     fi
