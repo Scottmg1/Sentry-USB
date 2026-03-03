@@ -926,18 +926,13 @@ function snapshotloop {
 
 function freespacemanager {
   echo -n freespacemanager > /proc/self/comm
-  # 10G Minimum space
-  local reserve=10737418240
 
-  local percent_reserve
-  # Calculate percentage-based reserve. Default to 20% if not set.
-  # change from 3%+10Gb to larger of 10Gb or 20%
+  # Total capacity of the virtual drive
+  local total_size=$(eval "$(stat --file-system --format="echo \$((%b*%S))" /backingfiles/cam_disk.bin)")
+
+  # Threshold: 20% of total capacity
   local percent=${FREE_SPACE_PERCENT:-20}
-  percent_reserve=$(eval "$(stat --file-system --format="echo \$((%b*%S * $percent / 100))" /backingfiles/cam_disk.bin)")
-  if [ "$percent_reserve" -gt "$reserve" ]
-  then
-    reserve=$percent_reserve
-  fi
+  local reserve=$(( total_size * percent / 100 ))
 
   while true
   do
