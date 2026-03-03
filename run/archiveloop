@@ -934,8 +934,9 @@ function freespacemanager {
   # change from 3%+10Gb to larger of 10Gb or 20%
   local percent=${FREE_SPACE_PERCENT:-20}
   percent_reserve=$(eval "$(stat --file-system --format="echo \$((%b*%S * $percent / 100))" /backingfiles/cam_disk.bin)")
-  if [ "$percent_reserve" -gt "$reserve" ]; then                                                     │
-    reserve=$percent_reserve                                                                               │
+  if [ "$percent_reserve" -gt "$reserve" ]
+  then
+    reserve=$percent_reserve
   fi
 
   while true
