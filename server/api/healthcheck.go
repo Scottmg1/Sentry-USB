@@ -364,50 +364,211 @@ func checkNetwork() healthCategory {
 func checkBLE() healthCategory {
 	items := []healthItem{}
 
-	// Check if BLE is configured
-	vin := readBLEVin()
-	if vin == "" {
-		items = append(items, healthItem{"BLE configuration", statusPass, "Not configured (skipping BLE checks)"})
-		return healthCategory{Name: "Bluetooth / BLE", Items: items}
+	// --- Pi hardware ---
+	if model, err := os.ReadFile("/proc/device-tree/model"); err == nil {
+		items = append(items, healthItem{"Pi model", statusPass, strings.TrimRight(string(model), "\x00\n")})
 	}
-	items = append(items, healthItem{"TESLA_BLE_VIN", statusPass, vin})
+	if kernel, err := exec.Command("uname", "-r").Output(); err == nil {
+		items = append(items, healthItem{"Kernel", statusPass, strings.TrimSpace(string(kernel))})
+	}
 
-	// BLE binaries
-	for _, bin := range []struct {
-		path string
-		name string
-	}{
-		{"/root/bin/tesla-control", "tesla-control"},
-		{"/root/bin/tesla-keygen", "tesla-keygen"},
-	} {
-		if info, err := os.Stat(bin.path); err != nil {
-			items = append(items, healthItem{bin.name, statusFail, "Missing"})
-		} else if info.Mode()&0111 == 0 {
-			items = append(items, healthItem{bin.name, statusWarn, "Exists but not executable"})
-		} else {
-			items = append(items, healthItem{bin.name, statusPass, "Present"})
+	// --- BlueZ / bluetoothd ---
+	bluezVer, _ := exec.Command("bluetoothctl", "--version").Output()
+	if v := strings.TrimSpace(string(bluezVer)); v != "" {
+		items = append(items, healthItem{"BlueZ version", statusPass, v})
+	} else {
+		items = append(items, healthItem{"BlueZ version", statusFail, "bluetoothctl not found"})
+	}
+
+	btdActive, _ := exec.Command("systemctl", "is-active", "bluetooth").Output()
+	btdState := strings.TrimSpace(string(btdActive))
+	if btdState == "active" {
+		items = append(items, healthItem{"bluetooth.service", statusPass, "Active"})
+	} else {
+		items = append(items, healthItem{"bluetooth.service", statusFail, "State: " + btdState})
+	}
+
+	// Check --experimental flag
+	btdCmd, _ := exec.Command("bash", "-c", "ps -eo args | grep bluetoothd | grep -v grep").Output()
+	btdCmdStr := strings.TrimSpace(string(btdCmd))
+	if strings.Contains(btdCmdStr, "--experimental") {
+		items = append(items, healthItem{"--experimental flag", statusPass, "Active"})
+	} else {
+		items = append(items, healthItem{"--experimental flag", statusFail, "NOT set — required for GATT peripheral"})
+	}
+
+	// Check experimental conf drop-in
+	if _, err := os.Stat("/etc/systemd/system/bluetooth.service.d/sentryusb-experimental.conf"); err == nil {
+		items = append(items, healthItem{"bluetoothd drop-in", statusPass, "sentryusb-experimental.conf present"})
+	} else {
+		items = append(items, healthItem{"bluetoothd drop-in", statusFail, "sentryusb-experimental.conf missing"})
+	}
+
+	// --- BLE Adapter ---
+	hciOut, _ := exec.Command("hciconfig", "hci0").Output()
+	hciStr := string(hciOut)
+	if strings.Contains(hciStr, "UP RUNNING") {
+		items = append(items, healthItem{"HCI adapter (hci0)", statusPass, "UP RUNNING"})
+	} else if strings.Contains(hciStr, "DOWN") {
+		items = append(items, healthItem{"HCI adapter (hci0)", statusFail, "DOWN"})
+	} else if len(hciStr) == 0 {
+		items = append(items, healthItem{"HCI adapter (hci0)", statusFail, "Not found"})
+	} else {
+		items = append(items, healthItem{"HCI adapter (hci0)", statusWarn, "Unknown state"})
+	}
+
+	// Adapter address
+	for _, line := range strings.Split(hciStr, "\n") {
+		if strings.Contains(line, "BD Address") {
+			parts := strings.Fields(line)
+			for i, p := range parts {
+				if p == "Address:" && i+1 < len(parts) {
+					items = append(items, healthItem{"Adapter address", statusPass, parts[i+1]})
+					break
+				}
+			}
+			break
 		}
 	}
 
-	// BLE keys
-	if _, err := os.Stat("/root/.ble/key_public.pem"); err != nil {
-		items = append(items, healthItem{"BLE public key", statusFail, "Missing — keys not generated"})
+	// --- sentryusb-ble daemon ---
+	bleActive, _ := exec.Command("systemctl", "is-active", "sentryusb-ble").Output()
+	bleState := strings.TrimSpace(string(bleActive))
+	if bleState == "active" {
+		items = append(items, healthItem{"sentryusb-ble.service", statusPass, "Active"})
 	} else {
-		items = append(items, healthItem{"BLE public key", statusPass, "Present"})
-	}
-	if _, err := os.Stat("/root/.ble/key_private.pem"); err != nil {
-		items = append(items, healthItem{"BLE private key", statusFail, "Missing — keys not generated"})
-	} else {
-		items = append(items, healthItem{"BLE private key", statusPass, "Present"})
+		items = append(items, healthItem{"sentryusb-ble.service", statusFail, "State: " + bleState})
 	}
 
-	// bluez package
-	out, _ := exec.Command("dpkg-query", "-W", "--showformat=${db:Status-Status}", "bluez").Output()
-	if strings.TrimSpace(string(out)) == "installed" {
-		items = append(items, healthItem{"bluez package", statusPass, "Installed"})
+	// Daemon uptime
+	bleUptime, _ := exec.Command("bash", "-c",
+		"systemctl show sentryusb-ble --property=ActiveEnterTimestamp --value").Output()
+	if ts := strings.TrimSpace(string(bleUptime)); ts != "" {
+		items = append(items, healthItem{"BLE daemon started", statusPass, ts})
+	}
+
+	// BLE daemon script exists
+	if _, err := os.Stat("/root/bin/sentryusb-ble.py"); err == nil {
+		items = append(items, healthItem{"sentryusb-ble.py", statusPass, "Present"})
 	} else {
-		items = append(items, healthItem{"bluez package", statusFail, "Not installed"})
+		items = append(items, healthItem{"sentryusb-ble.py", statusFail, "Missing"})
+	}
+
+	// --- D-Bus ---
+	if _, err := os.Stat("/etc/dbus-1/system.d/com.sentryusb.ble.conf"); err == nil {
+		items = append(items, healthItem{"D-Bus policy file", statusPass, "com.sentryusb.ble.conf present"})
+	} else {
+		items = append(items, healthItem{"D-Bus policy file", statusWarn, "Missing — may cause GATT issues on Pi 5/Bookworm"})
+	}
+
+	// Check if bus name is claimed
+	busOut, _ := exec.Command("busctl", "status", "com.sentryusb.ble").Output()
+	if len(busOut) > 0 && !strings.Contains(string(busOut), "not found") {
+		items = append(items, healthItem{"D-Bus bus name", statusPass, "com.sentryusb.ble claimed"})
+	} else {
+		items = append(items, healthItem{"D-Bus bus name", statusWarn, "com.sentryusb.ble not claimed"})
+	}
+
+	// --- GATT & Advertisement (from daemon journal) ---
+	journalOut, _ := exec.Command("journalctl", "-u", "sentryusb-ble",
+		"--since", "today", "--no-pager", "-q", "--output=cat").Output()
+	journal := string(journalOut)
+
+	if strings.Contains(journal, "GATT application registered") {
+		items = append(items, healthItem{"GATT registration", statusPass, "Registered"})
+	} else {
+		items = append(items, healthItem{"GATT registration", statusFail, "No 'GATT application registered' in logs"})
+	}
+
+	if strings.Contains(journal, "GATT self-test") {
+		// Find the last self-test line
+		for _, line := range reverseLines(journal) {
+			if strings.Contains(line, "GATT self-test") {
+				if strings.Contains(line, "FAILED") {
+					items = append(items, healthItem{"GATT self-test", statusFail, line})
+				} else {
+					items = append(items, healthItem{"GATT self-test", statusPass, line})
+				}
+				break
+			}
+		}
+	} else {
+		items = append(items, healthItem{"GATT self-test", statusWarn, "No self-test result in logs (older daemon?)"})
+	}
+
+	if strings.Contains(journal, "Advertisement registered") {
+		items = append(items, healthItem{"BLE advertisement", statusPass, "Registered"})
+	} else {
+		items = append(items, healthItem{"BLE advertisement", statusFail, "No 'Advertisement registered' in logs"})
+	}
+
+	if strings.Contains(journal, "GetManagedObjects called") {
+		// Count calls
+		count := strings.Count(journal, "GetManagedObjects called")
+		items = append(items, healthItem{"GetManagedObjects calls", statusPass, fmt.Sprintf("Called %d time(s) today", count)})
+	} else {
+		items = append(items, healthItem{"GetManagedObjects calls", statusWarn, "No calls logged (BlueZ may not be querying GATT)"})
+	}
+
+	// Recent errors
+	errorCount := 0
+	var lastError string
+	for _, line := range strings.Split(journal, "\n") {
+		if strings.Contains(line, "ERROR") {
+			errorCount++
+			lastError = line
+		}
+	}
+	if errorCount == 0 {
+		items = append(items, healthItem{"Recent BLE errors", statusPass, "None today"})
+	} else {
+		detail := fmt.Sprintf("%d error(s) today", errorCount)
+		if lastError != "" {
+			// Truncate to last 100 chars
+			if len(lastError) > 100 {
+				lastError = lastError[len(lastError)-100:]
+			}
+			detail += " — last: " + lastError
+		}
+		items = append(items, healthItem{"Recent BLE errors", statusWarn, detail})
+	}
+
+	// --- BLE PIN / claiming ---
+	if _, err := os.Stat("/root/.sentryusb/ble-pin"); err == nil {
+		items = append(items, healthItem{"BLE PIN (claimed)", statusPass, "Device is claimed"})
+	} else {
+		items = append(items, healthItem{"BLE PIN (claimed)", statusPass, "Unclaimed (first-time setup)"})
+	}
+
+	// --- Tesla BLE (optional) ---
+	vin := readBLEVin()
+	if vin != "" {
+		items = append(items, healthItem{"TESLA_BLE_VIN", statusPass, vin})
+		for _, bin := range []struct {
+			path string
+			name string
+		}{
+			{"/root/bin/tesla-control", "tesla-control"},
+			{"/root/bin/tesla-keygen", "tesla-keygen"},
+		} {
+			if info, err := os.Stat(bin.path); err != nil {
+				items = append(items, healthItem{bin.name, statusFail, "Missing"})
+			} else if info.Mode()&0111 == 0 {
+				items = append(items, healthItem{bin.name, statusWarn, "Exists but not executable"})
+			} else {
+				items = append(items, healthItem{bin.name, statusPass, "Present"})
+			}
+		}
 	}
 
 	return healthCategory{Name: "Bluetooth / BLE", Items: items}
+}
+
+// reverseLines splits text into lines and returns them in reverse order.
+func reverseLines(s string) []string {
+	lines := strings.Split(strings.TrimSpace(s), "\n")
+	for i, j := 0, len(lines)-1; i < j; i, j = i+1, j-1 {
+		lines[i], lines[j] = lines[j], lines[i]
+	}
+	return lines
 }
