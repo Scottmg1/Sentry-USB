@@ -251,7 +251,7 @@ function install_ble_daemon () {
 
   # Install D-Bus policy file so BlueZ can call GATT methods on our daemon.
   # Required on Pi 5 / Bookworm where D-Bus policies are stricter.
-  copy_script server/ble/com.sentryusb.ble.conf /etc/dbus-1/system.d
+  copy_script server/ble/com.sentryusb.ble.conf /etc/dbus-1/system.d || true
   if [ -f /etc/dbus-1/system.d/com.sentryusb.ble.conf ]; then
     setup_progress "D-Bus policy installed for BLE daemon"
   fi
@@ -278,7 +278,7 @@ EOF
   fi
 
   # Install the systemd service file
-  copy_script server/ble/sentryusb-ble.service /etc/systemd/system
+  copy_script server/ble/sentryusb-ble.service /etc/systemd/system || true
 
   if [ -f /etc/systemd/system/sentryusb-ble.service ]; then
     systemctl daemon-reload
@@ -779,9 +779,15 @@ function cmd_install_ble {
 
   # Download latest BLE daemon and service file
   mkdir -p /root/bin
-  copy_script server/ble/sentryusb-ble.py /root/bin
+  copy_script server/ble/sentryusb-ble.py /root/bin || true
   chmod +x /root/bin/sentryusb-ble.py
-  copy_script server/ble/sentryusb-ble.service /etc/systemd/system
+  copy_script server/ble/sentryusb-ble.service /etc/systemd/system || true
+
+  # Install D-Bus policy file for BLE daemon (required on Pi 5 / Bookworm)
+  copy_script server/ble/com.sentryusb.ble.conf /etc/dbus-1/system.d || true
+  if [ -f /etc/dbus-1/system.d/com.sentryusb.ble.conf ]; then
+    setup_progress "D-Bus policy installed for BLE daemon"
+  fi
 
   # Set up bluetoothd --experimental override with the correct detected path.
   # --experimental enables LEAdvertisingManager1 on older BlueZ versions.
@@ -801,8 +807,8 @@ EOF
 
   # Install Avahi mDNS advertisement so the iOS app can discover the Pi over WiFi
   mkdir -p /etc/avahi/services
-  copy_script setup/pi/avahi-sentryusb.service /tmp
-  mv /tmp/avahi-sentryusb.service /etc/avahi/services/sentryusb.service
+  copy_script setup/pi/avahi-sentryusb.service /tmp || true
+  [ -f /tmp/avahi-sentryusb.service ] && mv /tmp/avahi-sentryusb.service /etc/avahi/services/sentryusb.service
 
   systemctl daemon-reload
   systemctl enable avahi-daemon 2>/dev/null || true
@@ -810,7 +816,7 @@ EOF
   systemctl restart bluetooth 2>/dev/null || true
   sleep 3
   systemctl enable sentryusb-ble 2>/dev/null || true
-  systemctl restart sentryusb-ble
+  systemctl restart sentryusb-ble 2>/dev/null || true
 
   setup_progress "BLE daemon installed and started."
   setup_progress "Check status with:  journalctl -u sentryusb-ble -n 20 --no-pager"
