@@ -1,5 +1,6 @@
 .DS_Store
 *.conf
+!server/ble/com.sentryusb.ble.conf
 *.iml
 *.ipr
 *.iws
