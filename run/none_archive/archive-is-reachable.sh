@@ -1,3 +1,3 @@
 #!/bin/bash -eu
 
-false
+ip route | grep -q default
