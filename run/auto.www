@@ -22,6 +22,11 @@ then
   exit 1
 fi
 
+if [ -f "$optfile" ] && [ "$diskimage" -nt "$optfile" ]
+then
+  rm -f "$optfile"
+fi
+
 if [ ! -f "$optfile" ]
 then
   rm -rf "$optfile"

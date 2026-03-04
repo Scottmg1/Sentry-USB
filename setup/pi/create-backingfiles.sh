@@ -148,6 +148,7 @@ function create_drive () {
     mkfs.vfat "$loopdev" -F 32 -n "$label"
   fi
   losetup -d "$loopdev"
+  log_progress "Drive image $filename ready."
 
   if [ ! -e "$mountpoint" ]
   then
