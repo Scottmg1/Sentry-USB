@@ -16,6 +16,7 @@ import {
   ChevronRight,
   AlertTriangle,
   XCircle,
+  HeartPulse,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { SetupWizard } from "@/components/setup/SetupWizard"
@@ -704,6 +705,62 @@ function RawConfigEditor({ config, onClose }: { config: Record<string, RawConfig
   )
 }
 
+const KEEP_AWAKE_MODES = [
+  { value: "", label: "Off", desc: "Keep-awake disabled" },
+  { value: "manual", label: "Manual", desc: "Button on Dashboard with duration picker" },
+  { value: "auto", label: "Automatic", desc: "Stays awake while you're browsing" },
+]
+
+function KeepAwakePreference() {
+  const [mode, setMode] = useState("")
+
+  useEffect(() => {
+    fetch("/api/config/preference?key=keep_awake_webui_mode")
+      .then((r) => r.json())
+      .then((data) => { if (data.value) setMode(data.value) })
+      .catch(() => { })
+  }, [])
+
+  async function saveMode(newMode: string) {
+    setMode(newMode)
+    await fetch("/api/config/preference", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: "keep_awake_webui_mode", value: newMode }),
+    }).catch(() => { })
+  }
+
+  return (
+    <div className="glass-card p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <HeartPulse className="h-4 w-4 text-rose-400" />
+        <span className="text-sm font-medium text-slate-200">Keep Awake Mode</span>
+      </div>
+      <p className="mb-3 text-xs text-slate-500">
+        Keep the car awake from the web UI after archiving finishes so you can browse files, update, etc.
+      </p>
+      <div className="grid grid-cols-3 gap-2">
+        {KEEP_AWAKE_MODES.map((m) => (
+          <button
+            key={m.value}
+            onClick={() => saveMode(m.value)}
+            className={cn(
+              "rounded-lg border px-3 py-2 text-left text-xs transition-colors",
+              mode === m.value
+                ? "border-blue-500/40 bg-blue-500/10 text-blue-400"
+                : "border-white/5 bg-white/[0.02] text-slate-400 hover:bg-white/[0.05]"
+            )}
+          >
+            <span className="font-medium">{m.label}</span>
+            <br />
+            <span className="text-[10px] opacity-60">{m.desc}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function Settings() {
   const [confirmReboot, setConfirmReboot] = useState(false)
   const [wizardOpen, setWizardOpen] = useState(false)
@@ -1086,6 +1143,14 @@ export default function Settings() {
             />
           </label>
         </div>
+      </div>
+
+      {/* Preferences */}
+      <div>
+        <h2 className="mb-3 text-sm font-medium uppercase tracking-wider text-slate-500">
+          Preferences
+        </h2>
+        <KeepAwakePreference />
       </div>
 
       {/* System */}

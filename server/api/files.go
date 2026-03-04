@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -225,6 +226,13 @@ func (h *handlers) deleteFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// If deleted path was under SavedClips or SentryClips, clean up
+	// matching symlinks in snapshot directories so those clips won't
+	// be re-synced on next archive. RecentClips are left untouched.
+	if strings.Contains(cleanPath, "/SavedClips/") || strings.Contains(cleanPath, "/SentryClips/") {
+		go cleanupSnapshotSymlinks(cleanPath)
+	}
+
 	writeOK(w)
 }
 
@@ -329,4 +337,110 @@ func (h *handlers) downloadZip(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Write([]byte(output))
+}
+
+// cleanupSnapshotSymlinks removes symlinks in snapshot directories that
+// correspond to a deleted SavedClips or SentryClips path. This prevents
+// deleted clips from being re-archived on the next sync.
+//
+// The snapshot layout is:
+//
+//	/backingfiles/snapshots/snap-NNNNNN/mnt/TeslaCam/{SavedClips,SentryClips}/<event>/<file>.mp4
+//
+// and the mutable layout is:
+//
+//	/mutable/TeslaCam/{SavedClips,SentryClips}/<event>/<file>.mp4
+//
+// Both contain symlinks pointing into the snapshot mount.
+func cleanupSnapshotSymlinks(deletedPath string) {
+	// Determine the clip type and event folder name from the deleted path.
+	// Expected patterns:
+	//   /mutable/TeslaCam/SavedClips/<event>
+	//   /mutable/TeslaCam/SentryClips/<event>
+	//   /mutable/TeslaCam/SavedClips/<event>/<file>
+	var clipType, eventName string
+	for _, ct := range []string{"SavedClips", "SentryClips"} {
+		marker := "/" + ct + "/"
+		idx := strings.Index(deletedPath, marker)
+		if idx >= 0 {
+			clipType = ct
+			rest := deletedPath[idx+len(marker):]
+			parts := strings.SplitN(rest, "/", 2)
+			if len(parts) > 0 {
+				eventName = parts[0]
+			}
+			break
+		}
+	}
+
+	if clipType == "" || eventName == "" {
+		return
+	}
+
+	log.Printf("[files] Cleaning up snapshot symlinks for %s/%s", clipType, eventName)
+
+	// Walk all snapshot directories looking for matching event folders
+	snapshotsBase := "/backingfiles/snapshots"
+	entries, err := os.ReadDir(snapshotsBase)
+	if err != nil {
+		return
+	}
+
+	for _, snapEntry := range entries {
+		if !snapEntry.IsDir() || !strings.HasPrefix(snapEntry.Name(), "snap-") {
+			continue
+		}
+
+		// Check for the event folder in this snapshot's clip type directory
+		eventDir := filepath.Join(snapshotsBase, snapEntry.Name(), "mnt", "TeslaCam", clipType, eventName)
+		if _, err := os.Stat(eventDir); err != nil {
+			continue
+		}
+
+		// Remove all symlinks in this event directory
+		clipEntries, err := os.ReadDir(eventDir)
+		if err != nil {
+			continue
+		}
+		for _, ce := range clipEntries {
+			linkPath := filepath.Join(eventDir, ce.Name())
+			fi, err := os.Lstat(linkPath)
+			if err != nil {
+				continue
+			}
+			if fi.Mode()&os.ModeSymlink != 0 {
+				os.Remove(linkPath)
+			}
+		}
+
+		// Remove the event directory if now empty
+		remaining, _ := os.ReadDir(eventDir)
+		if len(remaining) == 0 {
+			os.Remove(eventDir)
+		}
+	}
+
+	// Also clean up broken symlinks in /mutable/TeslaCam/<clipType>/<eventName>
+	mutableEventDir := filepath.Join("/mutable/TeslaCam", clipType, eventName)
+	if entries, err := os.ReadDir(mutableEventDir); err == nil {
+		for _, e := range entries {
+			linkPath := filepath.Join(mutableEventDir, e.Name())
+			fi, err := os.Lstat(linkPath)
+			if err != nil {
+				continue
+			}
+			if fi.Mode()&os.ModeSymlink != 0 {
+				// Check if target still exists
+				if _, err := os.Stat(linkPath); err != nil {
+					os.Remove(linkPath)
+				}
+			}
+		}
+		remaining, _ := os.ReadDir(mutableEventDir)
+		if len(remaining) == 0 {
+			os.Remove(mutableEventDir)
+		}
+	}
+
+	log.Printf("[files] Snapshot symlink cleanup complete for %s/%s", clipType, eventName)
 }

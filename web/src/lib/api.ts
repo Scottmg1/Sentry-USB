@@ -77,8 +77,20 @@ export interface ClipEntry {
   event?: EventMeta
 }
 
+export interface StorageBreakdown {
+  cam_size: number
+  music_size: number
+  lightshow_size: number
+  boombox_size: number
+  wraps_size: number
+  snapshots_size: number
+  total_space: number
+  free_space: number
+}
+
 export const api = {
   getStatus: () => request<PiStatus>("/status"),
+  getStorageBreakdown: () => request<StorageBreakdown>("/status/storage"),
   getDriveStats: () => request<DriveStats>("/drives/stats"),
   getDriveStatus: () => request<DriveStatus>("/drives/status"),
 }

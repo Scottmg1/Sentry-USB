@@ -199,11 +199,11 @@ func archiveLog(format string, args ...interface{}) {
 	fmt.Fprintf(f, "%s: [drive-map] %s\n", time.Now().Format("Mon 02 Jan 15:04:05 MST 2006"), msg)
 }
 
-// isArchiving returns true if the archiveloop is currently archiving files.
+// IsArchiving returns true if the archiveloop is currently archiving files.
 // The archive_progress_monitor updates the status file every 5s, so if it
 // hasn't been touched in over 120s, treat it as stale (archiveloop crashed
 // or forgot to clear it).
-func isArchiving() bool {
+func IsArchiving() bool {
 	const statusFile = "/tmp/archive_status.json"
 	info, err := os.Stat(statusFile)
 	if err != nil {
@@ -262,7 +262,7 @@ func (dh *DriveHandlers) processFiles(w http.ResponseWriter, r *http.Request) {
 	// post_archive=1 is set by post-archive-process.sh which runs after
 	// archiving is complete.  Skip the stale-file check in that case.
 	postArchive := r.URL.Query().Get("post_archive") == "1"
-	if !postArchive && isArchiving() {
+	if !postArchive && IsArchiving() {
 		writeError(w, http.StatusConflict, "archive is currently running — please wait until it finishes")
 		return
 	}
@@ -346,7 +346,7 @@ func (dh *DriveHandlers) reprocessAll(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "processing already in progress")
 		return
 	}
-	if isArchiving() {
+	if IsArchiving() {
 		writeError(w, http.StatusConflict, "archive is currently running — please wait until it finishes")
 		return
 	}
@@ -409,7 +409,7 @@ func (dh *DriveHandlers) processingStatus(w http.ResponseWriter, r *http.Request
 		"running":         dh.processor.IsRunning(),
 		"routes_count":    dh.store.RouteCount(),
 		"processed_count": dh.store.ProcessedCount(),
-		"archiving":       isArchiving(),
+		"archiving":       IsArchiving(),
 	}
 
 	if archive := readArchiveStatus(); archive != nil {
@@ -503,18 +503,18 @@ func (dh *DriveHandlers) driveStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"drives_count":          len(allDrives),
-		"routes_count":          len(routes),
-		"processed_count":       dh.store.ProcessedCount(),
-		"total_distance_km":     math.Round(totalDistKm*100) / 100,
-		"total_distance_mi":     math.Round(totalDistMi*100) / 100,
-		"total_duration_ms":     totalDurationMs,
-		"fsd_engaged_ms":        totalFSDEngagedMs,
-		"fsd_distance_km":       math.Round(totalFSDDistKm*100) / 100,
-		"fsd_distance_mi":       math.Round(totalFSDDistMi*100) / 100,
-		"fsd_percent":           fsdPercent,
-		"fsd_disengagements":    totalDisengagements,
-		"fsd_accel_pushes":      totalAccelPushes,
+		"drives_count":       len(allDrives),
+		"routes_count":       len(routes),
+		"processed_count":    dh.store.ProcessedCount(),
+		"total_distance_km":  math.Round(totalDistKm*100) / 100,
+		"total_distance_mi":  math.Round(totalDistMi*100) / 100,
+		"total_duration_ms":  totalDurationMs,
+		"fsd_engaged_ms":     totalFSDEngagedMs,
+		"fsd_distance_km":    math.Round(totalFSDDistKm*100) / 100,
+		"fsd_distance_mi":    math.Round(totalFSDDistMi*100) / 100,
+		"fsd_percent":        fsdPercent,
+		"fsd_disengagements": totalDisengagements,
+		"fsd_accel_pushes":   totalAccelPushes,
 	})
 }
 
@@ -561,12 +561,12 @@ func (dh *DriveHandlers) fsdAnalytics(w http.ResponseWriter, r *http.Request) {
 
 	// Daily breakdown
 	type dayStats struct {
-		Date             string  `json:"date"`
-		DayName          string  `json:"dayName"`
-		Disengagements   int     `json:"disengagements"`
-		AccelPushes      int     `json:"accelPushes"`
-		FSDPercent       float64 `json:"fsdPercent"`
-		Drives           int     `json:"drives"`
+		Date           string  `json:"date"`
+		DayName        string  `json:"dayName"`
+		Disengagements int     `json:"disengagements"`
+		AccelPushes    int     `json:"accelPushes"`
+		FSDPercent     float64 `json:"fsdPercent"`
+		Drives         int     `json:"drives"`
 	}
 	dailyMap := make(map[string]*dayStats)
 

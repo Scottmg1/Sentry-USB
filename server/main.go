@@ -41,6 +41,12 @@ func main() {
 	driveHandlers := api.NewDriveHandlers(drives.DefaultDataPath, hub)
 	api.RegisterDriveRoutes(mux, driveHandlers)
 
+	// Keep-awake manager (user-controlled from web UI)
+	kam := api.NewKeepAwakeManager(func() bool {
+		return api.IsArchiving() || driveHandlers.Processor().IsRunning()
+	})
+	api.RegisterKeepAwakeRoutes(mux, kam)
+
 	// WebSocket endpoint
 	mux.HandleFunc("/api/ws", func(w http.ResponseWriter, r *http.Request) {
 		ws.ServeWs(hub, w, r)

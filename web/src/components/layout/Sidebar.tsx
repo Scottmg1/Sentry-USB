@@ -11,8 +11,11 @@ import {
   ChevronRight,
   Shield,
   TerminalSquare,
+  HeartPulse,
+  Clock,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useKeepAwake } from "@/hooks/useKeepAwake"
 
 interface SidebarProps {
   collapsed: boolean
@@ -31,6 +34,9 @@ const navItems = [
 ]
 
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
+  const { status } = useKeepAwake()
+  const isAwake = status.state === "active" || status.state === "pending"
+
   return (
     <aside
       className={cn(
@@ -71,6 +77,27 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           </NavLink>
         ))}
       </nav>
+
+      {/* Keep-awake indicator */}
+      {isAwake && (
+        <div className={cn(
+          "mx-2 mb-2 flex items-center gap-2 rounded-lg px-3 py-2 text-xs",
+          status.state === "active"
+            ? "text-rose-400"
+            : "text-amber-400"
+        )}>
+          {status.state === "active" ? (
+            <HeartPulse className="h-3.5 w-3.5 animate-pulse" />
+          ) : (
+            <Clock className="h-3.5 w-3.5 animate-pulse" />
+          )}
+          {!collapsed && (
+            <span className="opacity-70">
+              {status.state === "active" ? "Keeping awake" : "Waiting..."}
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Collapse toggle */}
       <button
