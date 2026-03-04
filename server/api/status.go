@@ -192,8 +192,9 @@ func (h *handlers) getStorageBreakdown(w http.ResponseWriter, r *http.Request) {
 
 	// Snapshot snap.bin files are reflink (copy-on-write) clones of cam_disk.bin.
 	// os.Stat reports their full apparent size, but the actual disk usage is much
-	// smaller (only changed blocks). Use "du -sb" to get real disk usage.
-	if out, err := shell.Run("du", "-sb", "/backingfiles/snapshots/"); err == nil {
+	// smaller (only changed blocks). Use "du -s" (without --apparent-size) to get
+	// real disk usage. Note: "du -sb" uses -b which implies --apparent-size.
+	if out, err := shell.Run("du", "-s", "--block-size=1", "/backingfiles/snapshots/"); err == nil {
 		var bytes int64
 		fmt.Sscanf(strings.TrimSpace(out), "%d", &bytes)
 		sb.SnapshotsSize = bytes
@@ -210,7 +211,6 @@ func (h *handlers) getStorageBreakdown(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, sb)
 }
 
-
 func findNetDevice(pattern string) string {
 	matches, err := filepath.Glob("/sys/class/net/" + pattern)
 	if err != nil || len(matches) == 0 {
@@ -220,21 +220,21 @@ func findNetDevice(pattern string) string {
 }
 
 type piConfig struct {
-	HasCam      string `json:"has_cam"`
-	HasMusic    string `json:"has_music"`
+	HasCam       string `json:"has_cam"`
+	HasMusic     string `json:"has_music"`
 	HasLightshow string `json:"has_lightshow"`
-	HasBoombox  string `json:"has_boombox"`
-	HasWraps    string `json:"has_wraps"`
-	UsesBLE     string `json:"uses_ble"`
+	HasBoombox   string `json:"has_boombox"`
+	HasWraps     string `json:"has_wraps"`
+	UsesBLE      string `json:"uses_ble"`
 }
 
 func (h *handlers) getConfig(w http.ResponseWriter, r *http.Request) {
 	cfg := piConfig{
-		HasCam:      boolToYesNo(fileExists("/backingfiles/cam_disk.bin")),
-		HasMusic:    boolToYesNo(fileExists("/backingfiles/music_disk.bin")),
+		HasCam:       boolToYesNo(fileExists("/backingfiles/cam_disk.bin")),
+		HasMusic:     boolToYesNo(fileExists("/backingfiles/music_disk.bin")),
 		HasLightshow: boolToYesNo(fileExists("/backingfiles/lightshow_disk.bin")),
-		HasBoombox:  boolToYesNo(fileExists("/backingfiles/boombox_disk.bin")),
-		HasWraps:    boolToYesNo(fileExists("/backingfiles/wraps_disk.bin")),
+		HasBoombox:   boolToYesNo(fileExists("/backingfiles/boombox_disk.bin")),
+		HasWraps:     boolToYesNo(fileExists("/backingfiles/wraps_disk.bin")),
 	}
 
 	// Check if BLE is configured
@@ -416,4 +416,3 @@ func findConfigFilePath() string {
 	}
 	return ""
 }
-
