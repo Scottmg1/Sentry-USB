@@ -190,16 +190,14 @@ func (h *handlers) getStorageBreakdown(w http.ResponseWriter, r *http.Request) {
 		WrapsSize:     fileSize("/backingfiles/wraps_disk.bin"),
 	}
 
-	// Sum all snapshot snap.bin files
-	_ = filepath.Walk("/backingfiles/snapshots/", func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil
-		}
-		if info.Name() == "snap.bin" {
-			sb.SnapshotsSize += info.Size()
-		}
-		return nil
-	})
+	// Snapshot snap.bin files are reflink (copy-on-write) clones of cam_disk.bin.
+	// os.Stat reports their full apparent size, but the actual disk usage is much
+	// smaller (only changed blocks). Use "du -sb" to get real disk usage.
+	if out, err := shell.Run("du", "-sb", "/backingfiles/snapshots/"); err == nil {
+		var bytes int64
+		fmt.Sscanf(strings.TrimSpace(out), "%d", &bytes)
+		sb.SnapshotsSize = bytes
+	}
 
 	// Disk space (same as getStatus)
 	if out, err := shell.Run("stat", "--file-system", "--format=%b %S %f", "/backingfiles/."); err == nil {

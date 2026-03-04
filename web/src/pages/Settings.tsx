@@ -717,7 +717,7 @@ function KeepAwakePreference() {
   useEffect(() => {
     fetch("/api/config/preference?key=keep_awake_webui_mode")
       .then((r) => r.json())
-      .then((data) => { if (data.value) setMode(data.value) })
+      .then((data) => { if ("value" in data) setMode(data.value || "") })
       .catch(() => { })
   }, [])
 

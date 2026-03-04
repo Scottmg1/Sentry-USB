@@ -333,21 +333,29 @@ export default function Dashboard() {
             { label: "Wraps", size: storageBreakdown.wraps_size, color: "#14b8a6" },
             { label: "Snapshots", size: storageBreakdown.snapshots_size, color: "#6366f1" },
           ].filter(s => s.size > 0)
-          const total = storageBreakdown.total_space
+          // Give each segment a minimum width so small drives remain visible
+          const minPct = 4
+          const reservedPct = segments.length * minPct
+          const flexPct = Math.max(100 - reservedPct, 0)
+          const usedTotal = segments.reduce((acc, s) => acc + s.size, 0)
           return (
             <>
               <div className="h-3 w-full overflow-hidden rounded-full bg-slate-800 flex">
-                {segments.map((s) => (
-                  <div
-                    key={s.label}
-                    className="h-full transition-all duration-500 first:rounded-l-full last:rounded-r-full"
-                    style={{
-                      width: `${Math.max((s.size / total) * 100, 0.3)}%`,
-                      backgroundColor: s.color,
-                    }}
-                    title={`${s.label}: ${formatBytes(s.size)}`}
-                  />
-                ))}
+                {segments.map((s) => {
+                  const proportional = usedTotal > 0 ? (s.size / usedTotal) * flexPct : 0
+                  const pct = minPct + proportional
+                  return (
+                    <div
+                      key={s.label}
+                      className="h-full transition-all duration-500 first:rounded-l-full last:rounded-r-full"
+                      style={{
+                        width: `${pct}%`,
+                        backgroundColor: s.color,
+                      }}
+                      title={`${s.label}: ${formatBytes(s.size)}`}
+                    />
+                  )
+                })}
               </div>
               <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1">
                 {segments.map((s) => (
