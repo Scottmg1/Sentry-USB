@@ -190,22 +190,23 @@ func (h *handlers) getStorageBreakdown(w http.ResponseWriter, r *http.Request) {
 		WrapsSize:     fileSize("/backingfiles/wraps_disk.bin"),
 	}
 
-	// Snapshot snap.bin files are reflink (copy-on-write) clones of cam_disk.bin.
-	// os.Stat reports their full apparent size, but the actual disk usage is much
-	// smaller (only changed blocks). Use "du -s" (without --apparent-size) to get
-	// real disk usage. Note: "du -sb" uses -b which implies --apparent-size.
-	if out, err := shell.Run("du", "-s", "--block-size=1", "/backingfiles/snapshots/"); err == nil {
-		var bytes int64
-		fmt.Sscanf(strings.TrimSpace(out), "%d", &bytes)
-		sb.SnapshotsSize = bytes
-	}
-
 	// Disk space (same as getStatus)
 	if out, err := shell.Run("stat", "--file-system", "--format=%b %S %f", "/backingfiles/."); err == nil {
 		var blocks, blockSize, freeBlocks uint64
 		fmt.Sscanf(strings.TrimSpace(out), "%d %d %d", &blocks, &blockSize, &freeBlocks)
 		sb.TotalSpace = int64(blocks * blockSize)
 		sb.FreeSpace = int64(freeBlocks * blockSize)
+	}
+
+	// Snapshot snap.bin files are reflink (copy-on-write) clones of cam_disk.bin.
+	// Neither os.Stat (apparent size) nor du (follows symlinks into mounts) gives
+	// a reliable answer. Instead, derive snapshot usage by subtraction:
+	//   snapshots = total_used - disk_images
+	diskImages := sb.CamSize + sb.MusicSize + sb.LightshowSize + sb.BoomboxSize + sb.WrapsSize
+	usedSpace := sb.TotalSpace - sb.FreeSpace
+	sb.SnapshotsSize = usedSpace - diskImages
+	if sb.SnapshotsSize < 0 {
+		sb.SnapshotsSize = 0
 	}
 
 	writeJSON(w, http.StatusOK, sb)
