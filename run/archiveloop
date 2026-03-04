@@ -895,39 +895,44 @@ function doubleblink () {
   echo 0 > "$STATUSLED/invert"
 }
 
-function set_time () {
-  log "Trying to set time..."
-  local -r uptime_start=$(awk '{print $1}' /proc/uptime)
-  local -r clocktime_start=$(date +%s.%N)
-  for _ in {1..5}
+function set_time {
+  echo -n set_time > /proc/self/comm
+  log "Background time sync started, waiting for connection..."
+  
+  while true
   do
-    if sntp -S time.google.com || ntpdig -S time.google.com
+    # Check if we have network or archive access
+    if ip route | grep -q default || archive_is_reachable
     then
-      local -r uptime_end=$(awk '{print $1}' /proc/uptime)
-      local -r clocktime_end=$(date +%s.%N)
-      local -r diff=$(awk "BEGIN {print $clocktime_end-$clocktime_start}")
-      # Calculate absolute difference for formatting
-      local -r abs_diff=$(awk "BEGIN { d=$diff; if(d<0) d=-d; print d }")
+      local -r uptime_start=$(awk '{print $1}' /proc/uptime)
+      local -r clocktime_start=$(date +%s.%N)
       
-      local -r days=$(awk "BEGIN {print int($abs_diff/86400)}")
-      local -r hours=$(awk "BEGIN {print int(($abs_diff%86400)/3600)}")
-      local -r minutes=$(awk "BEGIN {print int(($abs_diff%3600)/60)}")
-      local -r seconds=$(awk "BEGIN {printf \"%.2f\", $abs_diff%60}")
+      if sntp -S time.google.com || ntpdig -S time.google.com
+      then
+        local -r uptime_end=$(awk '{print $1}' /proc/uptime)
+        local -r clocktime_end=$(date +%s.%N)
+        local -r diff=$(awk "BEGIN {print $clocktime_end-$clocktime_start}")
+        local -r abs_diff=$(awk "BEGIN { d=$diff; if(d<0) d=-d; print d }")
+        
+        local -r days=$(awk "BEGIN {print int($abs_diff/86400)}")
+        local -r hours=$(awk "BEGIN {print int(($abs_diff%86400)/3600)}")
+        local -r minutes=$(awk "BEGIN {print int(($abs_diff%3600)/60)}")
+        local -r seconds=$(awk "BEGIN {printf \"%.2f\", $abs_diff%60}")
 
-      local readable_diff=""
-      [ "$days" -gt 0 ] && readable_diff+="${days} days, "
-      [ "$hours" -gt 0 ] && readable_diff+="${hours} hours, "
-      [ "$minutes" -gt 0 ] && readable_diff+="${minutes} minutes, "
-      readable_diff+="${seconds} seconds"
-      
-      log "$(awk "BEGIN {printf \"Time adjusted by %s (%f seconds) after %f seconds\", \"$readable_diff\", $diff, $uptime_end-$uptime_start}")"
-      fake-hwclock save || true
-      return
+        local readable_diff=""
+        [ "$days" -gt 0 ] && readable_diff+="${days} days, "
+        [ "$hours" -gt 0 ] && readable_diff+="${hours} hours, "
+        [ "$minutes" -gt 0 ] && readable_diff+="${minutes} minutes, "
+        readable_diff+="${seconds} seconds"
+        
+        log "$(awk "BEGIN {printf \"Time adjusted by %s (%f seconds) after %f seconds\", \"$readable_diff\", $diff, $uptime_end-$uptime_start}")"
+        fake-hwclock save || true
+        log "Time sync complete, exiting background process."
+        return 0
+      fi
     fi
-    log "sntp failed, retrying..."
     sleep 2
   done
-  log "Failed to set time"
 }
 
 function snapshotloop {
@@ -1049,6 +1054,7 @@ then
   snapshotloop &
   freespacemanager &
 fi
+set_time &
 logrotator &
 wifichecker &
 
@@ -1070,8 +1076,6 @@ connect_usb_drives_to_host
 if archive_is_reachable
 then
   fastblink
-
-  set_time
 
   # A large clock step can cause NetworkManager to drop the WiFi
   # connection (it thinks the DHCP lease expired). Re-verify and recover.
@@ -1100,8 +1104,6 @@ do
   wait_for_archive_to_be_reachable
 
   fastblink
-
-  set_time
 
   # A large clock step can cause NetworkManager to drop the WiFi
   # connection (it thinks the DHCP lease expired). Re-verify and recover.
