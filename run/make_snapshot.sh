@@ -105,6 +105,58 @@ function make_links_for_snapshot {
   $restore_nullglob
 }
 
+# Compare old and new snapshot TOCs to detect files the user deleted from
+# the car's touchscreen viewer. Remove the corresponding symlinks from
+# /mutable/TeslaCam so those deleted clips won't be archived.
+function cleanup_deleted_clips {
+  local old_toc="$1"
+  local new_toc="$2"
+
+  if [ ! -f "$old_toc" ] || [ ! -f "$new_toc" ]
+  then
+    return
+  fi
+
+  # Extract just the relative paths (field 2+) from each TOC, then find
+  # paths that existed in the old TOC but are gone from the new one.
+  local deleted
+  deleted=$(diff <(awk '{print $2}' "$old_toc" | sort) \
+                 <(awk '{print $2}' "$new_toc" | sort) | \
+            grep '^< ' | sed 's/^< //')
+
+  if [ -z "$deleted" ]
+  then
+    return
+  fi
+
+  log "detecting in-car clip deletions..."
+  local count=0
+
+  while IFS= read -r relpath
+  do
+    # Only process SavedClips and SentryClips (not RecentClips)
+    case "$relpath" in
+      TeslaCam/SavedClips/*|TeslaCam/SentryClips/*)
+        local target="/mutable/$relpath"
+        if [ -L "$target" ]
+        then
+          rm -f "$target"
+          count=$((count + 1))
+          # Remove parent event dir if now empty
+          local eventdir
+          eventdir=$(dirname "$target")
+          rmdir "$eventdir" 2>/dev/null || true
+        fi
+        ;;
+    esac
+  done <<< "$deleted"
+
+  if [ "$count" -gt 0 ]
+  then
+    log "removed $count symlink(s) for clips deleted from car's viewer"
+  fi
+}
+
 function snapshot {
   # since taking a snapshot doesn't take much extra space, do that first,
   # before cleaning up old snapshots to maintain free space.
@@ -194,6 +246,11 @@ function snapshot {
   log "comparing new snapshot with $oldname"
   if [[ ! -e "${oldname}.toc" ]] || diff "${oldname}.toc" "${newsnapname}.toc_" | grep -qe '^>'
   then
+    # Clean up symlinks for clips deleted from the car's viewer
+    if [ -e "${oldname}.toc" ]
+    then
+      cleanup_deleted_clips "${oldname}.toc" "${newsnapname}.toc_"
+    fi
     ln -s "$newsnapmnt" "$newsnapdir/mnt"
     make_links_for_snapshot "$newsnapmnt" "$newsnapdir/mnt"
     mv "${newsnapname}.toc_" "${newsnapname}.toc"

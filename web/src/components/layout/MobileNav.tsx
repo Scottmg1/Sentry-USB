@@ -10,8 +10,11 @@ import {
   X,
   Shield,
   TerminalSquare,
+  HeartPulse,
+  Clock,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useKeepAwake } from "@/hooks/useKeepAwake"
 
 interface MobileNavProps {
   open: boolean
@@ -30,6 +33,9 @@ const navItems = [
 ]
 
 export function MobileNav({ open, onClose }: MobileNavProps) {
+  const { status } = useKeepAwake()
+  const isAwake = status.state === "active" || status.state === "pending"
+
   if (!open) return null
 
   return (
@@ -80,6 +86,25 @@ export function MobileNav({ open, onClose }: MobileNavProps) {
             </NavLink>
           ))}
         </nav>
+
+        {/* Keep-awake indicator */}
+        {isAwake && (
+          <div className={cn(
+            "mx-2 mb-4 flex items-center gap-2 rounded-lg px-3 py-2 text-xs",
+            status.state === "active"
+              ? "text-rose-400"
+              : "text-amber-400"
+          )}>
+            {status.state === "active" ? (
+              <HeartPulse className="h-3.5 w-3.5 animate-pulse" />
+            ) : (
+              <Clock className="h-3.5 w-3.5 animate-pulse" />
+            )}
+            <span className="opacity-70">
+              {status.state === "active" ? "Keeping awake" : "Waiting..."}
+            </span>
+          </div>
+        )}
       </div>
     </>
   )

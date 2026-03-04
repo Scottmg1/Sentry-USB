@@ -162,6 +162,56 @@ func findSnapshots() []string {
 	return snapshots
 }
 
+type storageBreakdown struct {
+	CamSize       int64 `json:"cam_size"`
+	MusicSize     int64 `json:"music_size"`
+	LightshowSize int64 `json:"lightshow_size"`
+	BoomboxSize   int64 `json:"boombox_size"`
+	WrapsSize     int64 `json:"wraps_size"`
+	SnapshotsSize int64 `json:"snapshots_size"`
+	TotalSpace    int64 `json:"total_space"`
+	FreeSpace     int64 `json:"free_space"`
+}
+
+func fileSize(path string) int64 {
+	info, err := os.Stat(path)
+	if err != nil {
+		return 0
+	}
+	return info.Size()
+}
+
+func (h *handlers) getStorageBreakdown(w http.ResponseWriter, r *http.Request) {
+	sb := storageBreakdown{
+		CamSize:       fileSize("/backingfiles/cam_disk.bin"),
+		MusicSize:     fileSize("/backingfiles/music_disk.bin"),
+		LightshowSize: fileSize("/backingfiles/lightshow_disk.bin"),
+		BoomboxSize:   fileSize("/backingfiles/boombox_disk.bin"),
+		WrapsSize:     fileSize("/backingfiles/wraps_disk.bin"),
+	}
+
+	// Disk space (same as getStatus)
+	if out, err := shell.Run("stat", "--file-system", "--format=%b %S %f", "/backingfiles/."); err == nil {
+		var blocks, blockSize, freeBlocks uint64
+		fmt.Sscanf(strings.TrimSpace(out), "%d %d %d", &blocks, &blockSize, &freeBlocks)
+		sb.TotalSpace = int64(blocks * blockSize)
+		sb.FreeSpace = int64(freeBlocks * blockSize)
+	}
+
+	// Snapshot snap.bin files are reflink (copy-on-write) clones of cam_disk.bin.
+	// Neither os.Stat (apparent size) nor du (follows symlinks into mounts) gives
+	// a reliable answer. Instead, derive snapshot usage by subtraction:
+	//   snapshots = total_used - disk_images
+	diskImages := sb.CamSize + sb.MusicSize + sb.LightshowSize + sb.BoomboxSize + sb.WrapsSize
+	usedSpace := sb.TotalSpace - sb.FreeSpace
+	sb.SnapshotsSize = usedSpace - diskImages
+	if sb.SnapshotsSize < 0 {
+		sb.SnapshotsSize = 0
+	}
+
+	writeJSON(w, http.StatusOK, sb)
+}
+
 func findNetDevice(pattern string) string {
 	matches, err := filepath.Glob("/sys/class/net/" + pattern)
 	if err != nil || len(matches) == 0 {
@@ -171,21 +221,21 @@ func findNetDevice(pattern string) string {
 }
 
 type piConfig struct {
-	HasCam      string `json:"has_cam"`
-	HasMusic    string `json:"has_music"`
+	HasCam       string `json:"has_cam"`
+	HasMusic     string `json:"has_music"`
 	HasLightshow string `json:"has_lightshow"`
-	HasBoombox  string `json:"has_boombox"`
-	HasWraps    string `json:"has_wraps"`
-	UsesBLE     string `json:"uses_ble"`
+	HasBoombox   string `json:"has_boombox"`
+	HasWraps     string `json:"has_wraps"`
+	UsesBLE      string `json:"uses_ble"`
 }
 
 func (h *handlers) getConfig(w http.ResponseWriter, r *http.Request) {
 	cfg := piConfig{
-		HasCam:      boolToYesNo(fileExists("/backingfiles/cam_disk.bin")),
-		HasMusic:    boolToYesNo(fileExists("/backingfiles/music_disk.bin")),
+		HasCam:       boolToYesNo(fileExists("/backingfiles/cam_disk.bin")),
+		HasMusic:     boolToYesNo(fileExists("/backingfiles/music_disk.bin")),
 		HasLightshow: boolToYesNo(fileExists("/backingfiles/lightshow_disk.bin")),
-		HasBoombox:  boolToYesNo(fileExists("/backingfiles/boombox_disk.bin")),
-		HasWraps:    boolToYesNo(fileExists("/backingfiles/wraps_disk.bin")),
+		HasBoombox:   boolToYesNo(fileExists("/backingfiles/boombox_disk.bin")),
+		HasWraps:     boolToYesNo(fileExists("/backingfiles/wraps_disk.bin")),
 	}
 
 	// Check if BLE is configured
@@ -367,4 +417,3 @@ func findConfigFilePath() string {
 	}
 	return ""
 }
-

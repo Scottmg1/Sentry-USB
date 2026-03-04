@@ -8,7 +8,7 @@ import (
 	"sync"
 )
 
-const preferencesPath = "/root/sentryusb-prefs.json"
+const preferencesPath = "/mutable/sentryusb-prefs.json"
 
 var prefsMu sync.RWMutex
 
