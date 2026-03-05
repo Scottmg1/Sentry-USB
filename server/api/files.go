@@ -1,6 +1,7 @@
 package api
 
 import (
+	"archive/zip"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,8 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/Scottmg1/Sentry-USB/server/shell"
 )
 
 type fileEntry struct {
@@ -325,18 +324,42 @@ func (h *handlers) downloadZip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Use zip command to create archive
-	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.zip"`, filepath.Base(cleanPath)))
-
-	// Stream zip output directly to response
-	output, err := shell.Run("zip", "-r", "-", cleanPath)
+	info, err := os.Stat(cleanPath)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to create zip")
+		writeError(w, http.StatusNotFound, "Path not found")
+		return
+	}
+	if !info.IsDir() {
+		writeError(w, http.StatusBadRequest, "Path is not a directory")
 		return
 	}
 
-	w.Write([]byte(output))
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.zip"`, filepath.Base(cleanPath)))
+
+	zw := zip.NewWriter(w)
+	defer zw.Close()
+
+	filepath.Walk(cleanPath, func(path string, fi os.FileInfo, err error) error {
+		if err != nil || fi.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(cleanPath, path)
+		if err != nil {
+			return nil
+		}
+		zf, err := zw.Create(rel)
+		if err != nil {
+			return nil
+		}
+		f, err := os.Open(path)
+		if err != nil {
+			return nil
+		}
+		defer f.Close()
+		io.Copy(zf, f)
+		return nil
+	})
 }
 
 // cleanupSnapshotSymlinks removes symlinks in snapshot directories that

@@ -157,6 +157,14 @@ function check_archive_configs () {
     esac
 
     log_progress "done"
+
+    # rsync is used unconditionally by archiveloop for wraps/LicensePlate
+    # sync, so ensure it is present regardless of the archive system.
+    if ! hash rsync 2>/dev/null
+    then
+      log_progress "Installing rsync (required for media sync)..."
+      apt-get install -y rsync
+    fi
 }
 
 function get_archive_module () {
