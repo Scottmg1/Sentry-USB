@@ -67,9 +67,9 @@ function keepAwakeError(data: SetupFormData): string | null {
   const method = data._KEEP_AWAKE_METHOD
     || (data.TESLA_BLE_VIN ? "ble"
       : data.TESLAFI_API_TOKEN ? "teslafi"
-      : data.TESSIE_API_TOKEN ? "tessie"
-      : data.KEEP_AWAKE_WEBHOOK_URL ? "webhook"
-      : "none")
+        : data.TESSIE_API_TOKEN ? "tessie"
+          : data.KEEP_AWAKE_WEBHOOK_URL ? "webhook"
+            : "none")
   if (method === "none") return null
   if (method === "ble" && !data.TESLA_BLE_VIN?.trim()) return "Vehicle VIN is required for Bluetooth LE."
   if (method === "teslafi" && !data.TESLAFI_API_TOKEN?.trim()) return "TeslaFi API Token is required."
@@ -150,6 +150,7 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
     ARCHIVE_RECENTCLIPS: "true",
     ARCHIVE_TRACKMODECLIPS: "true",
     DRIVE_MAP_ENABLED: "true",
+    DRIVE_MAP_WHILE_AWAY: "true",
     DRIVE_MAP_UNIT: "mi",
     TEMPERATURE_POSTARCHIVE: "true",
     USE_EXFAT: "true",
