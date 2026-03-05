@@ -77,10 +77,15 @@ func (h *handlers) blePair(w http.ResponseWriter, r *http.Request) {
 		h.hub.Broadcast("ble_status", map[string]string{"status": "pairing"})
 		vin = strings.ToUpper(vin)
 
-		// Stop bluetoothd so tesla-control can get exclusive access to hci0.
-		// Without this, tesla-control fails with "can't down device: device or resource busy".
+		// Stop the BLE GATT daemon and bluetoothd so tesla-control can get
+		// exclusive access to hci0.  Without this, tesla-control fails with
+		// "can't down device: device or resource busy".
+		shell.Run("systemctl", "stop", "sentryusb-ble")
 		shell.Run("systemctl", "stop", "bluetooth")
-		defer shell.Run("systemctl", "start", "bluetooth")
+		defer func() {
+			shell.Run("systemctl", "start", "bluetooth")
+			shell.Run("systemctl", "start", "sentryusb-ble")
+		}()
 
 		output, err := shell.RunWithTimeout(120*time.Second,
 			"/root/bin/tesla-control", "-ble", "-vin", vin,

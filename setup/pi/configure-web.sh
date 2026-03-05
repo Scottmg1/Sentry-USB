@@ -35,7 +35,7 @@ if [ -e /backingfiles/music_disk.bin ] || [ -e /backingfiles/lightshow_disk.bin 
 then
   mkdir -p /var/www/html/fs
   copy_script run/auto.www /root/bin
-  echo "/var/www/html/fs  /root/bin/auto.www" > /etc/auto.master.d/www.autofs
+  echo "/var/www/html/fs  /root/bin/auto.www --timeout=0" > /etc/auto.master.d/www.autofs
   apt-get -y --force-yes install zip
 fi
 

@@ -378,9 +378,9 @@ export default function Viewer() {
           <div>
             <h1 className="text-2xl font-bold text-slate-100">Viewer</h1>
             <p className="mt-0.5 text-sm text-slate-500">
-              Multi-camera clip viewer
+              View all 6 cameras simultaneously with synced playback
               <span className="ml-2 hidden text-[10px] text-slate-600 md:inline">
-                Space: play &middot; ←→: seek &middot; F: fullscreen
+                Space: play/pause &middot; ←→: skip 5s &middot; Shift+←→: skip 15s &middot; F: fullscreen
               </span>
             </p>
           </div>
@@ -515,7 +515,7 @@ export default function Viewer() {
             {/* Sentry Studio promo */}
             {showPromo && (
               <div className="border-t border-white/5 p-2">
-                <div className="relative rounded-lg bg-gradient-to-r from-blue-500/10 to-purple-500/10 p-2.5">
+                <div className="relative rounded-lg bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-purple-500/10 p-2.5">
                   <button
                     onClick={() => setShowPromo(false)}
                     className="absolute right-1 top-1 rounded p-0.5 text-slate-600 hover:text-slate-400"
@@ -526,18 +526,18 @@ export default function Viewer() {
                     <Car className="mt-0.5 h-4 w-4 shrink-0 text-blue-400" />
                     <div>
                       <p className="text-[11px] font-medium text-slate-300">
-                        Want more? Try Sentry Studio
+                        Looking for more? Try Sentry Studio
                       </p>
                       <p className="mt-0.5 text-[10px] leading-tight text-slate-500">
-                        SEI telemetry, GPS maps, export with overlays, and more.
+                        Advanced TeslaCam viewer with GPS overlay, telemetry data, multi-angle export, and detailed event analysis.
                       </p>
                       <a
                         href="https://github.com/ChadR23/Sentry-Six"
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="mt-1.5 inline-flex items-center gap-1 text-[10px] font-medium text-blue-400 transition-colors hover:text-blue-300"
+                        className="mt-1.5 inline-flex items-center gap-1 rounded-md bg-blue-500/10 px-2 py-1 text-[10px] font-medium text-blue-400 transition-colors hover:bg-blue-500/20 hover:text-blue-300"
                       >
-                        Learn more <ExternalLink className="h-2.5 w-2.5" />
+                        View on GitHub <ExternalLink className="h-2.5 w-2.5" />
                       </a>
                     </div>
                   </div>
@@ -734,14 +734,28 @@ export default function Viewer() {
             </>
           ) : (
             <div className="glass-card flex flex-1 items-center justify-center">
-              <div className="text-center">
+              <div className="max-w-xs text-center">
                 <Video className="mx-auto mb-3 h-16 w-16 text-slate-700" />
                 <p className="text-sm font-medium text-slate-400">
                   {selectedClip ? "No video files found" : "Select a clip to begin playback"}
                 </p>
                 <p className="mt-1 text-xs text-slate-600">
-                  Choose a clip from the sidebar to view all cameras simultaneously
+                  Choose a clip from the sidebar to view all 6 cameras simultaneously with synced playback controls.
                 </p>
+                <div className="mt-4 rounded-lg border border-white/5 bg-white/[0.02] p-3">
+                  <p className="text-[11px] font-medium text-slate-400">Want a more advanced viewer?</p>
+                  <p className="mt-0.5 text-[10px] text-slate-600">
+                    Sentry Studio offers GPS overlays, telemetry data, multi-angle export, and more.
+                  </p>
+                  <a
+                    href="https://github.com/ChadR23/Sentry-Six"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-2 inline-flex items-center gap-1 text-[10px] font-medium text-blue-400 transition-colors hover:text-blue-300"
+                  >
+                    Check out Sentry Studio <ExternalLink className="h-2.5 w-2.5" />
+                  </a>
+                </div>
               </div>
             </div>
           )}

@@ -323,6 +323,20 @@ export function AdvancedStep({ data, onChange }: StepProps) {
             className="h-4 w-4 rounded border-white/20 bg-white/5 accent-blue-500" />
           <span className="text-sm text-slate-300">Enable drive map processing after archive</span>
         </label>
+        {(data.DRIVE_MAP_ENABLED ?? "true") === "true" && (
+          <>
+            <label className="mt-2 flex cursor-pointer items-center gap-2">
+              <input type="checkbox" checked={(data.DRIVE_MAP_WHILE_AWAY ?? "true") === "true"}
+                onChange={(e) => onChange("DRIVE_MAP_WHILE_AWAY", e.target.checked ? "true" : "false")}
+                className="h-4 w-4 rounded border-white/20 bg-white/5 accent-blue-500" />
+              <span className="text-sm text-slate-300">Map drives while away</span>
+            </label>
+            <p className="ml-6 text-xs text-slate-600">
+              Process new clips after each snapshot while the car is away. Reduces processing time when you arrive home.
+              Disable if you experience overheating issues.
+            </p>
+          </>
+        )}
         <div className="mt-3">
           <label className="mb-1 block text-sm font-medium text-slate-300">Distance Unit</label>
           <div className="flex overflow-hidden rounded-lg border border-white/10 w-fit">

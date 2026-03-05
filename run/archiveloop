@@ -178,6 +178,61 @@ function sync_user_media_to_cam () {
   fi
 }
 
+function sync_disk_media_to_host () {
+  log "Reverse-syncing disk media to host paths..."
+
+  # Reverse-sync Wraps: files uploaded via USB (directly to the wraps disk
+  # image) need to appear in /mutable/Wraps so the web UI can see them.
+  if [ -e /backingfiles/wraps_disk.bin ]
+  then
+    if ensure_mountpoint_is_mounted "$WRAPS_MOUNT"
+    then
+      if [ -d "$WRAPS_MOUNT/Wraps" ] && [ -n "$(ls -A "$WRAPS_MOUNT/Wraps" 2>/dev/null)" ]
+      then
+        mkdir -p /mutable/Wraps
+        rsync -a --ignore-existing "$WRAPS_MOUNT/Wraps/" "/mutable/Wraps/" >> "$LOG_FILE" 2>&1 \
+          || log "Failed to reverse-sync Wraps from wraps drive"
+        log "Reverse-synced Wraps from wraps drive to /mutable/Wraps."
+      fi
+      unmount_mount_point "$WRAPS_MOUNT"
+    fi
+  fi
+
+  # Reverse-sync LicensePlate (and Wraps when no dedicated wraps disk)
+  # from the cam drive.
+  if [ -e /backingfiles/cam_disk.bin ]
+  then
+    if ensure_mountpoint_is_mounted "$CAM_MOUNT"
+    then
+      if [ ! -e /backingfiles/wraps_disk.bin ] && [ -d "$CAM_MOUNT/Wraps" ] && [ -n "$(ls -A "$CAM_MOUNT/Wraps" 2>/dev/null)" ]
+      then
+        mkdir -p /mutable/Wraps
+        rsync -a --ignore-existing "$CAM_MOUNT/Wraps/" "/mutable/Wraps/" >> "$LOG_FILE" 2>&1 \
+          || log "Failed to reverse-sync Wraps from cam drive"
+        log "Reverse-synced Wraps from cam drive to /mutable/Wraps."
+      fi
+      if [ -d "$CAM_MOUNT/LicensePlate" ] && [ -n "$(ls -A "$CAM_MOUNT/LicensePlate" 2>/dev/null)" ]
+      then
+        mkdir -p /mutable/LicensePlate
+        rsync -a --ignore-existing "$CAM_MOUNT/LicensePlate/" "/mutable/LicensePlate/" >> "$LOG_FILE" 2>&1 \
+          || log "Failed to reverse-sync LicensePlate from cam drive"
+        log "Reverse-synced LicensePlate from cam drive."
+      fi
+      unmount_mount_point "$CAM_MOUNT"
+    fi
+  fi
+
+  # Clear stale autofs mount-option cache files for media disks.
+  # These are regenerated on next access. Stale files can cause mount
+  # failures after disk images are recreated (wizard re-run / disk wipe).
+  for img in music_disk.bin lightshow_disk.bin boombox_disk.bin
+  do
+    rm -f "/backingfiles/${img}.opts"
+  done
+
+  log "Done reverse-syncing disk media to host paths."
+}
+
 function connect_usb_drives_to_host() {
   clear_archive_status
   log "Connecting usb to host..."
@@ -191,7 +246,15 @@ function connect_usb_drives_to_host() {
     log "Disabled stale USB gadget before sync"
     fix_errors_in_images
   fi
+  sync_disk_media_to_host
   sync_user_media_to_cam
+  # Pre-trigger autofs mounts for media directories while disk images
+  # are free (before the gadget takes over). This ensures the web UI
+  # can display Music/LightShow/Boombox files immediately after boot.
+  for d in Music LightShow Boombox
+  do
+    ls "/var/www/html/fs/$d" > /dev/null 2>&1 || true
+  done
   if ! /root/bin/enable_gadget.sh; then
     log "ERROR: enable_gadget.sh failed (exit $?)"
   fi
@@ -873,6 +936,10 @@ function archive_clips () {
 
   touch /tmp/flag_post_archive  #Set post-archive flag for optional temperature logging
   clear_archive_status
+  # Reconnect cam drive before post-archive processing.
+  # Processing reads local snapshots, not the cam disk — the car can resume
+  # recording immediately instead of waiting for processing to finish.
+  connect_usb_drives_to_host
   /root/bin/post-archive-process.sh || log "ERROR: post-archive-process.sh failed (exit $?)"
   /root/bin/disconnect-archive.sh
 }
@@ -942,6 +1009,21 @@ function snapshotloop {
     sleep "${SNAPSHOT_INTERVAL:-3480}"
     /root/bin/waitforidle || true
     /root/bin/make_snapshot.sh
+    # Incrementally process new clips after each snapshot.
+    # The processor skips already-processed files, so this is lightweight.
+    # Runs in a subshell so the snapshot loop isn't blocked.
+    if [ "${DRIVE_MAP_WHILE_AWAY:-false}" = "true" ]; then
+      (
+        SENTRYUSB_PORT="${SENTRYUSB_PORT:-80}"
+        API_URL="http://127.0.0.1:${SENTRYUSB_PORT}"
+        if curl -sf "${API_URL}/api/drives/status" > /dev/null 2>&1; then
+          curl -sf -X POST "${API_URL}/api/drives/process?post_archive=1" \
+            -H "Content-Type: application/json" \
+            -d '{"clips_dir": "/mutable/TeslaCam/RecentClips", "throttle_ms": 30}' \
+            > /dev/null 2>&1 || true
+        fi
+      ) &
+    fi
   done
 }
 

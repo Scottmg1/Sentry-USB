@@ -103,8 +103,11 @@ then
 
     log_progress "Formatting new partitions..."
     # Force creation of filesystems even if previous filesystem appears to exist
+    log_progress "Formatting mutable partition (ext4) on $P1..."
     mkfs.ext4 -F -L mutable "$P1"
+    log_progress "Formatting backingfiles partition (xfs) on $P2..."
     mkfs.xfs -f -m reflink=1 -L backingfiles "$P2"
+    log_progress "Partition formatting complete."
   fi
 
   update_fstab
@@ -243,7 +246,10 @@ fi
 
 log_progress "Formatting new partitions..."
 # Force creation of filesystems even if previous filesystem appears to exist
+log_progress "Formatting backingfiles partition (xfs) on ${BACKINGFILES_DEVICE}..."
 mkfs.xfs -f -m reflink=1 -L backingfiles "${BACKINGFILES_DEVICE}"
+log_progress "Formatting mutable partition (ext4) on ${MUTABLE_DEVICE}..."
 mkfs.ext4 -F -N "$NUM_MUTABLE_INODES" -L mutable "${MUTABLE_DEVICE}"
+log_progress "Partition formatting complete."
 
 update_fstab

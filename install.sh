@@ -196,7 +196,7 @@ ok "rc.local installed"
 # Install prerequisite packages
 info "Installing prerequisite packages..."
 apt-get update -qq
-for pkg in dos2unix parted fdisk sudo curl; do
+for pkg in dos2unix parted fdisk sudo curl rsync; do
     if ! command -v "$pkg" &> /dev/null; then
         apt-get install -y "$pkg" 2>/dev/null || true
     fi

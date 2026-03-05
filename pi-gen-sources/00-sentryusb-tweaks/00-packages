@@ -10,3 +10,4 @@ libnginx-mod-http-fancyindex
 libfuse-dev
 exfatprogs
 ntpsec-ntpdig
+rsync

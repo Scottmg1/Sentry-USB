@@ -67,9 +67,9 @@ function keepAwakeError(data: SetupFormData): string | null {
   const method = data._KEEP_AWAKE_METHOD
     || (data.TESLA_BLE_VIN ? "ble"
       : data.TESLAFI_API_TOKEN ? "teslafi"
-      : data.TESSIE_API_TOKEN ? "tessie"
-      : data.KEEP_AWAKE_WEBHOOK_URL ? "webhook"
-      : "none")
+        : data.TESSIE_API_TOKEN ? "tessie"
+          : data.KEEP_AWAKE_WEBHOOK_URL ? "webhook"
+            : "none")
   if (method === "none") return null
   if (method === "ble" && !data.TESLA_BLE_VIN?.trim()) return "Vehicle VIN is required for Bluetooth LE."
   if (method === "teslafi" && !data.TESLAFI_API_TOKEN?.trim()) return "TeslaFi API Token is required."
@@ -150,6 +150,7 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
     ARCHIVE_RECENTCLIPS: "true",
     ARCHIVE_TRACKMODECLIPS: "true",
     DRIVE_MAP_ENABLED: "true",
+    DRIVE_MAP_WHILE_AWAY: "true",
     DRIVE_MAP_UNIT: "mi",
     TEMPERATURE_POSTARCHIVE: "true",
     USE_EXFAT: "true",
@@ -183,6 +184,12 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
           setPhase("finalizing")
           setSetupMessage("Sentry USB has finished setting up. The device is now rebooting one last time...")
           if (pollRef.current) clearInterval(pollRef.current)
+        } else if (data.setup_running && phase === "rebooting") {
+          // Server is back and setup is still going — restore live progress view.
+          // This recovers from transient blips (service restart, heavy I/O, etc.)
+          // that previously left the UI permanently stuck in "rebooting".
+          setPhase("running")
+          setSetupMessage("Setup is running. The device will reboot several times during this process — this is normal.")
         } else if (!data.setup_running && phase === "running") {
           setPhase("rebooting")
           setSetupMessage("System is rebooting to continue setup. This page will reconnect automatically.")
@@ -223,38 +230,59 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
     return () => clearInterval(poll)
   }, [phase])
 
-  // Also listen to WebSocket for real-time updates
+  // Also listen to WebSocket for real-time updates (auto-reconnect on drop)
   useEffect(() => {
     if (phase !== "running" && phase !== "applying" && phase !== "rebooting") return
     let ws: WebSocket | null = null
-    try {
-      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:"
-      ws = new WebSocket(`${protocol}//${window.location.host}/api/ws`)
-      ws.onmessage = (event) => {
-        try {
-          const msg = JSON.parse(event.data)
-          if (msg.type === "setup_status") {
-            const d = msg.data
-            if (d.status === "starting" || d.status === "downloading_scripts") {
-              setPhase("running")
-              setSetupMessage("Downloading setup scripts...")
-            } else if (d.status === "running") {
-              setSetupMessage("Running setup... This may take several minutes.")
-            } else if (d.status === "complete") {
-              setPhase("finalizing")
-              setSetupMessage("Sentry USB has finished setting up. The device is now rebooting one last time...")
-            } else if (d.status === "rebooting") {
-              setPhase("rebooting")
-              setSetupMessage(d.message || "System is rebooting to continue setup...")
-            } else if (d.status === "error") {
-              setPhase("error")
-              setSetupMessage(d.error || "Setup failed. Check logs for details.")
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+    let backoff = 2000
+    let cancelled = false
+
+    function connect() {
+      if (cancelled) return
+      try {
+        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:"
+        ws = new WebSocket(`${protocol}//${window.location.host}/api/ws`)
+        ws.onopen = () => { backoff = 2000 }
+        ws.onmessage = (event) => {
+          try {
+            const msg = JSON.parse(event.data)
+            if (msg.type === "setup_status") {
+              const d = msg.data
+              if (d.status === "starting" || d.status === "downloading_scripts") {
+                setPhase("running")
+                setSetupMessage("Downloading setup scripts...")
+              } else if (d.status === "running") {
+                setSetupMessage("Running setup... This may take several minutes.")
+              } else if (d.status === "complete") {
+                setPhase("finalizing")
+                setSetupMessage("Sentry USB has finished setting up. The device is now rebooting one last time...")
+              } else if (d.status === "rebooting") {
+                setPhase("rebooting")
+                setSetupMessage(d.message || "System is rebooting to continue setup...")
+              } else if (d.status === "error") {
+                setPhase("error")
+                setSetupMessage(d.error || "Setup failed. Check logs for details.")
+              }
             }
-          }
-        } catch { /* ignore parse errors */ }
-      }
-    } catch { /* ws not available */ }
-    return () => { ws?.close() }
+          } catch { /* ignore parse errors */ }
+        }
+        ws.onclose = () => {
+          if (cancelled) return
+          reconnectTimer = setTimeout(() => {
+            backoff = Math.min(backoff * 1.5, 15000)
+            connect()
+          }, backoff)
+        }
+      } catch { /* ws not available */ }
+    }
+
+    connect()
+    return () => {
+      cancelled = true
+      if (reconnectTimer) clearTimeout(reconnectTimer)
+      ws?.close()
+    }
   }, [phase])
 
   const StepComponent = steps[currentStep].component

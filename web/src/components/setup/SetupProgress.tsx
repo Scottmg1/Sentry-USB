@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { Loader2, Terminal } from "lucide-react"
+import { AlertCircle, Loader2, Terminal } from "lucide-react"
 
 // Keywords from setup-sentryusb stages used to estimate progress
 const STAGE_MARKERS: [RegExp, number][] = [
@@ -37,11 +37,15 @@ interface SetupProgressProps {
   complete?: boolean
 }
 
+const STALE_THRESHOLD_MS = 5 * 60 * 1000 // 5 minutes
+
 export function SetupProgress({ complete }: SetupProgressProps) {
   const [logLines, setLogLines] = useState<string[]>([])
   const [progress, setProgress] = useState(0)
+  const [stale, setStale] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const prevLenRef = useRef(0)
+  const lastChangeRef = useRef(Date.now())
 
   useEffect(() => {
     if (complete) {
@@ -72,13 +76,26 @@ export function SetupProgress({ complete }: SetupProgressProps) {
     }
   }, [complete])
 
-  // Auto-scroll when new lines appear
+  // Auto-scroll when new lines appear + track last-change time for stale detection
   useEffect(() => {
-    if (logLines.length > prevLenRef.current && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    if (logLines.length > prevLenRef.current) {
+      if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+      lastChangeRef.current = Date.now()
+      setStale(false)
     }
     prevLenRef.current = logLines.length
   }, [logLines])
+
+  // Stale detection: warn if no new log lines for 5 minutes
+  useEffect(() => {
+    if (complete) return
+    const id = setInterval(() => {
+      if (logLines.length > 0 && Date.now() - lastChangeRef.current > STALE_THRESHOLD_MS) {
+        setStale(true)
+      }
+    }, 15000)
+    return () => clearInterval(id)
+  }, [complete, logLines.length])
 
   const pct = complete ? 100 : progress
 
@@ -104,6 +121,18 @@ export function SetupProgress({ complete }: SetupProgressProps) {
           />
         </div>
       </div>
+
+      {/* Stale progress warning */}
+      {stale && (
+        <div className="flex items-start gap-2 rounded-lg border border-yellow-500/20 bg-yellow-500/5 px-3 py-2">
+          <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-yellow-400" />
+          <p className="text-xs text-yellow-300/80">
+            No new progress in the last 5 minutes. Setup may be waiting on a slow
+            operation (package install, large partition format), or it may be stuck.
+            If this persists, check the system logs or power-cycle the device.
+          </p>
+        </div>
+      )}
 
       {/* Log journal */}
       <div className="overflow-hidden rounded-lg border border-white/10 bg-black/40">

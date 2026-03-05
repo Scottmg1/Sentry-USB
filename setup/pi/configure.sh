@@ -157,6 +157,14 @@ function check_archive_configs () {
     esac
 
     log_progress "done"
+
+    # rsync is used unconditionally by archiveloop for wraps/LicensePlate
+    # sync, so ensure it is present regardless of the archive system.
+    if ! hash rsync 2>/dev/null
+    then
+      log_progress "Installing rsync (required for media sync)..."
+      apt-get install -y rsync
+    fi
 }
 
 function get_archive_module () {
@@ -283,7 +291,7 @@ function check_and_configure_tesla_ble () {
         log_progress "Skipping required package for Tesla BLE API: pi-bluetooth does not exist for this device."
     fi
 
-    log_progress "Installing required package for Tesla BLE API: Tesla binaries"
+    log_progress "Downloading Tesla BLE control binaries..."
     install_tesla_ble_packages "$install_path"
 
     local pairing_needed=true
@@ -294,17 +302,17 @@ function check_and_configure_tesla_ble () {
       chmod 600 /root/.ble/key_private.pem
       chmod 644 /root/.ble/key_public.pem
       log_progress "Generated keys for Tesla BLE interface."
-    elif "$install_path/tesla-control" -ble -vin "${TESLA_BLE_VIN^^}" body-controller-state; then
-      if "$install_path/tesla-control" -ble -vin "${TESLA_BLE_VIN^^}" session-info /root/.ble/key_private.pem infotainment; then
+    elif timeout 30 "$install_path/tesla-control" -ble -vin "${TESLA_BLE_VIN^^}" body-controller-state; then
+      if timeout 30 "$install_path/tesla-control" -ble -vin "${TESLA_BLE_VIN^^}" session-info /root/.ble/key_private.pem infotainment; then
         log_progress "Tesla BLE keys exist and are paired."
         pairing_needed=false
       else
         log_progress "WARNING: Tesla BLE keys already exist, but are not paired."
       fi
     else
-      log_progress "WARNING: Tesla BLE keys exist, but the car is not reachable."
-      log_progress "If you are performing setup away from your car, this is expected. Otherwise, please check the VIN and try again."
-      log_progress "If you have not already, please visit the web UI after SentryUSB is in the car to pair the key."
+      log_progress "WARNING: Tesla BLE keys exist, but the car is not reachable (timed out after 30s)."
+      log_progress "If you are performing setup away from your car, this is expected."
+      log_progress "Pairing can be completed later via the web UI when SentryUSB is near the car."
       pairing_needed=false
     fi
 

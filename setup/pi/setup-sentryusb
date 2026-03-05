@@ -324,7 +324,10 @@ function update_sentryusb_binary () {
     else
       setup_progress "Binary updated (version unknown)"
     fi
-    systemctl restart sentryusb 2>/dev/null || true
+    # Do NOT restart the service here — the new binary will be used after
+    # the final reboot at the end of setup.  Restarting mid-setup kills
+    # the Go web server that is monitoring setup progress, causing the
+    # wizard UI to appear permanently stuck.
   else
     setup_progress "WARNING: Could not download binary from $DOWNLOAD_URL — keeping existing binary"
   fi
