@@ -154,12 +154,13 @@ def load_pin():
 
 def save_pin(pin):
     """Save a new BLE passcode."""
+    # Root filesystem is read-only at runtime — remount rw before writing.
+    subprocess.run(['/root/bin/remountfs_rw'], capture_output=True, timeout=5)
     os.makedirs(os.path.dirname(PIN_FILE), exist_ok=True)
     with open(PIN_FILE, 'w') as f:
         f.write(pin)
     # Also write to boot partition for easy reset
     try:
-        subprocess.run(['/root/bin/remountfs_rw'], capture_output=True, timeout=5)
         with open(BOOT_PIN_FILE, 'w') as f:
             f.write(pin)
     except Exception:
@@ -737,9 +738,13 @@ class AuthCharacteristic(Characteristic):
             elif len(pin) < 4 or len(pin) > 6:
                 result = {'success': False, 'error': 'pin_must_be_4_to_6_digits'}
             else:
-                save_pin(pin)
-                mark_authenticated(options)
-                result = {'success': True}
+                try:
+                    save_pin(pin)
+                    mark_authenticated(options)
+                    result = {'success': True}
+                except Exception as e:
+                    log.error(f'Failed to save PIN: {e}')
+                    result = {'success': False, 'error': 'save_failed'}
         elif action == 'authenticate':
             if not is_claimed():
                 result = {'success': False, 'error': 'not_claimed'}
