@@ -124,8 +124,16 @@ func (h *handlers) bleStatus(w http.ResponseWriter, r *http.Request) {
 
 	// ?quick=true skips the slow BLE session-info probe (up to 15s).
 	// Used on page load to avoid blocking the UI.
+	// Only return "paired" if the flag file written by a prior successful
+	// session-info check exists — otherwise return "keys_generated" so that
+	// fresh installs (keys generated but pairing ceremony not yet done) don't
+	// falsely show "Paired" in the UI.
 	if r.URL.Query().Get("quick") == "true" {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "paired"})
+		if _, err := os.Stat("/root/.ble/paired"); err == nil {
+			writeJSON(w, http.StatusOK, map[string]string{"status": "paired"})
+		} else {
+			writeJSON(w, http.StatusOK, map[string]string{"status": "keys_generated"})
+		}
 		return
 	}
 
@@ -138,6 +146,10 @@ func (h *handlers) bleStatus(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "keys_generated", "note": "Car not reachable or key not paired"})
 		return
 	}
+
+	// Pairing confirmed — write a flag file so subsequent ?quick=true checks
+	// can return "paired" without re-running the slow 15s session-info probe.
+	_ = os.WriteFile("/root/.ble/paired", []byte("1"), 0600)
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "paired"})
 }
