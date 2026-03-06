@@ -961,9 +961,13 @@ def verify_gatt_objects(app):
                  f'{len(service_uuids)} services {service_uuids}, '
                  f'{len(chrc_uuids)} characteristics')
         if len(service_uuids) < 2:
-            log.error(f'GATT self-test FAILED: expected 2 services, got {len(service_uuids)}')
+            log.error(f'GATT self-test FAILED: expected 2 services, got {len(service_uuids)} — exiting for systemd restart')
+            mainloop.quit()
+            sys.exit(1)
         if len(chrc_uuids) < 7:
-            log.error(f'GATT self-test FAILED: expected 7+ characteristics, got {len(chrc_uuids)}')
+            log.error(f'GATT self-test FAILED: expected 7+ characteristics, got {len(chrc_uuids)} — exiting for systemd restart')
+            mainloop.quit()
+            sys.exit(1)
     except Exception as e:
         log.error(f'GATT self-test exception: {e}')
     return False  # don't repeat GLib timeout
@@ -995,6 +999,41 @@ def setup_connection_monitoring(bus, adapter_path):
         signal_name='PropertiesChanged',
         path_keyword='path',
         bus_name=BLUEZ_SERVICE)
+
+
+def setup_bluez_restart_detection(bus):
+    """Exit when BlueZ (org.bluez) disappears or restarts on D-Bus.
+
+    When bluetoothd crashes or is restarted by systemd, all registered GATT
+    applications and advertisements are dropped silently.  The daemon's mainloop
+    stays alive but BlueZ no longer serves our custom GATT — it falls back to
+    PipeWire audio services (0x1844, 0x184D, 0x184F), causing iOS to cache the
+    wrong GATT and fail BLE reconnection until Bluetooth is toggled.
+
+    Exiting here lets systemd's Restart=always relaunch the daemon fresh, which
+    re-registers GATT with the newly started bluetoothd.  Combined with
+    BindsTo=bluetooth.service in the service unit, this ensures the daemon is
+    always in sync with bluetoothd's lifecycle.
+    """
+    def on_name_owner_changed(name, old_owner, new_owner):
+        if name != BLUEZ_SERVICE:
+            return
+        if old_owner and not new_owner:
+            log.warning('BlueZ (org.bluez) disappeared — GATT registration lost, exiting for systemd restart')
+            mainloop.quit()
+            sys.exit(1)
+        if not old_owner and new_owner:
+            # BlueZ came back after being absent; our GATT registration is still
+            # gone so exit to let systemd restart us cleanly against the new instance.
+            log.info('BlueZ (org.bluez) reappeared — exiting for clean GATT re-registration')
+            mainloop.quit()
+            sys.exit(1)
+
+    bus.add_signal_receiver(
+        on_name_owner_changed,
+        dbus_interface='org.freedesktop.DBus',
+        signal_name='NameOwnerChanged',
+        bus_name='org.freedesktop.DBus')
 
 
 def main():
@@ -1029,6 +1068,10 @@ def main():
     # This makes it possible to see whether iOS actually connects to the Pi
     # versus failing at the BLE advertisement/discovery stage.
     setup_connection_monitoring(bus, adapter_path)
+
+    # Exit (triggering systemd restart) if bluetoothd restarts, which drops
+    # our GATT registration and causes iOS to see stale/wrong services.
+    setup_bluez_restart_detection(bus)
 
     # Power on adapter and set unique BLE name
     adapter_props = dbus.Interface(

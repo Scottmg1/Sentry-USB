@@ -3,6 +3,7 @@ Description=SentryUSB BLE Peripheral
 Documentation=https://github.com/Scottmg1/Sentry-USB
 After=bluetooth.target bluetooth.service dbus.service
 Requires=bluetooth.target dbus.service
+BindsTo=bluetooth.service
 ConditionPathExists=/usr/bin/python3
 
 [Service]
