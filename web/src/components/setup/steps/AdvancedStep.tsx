@@ -247,6 +247,8 @@ export function AdvancedStep({ data, onChange }: StepProps) {
             data={data} onChange={onChange} hint="Delay between WiFi connect and archiving start" />
           <Field label="Snapshot Interval (seconds)" field="SNAPSHOT_INTERVAL" placeholder="default"
             data={data} onChange={onChange} hint="Set ~2 min shorter than car's RecentClips retention" />
+          <Field label="Free Space Threshold (%)" field="FREE_SPACE_PERCENT" placeholder="20"
+            data={data} onChange={onChange} hint="Minimum free space before triggering cleanup" />
         </div>
       </div>
 

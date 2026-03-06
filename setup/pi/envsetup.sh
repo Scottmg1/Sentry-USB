@@ -133,6 +133,7 @@ function read_setup_variables {
   export LIGHTSHOW_SIZE=${LIGHTSHOW_SIZE:-0}
   export DATA_DRIVE=${DATA_DRIVE:-''}
   export USE_EXFAT=${USE_EXFAT:-false}
+  export FREE_SPACE_PERCENT=${FREE_SPACE_PERCENT:-20}
 }
 
 read_setup_variables

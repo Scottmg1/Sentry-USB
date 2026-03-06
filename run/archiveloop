@@ -1152,8 +1152,6 @@ then
 fi
 
 connect_usb_drives_to_host
-# quick hack to process video on every boot up after taking snapshots
-/root/bin/post-archive-process.sh || log "ERROR: post-snapshot video process failed"
 
 if archive_is_reachable
 then
