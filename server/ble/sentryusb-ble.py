@@ -914,6 +914,34 @@ def verify_gatt_objects(app):
     return False  # don't repeat GLib timeout
 
 
+def setup_connection_monitoring(bus, adapter_path):
+    """Subscribe to BlueZ D-Bus signals to log BLE central connect/disconnect
+    events.  Without this, the daemon has no visibility into whether iOS
+    actually established a connection — making pairing failures hard to debug.
+
+    Also catches cases where iOS connects but GATT service discovery fails
+    (seen as a connection log with no subsequent characteristic read logs).
+    """
+    def on_properties_changed(interface, changed, invalidated, path=None):
+        if interface != 'org.bluez.Device1':
+            return
+        if path is None or not str(path).startswith(adapter_path):
+            return
+        if 'Connected' not in changed:
+            return
+        if changed['Connected']:
+            log.info(f'BLE central connected: {path}')
+        else:
+            log.info(f'BLE central disconnected: {path}')
+
+    bus.add_signal_receiver(
+        on_properties_changed,
+        dbus_interface=DBUS_PROP_IFACE,
+        signal_name='PropertiesChanged',
+        path_keyword='path',
+        bus_name=BLUEZ_SERVICE)
+
+
 def main():
     global mainloop, API_BASE
     dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
@@ -940,6 +968,11 @@ def main():
         sys.exit(1)
 
     log.info(f'Using adapter: {adapter_path}')
+
+    # Subscribe to BlueZ D-Bus signals so connection events are logged.
+    # This makes it possible to see whether iOS actually connects to the Pi
+    # versus failing at the BLE advertisement/discovery stage.
+    setup_connection_monitoring(bus, adapter_path)
 
     # Power on adapter and set unique BLE name
     adapter_props = dbus.Interface(
