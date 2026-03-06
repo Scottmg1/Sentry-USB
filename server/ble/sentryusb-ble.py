@@ -34,6 +34,61 @@ except ImportError:
 logging.basicConfig(level=logging.INFO, format='[BLE] %(levelname)s %(message)s')
 log = logging.getLogger('sentryusb-ble')
 
+# ============================================================
+# D-Bus policy self-healing
+# ============================================================
+
+_DBUS_POLICY_PATH = '/etc/dbus-1/system.d/com.sentryusb.ble.conf'
+_DBUS_POLICY_XML = """\
+<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-BUS Bus Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+<busconfig>
+  <!-- Allow the SentryUSB BLE daemon (running as root) to own its bus name
+       and expose GATT objects so BlueZ can call GetManagedObjects on them.
+       Required on Pi 5 / Bookworm where D-Bus policies are stricter. -->
+
+  <policy user="root">
+    <allow own="com.sentryusb.ble"/>
+    <allow send_destination="com.sentryusb.ble"/>
+    <allow send_interface="org.freedesktop.DBus.ObjectManager"/>
+    <allow send_interface="org.freedesktop.DBus.Properties"/>
+    <allow send_interface="org.bluez.GattService1"/>
+    <allow send_interface="org.bluez.GattCharacteristic1"/>
+    <allow send_interface="org.bluez.GattDescriptor1"/>
+    <allow send_interface="org.bluez.LEAdvertisement1"/>
+  </policy>
+
+  <policy context="default">
+    <allow send_destination="com.sentryusb.ble"/>
+  </policy>
+</busconfig>
+"""
+
+
+def maybe_install_dbus_policy():
+    """Auto-install the D-Bus policy file if it is missing, then re-exec.
+
+    Without this file, strict D-Bus systems (Pi 5 / Bookworm) block the daemon
+    from owning 'com.sentryusb.ble', so BlueZ falls back to PipeWire's GATT
+    services (audio volume/stream UUIDs) — causing iOS to cache the wrong GATT
+    and fail BLE pairing indefinitely until the iOS Bluetooth cache is cleared.
+
+    Called before the D-Bus bus is connected so the re-exec takes full effect.
+    """
+    if os.path.exists(_DBUS_POLICY_PATH):
+        return
+    log.warning('D-Bus policy missing — auto-installing and restarting daemon')
+    try:
+        os.makedirs('/etc/dbus-1/system.d', exist_ok=True)
+        with open(_DBUS_POLICY_PATH, 'w') as f:
+            f.write(_DBUS_POLICY_XML)
+        subprocess.run(['systemctl', 'reload', 'dbus'], timeout=10, check=False)
+        import time; time.sleep(1)  # give dbus-daemon a moment to re-read config
+        log.info('D-Bus policy installed — re-execing to claim com.sentryusb.ble')
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+    except Exception as e:
+        log.error(f'Could not auto-install D-Bus policy: {e} — GATT may not be served correctly')
+
 # BlueZ D-Bus constants
 BLUEZ_SERVICE = 'org.bluez'
 LE_ADVERTISING_MANAGER_IFACE = 'org.bluez.LEAdvertisingManager1'
@@ -943,6 +998,7 @@ def setup_connection_monitoring(bus, adapter_path):
 
 
 def main():
+    maybe_install_dbus_policy()
     global mainloop, API_BASE
     dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
     bus = dbus.SystemBus()
