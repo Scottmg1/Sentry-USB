@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 
 	"github.com/Scottmg1/Sentry-USB/server/shell"
 )
@@ -173,21 +174,23 @@ type storageBreakdown struct {
 	FreeSpace     int64 `json:"free_space"`
 }
 
-func fileSize(path string) int64 {
-	info, err := os.Stat(path)
-	if err != nil {
+// diskUsage returns the actual disk space consumed by a file (st_blocks * 512),
+// which correctly reports usage for sparse files and reflink copies on XFS.
+func diskUsage(path string) int64 {
+	var st syscall.Stat_t
+	if err := syscall.Stat(path, &st); err != nil {
 		return 0
 	}
-	return info.Size()
+	return st.Blocks * 512
 }
 
 func (h *handlers) getStorageBreakdown(w http.ResponseWriter, r *http.Request) {
 	sb := storageBreakdown{
-		CamSize:       fileSize("/backingfiles/cam_disk.bin"),
-		MusicSize:     fileSize("/backingfiles/music_disk.bin"),
-		LightshowSize: fileSize("/backingfiles/lightshow_disk.bin"),
-		BoomboxSize:   fileSize("/backingfiles/boombox_disk.bin"),
-		WrapsSize:     fileSize("/backingfiles/wraps_disk.bin"),
+		CamSize:       diskUsage("/backingfiles/cam_disk.bin"),
+		MusicSize:     diskUsage("/backingfiles/music_disk.bin"),
+		LightshowSize: diskUsage("/backingfiles/lightshow_disk.bin"),
+		BoomboxSize:   diskUsage("/backingfiles/boombox_disk.bin"),
+		WrapsSize:     diskUsage("/backingfiles/wraps_disk.bin"),
 	}
 
 	// Disk space (same as getStatus)
