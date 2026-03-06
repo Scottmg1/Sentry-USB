@@ -34,6 +34,61 @@ except ImportError:
 logging.basicConfig(level=logging.INFO, format='[BLE] %(levelname)s %(message)s')
 log = logging.getLogger('sentryusb-ble')
 
+# ============================================================
+# D-Bus policy self-healing
+# ============================================================
+
+_DBUS_POLICY_PATH = '/etc/dbus-1/system.d/com.sentryusb.ble.conf'
+_DBUS_POLICY_XML = """\
+<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-BUS Bus Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+<busconfig>
+  <!-- Allow the SentryUSB BLE daemon (running as root) to own its bus name
+       and expose GATT objects so BlueZ can call GetManagedObjects on them.
+       Required on Pi 5 / Bookworm where D-Bus policies are stricter. -->
+
+  <policy user="root">
+    <allow own="com.sentryusb.ble"/>
+    <allow send_destination="com.sentryusb.ble"/>
+    <allow send_interface="org.freedesktop.DBus.ObjectManager"/>
+    <allow send_interface="org.freedesktop.DBus.Properties"/>
+    <allow send_interface="org.bluez.GattService1"/>
+    <allow send_interface="org.bluez.GattCharacteristic1"/>
+    <allow send_interface="org.bluez.GattDescriptor1"/>
+    <allow send_interface="org.bluez.LEAdvertisement1"/>
+  </policy>
+
+  <policy context="default">
+    <allow send_destination="com.sentryusb.ble"/>
+  </policy>
+</busconfig>
+"""
+
+
+def maybe_install_dbus_policy():
+    """Auto-install the D-Bus policy file if it is missing, then re-exec.
+
+    Without this file, strict D-Bus systems (Pi 5 / Bookworm) block the daemon
+    from owning 'com.sentryusb.ble', so BlueZ falls back to PipeWire's GATT
+    services (audio volume/stream UUIDs) — causing iOS to cache the wrong GATT
+    and fail BLE pairing indefinitely until the iOS Bluetooth cache is cleared.
+
+    Called before the D-Bus bus is connected so the re-exec takes full effect.
+    """
+    if os.path.exists(_DBUS_POLICY_PATH):
+        return
+    log.warning('D-Bus policy missing — auto-installing and restarting daemon')
+    try:
+        os.makedirs('/etc/dbus-1/system.d', exist_ok=True)
+        with open(_DBUS_POLICY_PATH, 'w') as f:
+            f.write(_DBUS_POLICY_XML)
+        subprocess.run(['systemctl', 'reload', 'dbus'], timeout=10, check=False)
+        import time; time.sleep(1)  # give dbus-daemon a moment to re-read config
+        log.info('D-Bus policy installed — re-execing to claim com.sentryusb.ble')
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+    except Exception as e:
+        log.error(f'Could not auto-install D-Bus policy: {e} — GATT may not be served correctly')
+
 # BlueZ D-Bus constants
 BLUEZ_SERVICE = 'org.bluez'
 LE_ADVERTISING_MANAGER_IFACE = 'org.bluez.LEAdvertisingManager1'
@@ -906,15 +961,83 @@ def verify_gatt_objects(app):
                  f'{len(service_uuids)} services {service_uuids}, '
                  f'{len(chrc_uuids)} characteristics')
         if len(service_uuids) < 2:
-            log.error(f'GATT self-test FAILED: expected 2 services, got {len(service_uuids)}')
+            log.error(f'GATT self-test FAILED: expected 2 services, got {len(service_uuids)} — exiting for systemd restart')
+            mainloop.quit()
+            sys.exit(1)
         if len(chrc_uuids) < 7:
-            log.error(f'GATT self-test FAILED: expected 7+ characteristics, got {len(chrc_uuids)}')
+            log.error(f'GATT self-test FAILED: expected 7+ characteristics, got {len(chrc_uuids)} — exiting for systemd restart')
+            mainloop.quit()
+            sys.exit(1)
     except Exception as e:
         log.error(f'GATT self-test exception: {e}')
     return False  # don't repeat GLib timeout
 
 
+def setup_connection_monitoring(bus, adapter_path):
+    """Subscribe to BlueZ D-Bus signals to log BLE central connect/disconnect
+    events.  Without this, the daemon has no visibility into whether iOS
+    actually established a connection — making pairing failures hard to debug.
+
+    Also catches cases where iOS connects but GATT service discovery fails
+    (seen as a connection log with no subsequent characteristic read logs).
+    """
+    def on_properties_changed(interface, changed, invalidated, path=None):
+        if interface != 'org.bluez.Device1':
+            return
+        if path is None or not str(path).startswith(adapter_path):
+            return
+        if 'Connected' not in changed:
+            return
+        if changed['Connected']:
+            log.info(f'BLE central connected: {path}')
+        else:
+            log.info(f'BLE central disconnected: {path}')
+
+    bus.add_signal_receiver(
+        on_properties_changed,
+        dbus_interface=DBUS_PROP_IFACE,
+        signal_name='PropertiesChanged',
+        path_keyword='path',
+        bus_name=BLUEZ_SERVICE)
+
+
+def setup_bluez_restart_detection(bus):
+    """Exit when BlueZ (org.bluez) disappears or restarts on D-Bus.
+
+    When bluetoothd crashes or is restarted by systemd, all registered GATT
+    applications and advertisements are dropped silently.  The daemon's mainloop
+    stays alive but BlueZ no longer serves our custom GATT — it falls back to
+    PipeWire audio services (0x1844, 0x184D, 0x184F), causing iOS to cache the
+    wrong GATT and fail BLE reconnection until Bluetooth is toggled.
+
+    Exiting here lets systemd's Restart=always relaunch the daemon fresh, which
+    re-registers GATT with the newly started bluetoothd.  Combined with
+    BindsTo=bluetooth.service in the service unit, this ensures the daemon is
+    always in sync with bluetoothd's lifecycle.
+    """
+    def on_name_owner_changed(name, old_owner, new_owner):
+        if name != BLUEZ_SERVICE:
+            return
+        if old_owner and not new_owner:
+            log.warning('BlueZ (org.bluez) disappeared — GATT registration lost, exiting for systemd restart')
+            mainloop.quit()
+            sys.exit(1)
+        if not old_owner and new_owner:
+            # BlueZ came back after being absent; our GATT registration is still
+            # gone so exit to let systemd restart us cleanly against the new instance.
+            log.info('BlueZ (org.bluez) reappeared — exiting for clean GATT re-registration')
+            mainloop.quit()
+            sys.exit(1)
+
+    bus.add_signal_receiver(
+        on_name_owner_changed,
+        dbus_interface='org.freedesktop.DBus',
+        signal_name='NameOwnerChanged',
+        bus_name='org.freedesktop.DBus')
+
+
 def main():
+    maybe_install_dbus_policy()
     global mainloop, API_BASE
     dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
     bus = dbus.SystemBus()
@@ -940,6 +1063,15 @@ def main():
         sys.exit(1)
 
     log.info(f'Using adapter: {adapter_path}')
+
+    # Subscribe to BlueZ D-Bus signals so connection events are logged.
+    # This makes it possible to see whether iOS actually connects to the Pi
+    # versus failing at the BLE advertisement/discovery stage.
+    setup_connection_monitoring(bus, adapter_path)
+
+    # Exit (triggering systemd restart) if bluetoothd restarts, which drops
+    # our GATT registration and causes iOS to see stale/wrong services.
+    setup_bluez_restart_detection(bus)
 
     # Power on adapter and set unique BLE name
     adapter_props = dbus.Interface(
