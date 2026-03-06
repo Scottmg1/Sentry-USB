@@ -121,9 +121,14 @@ function BlePairButton() {
     fetch("/api/system/ble-status?quick=true")
       .then(r => r.json())
       .then(data => {
-        if (data.status === "paired" || data.status === "keys_generated") {
+        if (data.status === "paired") {
           setBleState("paired")
           setBleMsg("Paired — click to re-pair")
+        } else if (data.status === "keys_generated") {
+          // Keys exist and VIN is set but pairing with the car has not been
+          // confirmed yet — show idle so the user knows to pair.
+          setBleState("idle")
+          setBleMsg("")
         }
       })
       .catch(() => { })

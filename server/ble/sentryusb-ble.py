@@ -855,11 +855,14 @@ class APIResponseCharacteristic(Characteristic):
 class Advertisement(dbus.service.Object):
     PATH_BASE = '/org/bluez/sentryusb/advertisement'
 
-    def __init__(self, bus, index, advertising_type, ad_manager, local_name=None):
+    def __init__(self, bus, index, advertising_type, ad_manager,
+                 service_manager=None, app=None, local_name=None):
         self.path = self.PATH_BASE + str(index)
         self.bus = bus
         self.ad_type = advertising_type
         self.ad_manager = ad_manager
+        self.service_manager = service_manager
+        self.app = app
         self.local_name = local_name
         # Only advertise primary service UUID.
         # A 31-byte LE advertisement payload cannot fit two 128-bit UUIDs
@@ -898,21 +901,48 @@ class Advertisement(dbus.service.Object):
         # timeout).  Schedule a re-registration so the Pi stays discoverable.
         GLib.timeout_add(2000, self._reregister)
 
-    def _reregister(self, retry_count=0):
+    def _reregister(self, retry_count=0, adapter_was_reset=False):
         max_retries = 5
         log.info(f'Re-registering advertisement... (attempt {retry_count + 1})')
 
+        def on_success():
+            log.info('Advertisement registered')
+            if adapter_was_reset and self.service_manager and self.app:
+                # The Bluetooth adapter was fully reset (LEAdvertisingManager1
+                # was gone).  When the adapter resets, BlueZ silently drops all
+                # registered GATT applications too — there is no Release signal
+                # for GATT, so the daemon has no other way to detect this.
+                # Re-register the GATT application now that the adapter is back.
+                log.warning('Adapter was reset — GATT application was dropped, re-registering')
+                def on_gatt_ok():
+                    log.info('GATT application re-registered after adapter reset')
+                def on_gatt_err(error):
+                    log.error(f'Failed to re-register GATT after adapter reset: {error}')
+                self.service_manager.RegisterApplication(
+                    self.app.get_path(), {},
+                    reply_handler=on_gatt_ok,
+                    error_handler=on_gatt_err)
+
         def on_reregister_error(error):
+            # "UnknownObject / doesn't exist" on LEAdvertisingManager1 means the
+            # Bluetooth adapter was reset internally (Destroy Adv Monitor Manager
+            # in bluetoothd logs).  Flag this so we know to also re-register GATT
+            # once the adapter comes back up and the advertisement succeeds.
+            error_str = str(error)
+            is_adapter_reset = ('UnknownObject' in error_str or
+                                 "doesn't exist" in error_str or
+                                 'org.bluez.Error.Failed' in error_str)
             if retry_count < max_retries:
                 delay = min(2000 * (2 ** retry_count), 30000)  # exponential backoff, max 30s
                 log.warning(f'Advertisement re-registration failed (attempt {retry_count + 1}/{max_retries + 1}): {error} — retrying in {delay}ms')
-                GLib.timeout_add(delay, self._reregister, retry_count + 1)
+                GLib.timeout_add(delay, self._reregister, retry_count + 1,
+                                 adapter_was_reset or is_adapter_reset)
             else:
                 log.error(f'Advertisement re-registration failed after {max_retries + 1} attempts: {error} — GATT server still running but Pi is not discoverable')
 
         self.ad_manager.RegisterAdvertisement(
             self.get_path(), {},
-            reply_handler=register_ad_cb,
+            reply_handler=on_success,
             error_handler=on_reregister_error)
         return False  # don't repeat
 
@@ -1098,7 +1128,9 @@ def main():
     ad_manager = dbus.Interface(
         bus.get_object(BLUEZ_SERVICE, adapter_path), LE_ADVERTISING_MANAGER_IFACE)
 
-    adv = Advertisement(bus, 0, 'peripheral', ad_manager, local_name=ble_name)
+    adv = Advertisement(bus, 0, 'peripheral', ad_manager,
+                        service_manager=service_manager, app=app,
+                        local_name=ble_name)
     ad_manager.RegisterAdvertisement(
         adv.get_path(), {},
         reply_handler=register_ad_cb,
