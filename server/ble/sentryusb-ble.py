@@ -901,42 +901,41 @@ class Advertisement(dbus.service.Object):
         # timeout).  Schedule a re-registration so the Pi stays discoverable.
         GLib.timeout_add(2000, self._reregister)
 
-    def _reregister(self, retry_count=0, adapter_was_reset=False):
+    def _reregister(self, retry_count=0):
         max_retries = 5
         log.info(f'Re-registering advertisement... (attempt {retry_count + 1})')
 
         def on_success():
             log.info('Advertisement registered')
-            if adapter_was_reset and self.service_manager and self.app:
-                # The Bluetooth adapter was fully reset (LEAdvertisingManager1
-                # was gone).  When the adapter resets, BlueZ silently drops all
-                # registered GATT applications too — there is no Release signal
-                # for GATT, so the daemon has no other way to detect this.
-                # Re-register the GATT application now that the adapter is back.
-                log.warning('Adapter was reset — GATT application was dropped, re-registering')
-                def on_gatt_ok():
-                    log.info('GATT application re-registered after adapter reset')
-                def on_gatt_err(error):
-                    log.error(f'Failed to re-register GATT after adapter reset: {error}')
-                self.service_manager.RegisterApplication(
-                    self.app.get_path(), {},
-                    reply_handler=on_gatt_ok,
-                    error_handler=on_gatt_err)
+            if not (self.service_manager and self.app):
+                return
+            # Always attempt GATT re-registration after advertisement Release.
+            # The adapter internally resets on every iOS connect/disconnect
+            # (visible as "Destroy Adv Monitor Manager" in bluetoothd logs),
+            # silently dropping all GATT applications with no signal to the
+            # daemon.  The reset can be fast enough (~1s) that the first
+            # advertisement re-registration attempt succeeds without errors,
+            # so we cannot rely on error detection to know GATT was dropped.
+            # Re-registering unconditionally is safe: BlueZ returns AlreadyExists
+            # if GATT is still registered (no disruption), and re-registers
+            # cleanly if it was dropped.
+            def on_gatt_ok():
+                log.info('GATT application re-registered')
+            def on_gatt_err(error):
+                if 'AlreadyExists' in str(error):
+                    pass  # GATT was still registered — no action needed
+                else:
+                    log.error(f'Failed to re-register GATT after advertisement release: {error}')
+            self.service_manager.RegisterApplication(
+                self.app.get_path(), {},
+                reply_handler=on_gatt_ok,
+                error_handler=on_gatt_err)
 
         def on_reregister_error(error):
-            # "UnknownObject / doesn't exist" on LEAdvertisingManager1 means the
-            # Bluetooth adapter was reset internally (Destroy Adv Monitor Manager
-            # in bluetoothd logs).  Flag this so we know to also re-register GATT
-            # once the adapter comes back up and the advertisement succeeds.
-            error_str = str(error)
-            is_adapter_reset = ('UnknownObject' in error_str or
-                                 "doesn't exist" in error_str or
-                                 'org.bluez.Error.Failed' in error_str)
             if retry_count < max_retries:
                 delay = min(2000 * (2 ** retry_count), 30000)  # exponential backoff, max 30s
                 log.warning(f'Advertisement re-registration failed (attempt {retry_count + 1}/{max_retries + 1}): {error} — retrying in {delay}ms')
-                GLib.timeout_add(delay, self._reregister, retry_count + 1,
-                                 adapter_was_reset or is_adapter_reset)
+                GLib.timeout_add(delay, self._reregister, retry_count + 1)
             else:
                 log.error(f'Advertisement re-registration failed after {max_retries + 1} attempts: {error} — GATT server still running but Pi is not discoverable')
 
