@@ -53,6 +53,9 @@ source /root/bin/envsetup.sh
 
 # Reason passed to awake_start so nudge log lines show what is keeping the car awake.
 export KEEP_AWAKE_REASON=Archive
+# Separate PID file from the web UI keep-awake so the two loops don't
+# overwrite each other's PID and orphan the other background process.
+export KEEP_AWAKE_PID_FILE=/tmp/keep_awake_archive_pid
 
 # led triggers may have been built as modules, so try
 # to load them

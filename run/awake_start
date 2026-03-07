@@ -228,9 +228,12 @@ else
       ;;
     3)
       # Nudge car periodically without using Sentry Mode
+      # Use a caller-specific PID file so archive and web UI keep-awake
+      # loops don't overwrite each other's PID and orphan the other process.
+      local pid_file="${KEEP_AWAKE_PID_FILE:-/tmp/keep_awake_task_pid}"
       log "Starting background task to keep car awake."
       nudge &
-      echo $! > /tmp/keep_awake_task_pid
+      echo $! > "$pid_file"
       ;;
     *)
       log "Invalid or no SENTRY_CASE defined."
