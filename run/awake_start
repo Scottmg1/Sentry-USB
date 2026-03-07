@@ -58,28 +58,31 @@ else
       if [[ -n "${TESLA_BLE_VIN:+x}" ]]
       # use Tesla BLE API to nudge the car
       then
-        if ! BLE_response=$(/root/bin/tesla-control -ble -key-file /root/.ble/key_private.pem -vin "${TESLA_BLE_VIN^^}" charge-port-close 2>&1)
+        # Stop the GATT daemon so tesla-control gets exclusive access to hci0.
+        # sentryusb-ble holding the adapter causes "context deadline exceeded" and
+        # "io: read/write on closed pipe" errors during BLE commands.
+        systemctl stop sentryusb-ble 2>/dev/null || true
+        BLE_response=$(/root/bin/tesla-control -ble -key-file /root/.ble/key_private.pem -vin "${TESLA_BLE_VIN^^}" charge-port-close 2>&1) || true
+        systemctl start sentryusb-ble 2>/dev/null || true
+        if [[ $BLE_response == *"already closed"* || $BLE_response == *"cable connected"* ]]
         then
-          # check false-negative BLE responses
-          if [[ ( "$BLE_response" != *"already closed"* ) && ( "$BLE_response" != *"cable connected"* ) ]]
-          then
-            # log error and retry
-            log "Tesla BLE: Failed to nudge the car. Response: $BLE_response"
-            if [ "$retry" -lt "3" ]
-            then
-              log "Tesla BLE: Retrying after 30s (attempt $((retry+1))/3)..."
-              retry=$((retry+1))
-              sleep 30
-              continue
-            else
-              log "Tesla BLE: Giving up after 3 attempts."
-              break
-            fi
-          else
-            log "Tesla BLE: Nudge OK [$(nudge_label)] (charge port already closed/cable connected)."
-          fi
-        else
+          log "Tesla BLE: Nudge OK [$(nudge_label)] (charge port already closed/cable connected)."
+        elif [[ -z "$BLE_response" || $BLE_response != *"Error"* ]]
+        then
           log "Tesla BLE: Nudge OK [$(nudge_label)]."
+        else
+          # log error and retry
+          log "Tesla BLE: Failed to nudge the car. Response: $BLE_response"
+          if [ "$retry" -lt "3" ]
+          then
+            log "Tesla BLE: Retrying after 30s (attempt $((retry+1))/3)..."
+            retry=$((retry+1))
+            sleep 30
+            continue
+          else
+            log "Tesla BLE: Giving up after 3 attempts."
+            break
+          fi
         fi
 
       elif [[ -n "${KEEP_AWAKE_WEBHOOK_URL:+x}" ]]
@@ -194,12 +197,14 @@ else
       elif [[ -n "${TESLA_BLE_VIN:+x}" ]]
       # Use Tesla BLE API to enable Sentry Mode
       then
+        systemctl stop sentryusb-ble 2>/dev/null || true
         if /root/bin/tesla-control -ble -key-file /root/.ble/key_private.pem -vin "${TESLA_BLE_VIN^^}" sentry-mode on
         then
           log "Tesla BLE: Command sent to enable Sentry Mode."
         else
           log "Tesla BLE: Failed to set Sentry Mode."
         fi
+        systemctl start sentryusb-ble 2>/dev/null || true
       elif [[ -n "${KEEP_AWAKE_WEBHOOK_URL:+x}" ]]
       # Use webhook to send start command
       then

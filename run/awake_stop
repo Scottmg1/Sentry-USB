@@ -93,12 +93,14 @@ case "${SENTRY_CASE}" in
     elif [[ -n "${TESLA_BLE_VIN:+x}" ]]
     then
       # Use Tesla BLE API to disable Sentry Mode
+      systemctl stop sentryusb-ble 2>/dev/null || true
       if /root/bin/tesla-control -ble -key-file /root/.ble/key_private.pem -vin "${TESLA_BLE_VIN^^}" sentry-mode off
       then
         log "Tesla BLE: Command sent to disable Sentry Mode."
       else
         log "Tesla BLE: Failed to set Sentry Mode."
       fi
+      systemctl start sentryusb-ble 2>/dev/null || true
 
     elif [[ -n "${KEEP_AWAKE_WEBHOOK_URL:+x}" ]]
     # Use webhook to send stop message
