@@ -470,8 +470,11 @@ func checkBLE() healthCategory {
 	}
 
 	// --- GATT & Advertisement (from daemon journal) ---
+	// Use -b (current boot) instead of --since today so that one-time
+	// startup messages (GATT registration, advertisement) remain visible
+	// even after midnight.
 	journalOut, _ := exec.Command("journalctl", "-u", "sentryusb-ble",
-		"--since", "today", "--no-pager", "-q", "--output=cat").Output()
+		"-b", "--no-pager", "-q", "--output=cat").Output()
 	journal := string(journalOut)
 
 	if strings.Contains(journal, "GATT application registered") {
@@ -505,7 +508,7 @@ func checkBLE() healthCategory {
 	if strings.Contains(journal, "GetManagedObjects called") {
 		// Count calls
 		count := strings.Count(journal, "GetManagedObjects called")
-		items = append(items, healthItem{"GetManagedObjects calls", statusPass, fmt.Sprintf("Called %d time(s) today", count)})
+		items = append(items, healthItem{"GetManagedObjects calls", statusPass, fmt.Sprintf("Called %d time(s) since boot", count)})
 	} else {
 		items = append(items, healthItem{"GetManagedObjects calls", statusWarn, "No calls logged (BlueZ may not be querying GATT)"})
 	}
@@ -520,9 +523,9 @@ func checkBLE() healthCategory {
 		}
 	}
 	if errorCount == 0 {
-		items = append(items, healthItem{"Recent BLE errors", statusPass, "None today"})
+		items = append(items, healthItem{"Recent BLE errors", statusPass, "None since boot"})
 	} else {
-		detail := fmt.Sprintf("%d error(s) today", errorCount)
+		detail := fmt.Sprintf("%d error(s) since boot", errorCount)
 		if lastError != "" {
 			// Truncate to last 100 chars
 			if len(lastError) > 100 {
