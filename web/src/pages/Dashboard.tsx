@@ -378,8 +378,10 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* Keep-Awake card */}
-      <KeepAwakeCard />
+      {/* Keep-Awake card — z-20 so the duration dropdown paints above the archive card */}
+      <div className="relative z-20">
+        <KeepAwakeCard />
+      </div>
 
       {/* Archive progress */}
       <div className="glass-card p-4">
