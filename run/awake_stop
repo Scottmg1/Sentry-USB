@@ -124,7 +124,7 @@ case "${SENTRY_CASE}" in
     fi
   ;;
   3)
-    local pid_file="${KEEP_AWAKE_PID_FILE:-/tmp/keep_awake_task_pid}"
+    pid_file="${KEEP_AWAKE_PID_FILE:-/tmp/keep_awake_task_pid}"
     if [ -e "$pid_file" ]
     then
       log "Stopping background task that is keeping car awake."
