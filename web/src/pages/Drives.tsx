@@ -217,7 +217,8 @@ export default function Drives() {
   // ── Init map ──
   useEffect(() => {
     if (!mapRef.current || mapInstance.current) return
-    const map = L.map(mapRef.current, { zoomControl: true }).setView([39.8, -98.6], 5)
+    const map = L.map(mapRef.current, { zoomControl: false }).setView([39.8, -98.6], 5)
+    L.control.zoom({ position: "bottomright" }).addTo(map)
     const initCfg = TILE_LAYERS.dark
     tileLayerRef.current = L.tileLayer(initCfg.url, {
       attribution: initCfg.attribution,
