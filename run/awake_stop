@@ -6,12 +6,7 @@ then
 fi
 
 case "${SENTRY_CASE}" in
-  1)
-    # Case 1: Sentry Mode is always on independently of archiving.
-    # Do NOT disable it here — the car manages it on its own.
-    log "Keep-awake ended. Sentry Mode left enabled (Case 1)."
-  ;;
-  2)
+  1 | 2)
     if [[ ( -n "${TESLAFI_API_TOKEN:+x}" ) ]]
     # Use TeslaFi API to disable Sentry Mode
     then

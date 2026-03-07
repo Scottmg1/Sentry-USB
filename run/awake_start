@@ -112,11 +112,7 @@ else
   }
 
   case "${SENTRY_CASE}" in
-    1)
-      # Sentry Mode should already be enabled
-      log "Skip sending command to enable Sentry Mode."
-      ;;
-    2)
+    1 | 2)
       if [[ ( -n "${TESLAFI_API_TOKEN:+x}" ) ]]
       # Use TeslaFi API to enable Sentry Mode
       then
