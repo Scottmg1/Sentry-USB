@@ -987,6 +987,17 @@ function set_time () {
   log "Failed to set time"
 }
 
+function timesyncloop {
+  echo -n timesyncloop > /proc/self/comm
+  while true
+  do
+    sleep "${TIME_SYNC_INTERVAL:-3600}"
+    if ping -c 1 -W 3 time.google.com &>/dev/null; then
+      set_time
+    fi
+  done
+}
+
 function snapshotloop {
   echo -n snapshotloop > /proc/self/comm
   while true
@@ -1121,6 +1132,7 @@ then
 fi
 logrotator &
 wifichecker &
+timesyncloop &
 
 fix_errors_in_images
 
