@@ -96,8 +96,8 @@ func (s *Store) Load() error {
 
 // Save writes the current data to disk.
 func (s *Store) Save() error {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.saveLocked()
 }
 

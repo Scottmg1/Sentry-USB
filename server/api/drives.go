@@ -233,9 +233,18 @@ declare -F log > /dev/null 2>&1 || {
 `
 
 // startKeepAwake runs awake_start in the background to keep the car from sleeping.
-func startKeepAwake() {
+// reason is shown in nudge log lines (e.g. "Drive Processing", "Manual", "Auto Keep Awake").
+// expiresAt, if non-zero, is passed so nudge logs can show time remaining.
+func startKeepAwake(reason string, expiresAt time.Time) {
 	go func() {
-		cmd := exec.Command("/bin/bash", "-c", awakeShellPreamble+"/root/bin/awake_start")
+		preamble := awakeShellPreamble
+		if reason != "" {
+			preamble += fmt.Sprintf("export KEEP_AWAKE_REASON=%q\n", reason)
+		}
+		if !expiresAt.IsZero() {
+			preamble += fmt.Sprintf("export KEEP_AWAKE_EXPIRES_AT=%d\n", expiresAt.Unix())
+		}
+		cmd := exec.Command("/bin/bash", "-c", preamble+"/root/bin/awake_start")
 		if err := cmd.Run(); err != nil {
 			log.Printf("[drives] Warning: awake_start failed: %v", err)
 		}
@@ -298,7 +307,7 @@ func (dh *DriveHandlers) processFiles(w http.ResponseWriter, r *http.Request) {
 	// sleep after archiving; archiveloop will stop its own keep-awake task.
 	go func() {
 		if !postArchive {
-			startKeepAwake()
+			startKeepAwake("Drive Processing", time.Time{})
 			defer stopKeepAwake()
 		}
 
@@ -365,7 +374,7 @@ func (dh *DriveHandlers) reprocessAll(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go func() {
-		startKeepAwake()
+		startKeepAwake("Drive Processing", time.Time{})
 		defer stopKeepAwake()
 
 		archiveLog("Starting reprocess (all) on %s", clipsDir)

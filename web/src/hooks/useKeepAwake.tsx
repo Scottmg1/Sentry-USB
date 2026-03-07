@@ -30,6 +30,9 @@ export function KeepAwakeProvider({ children }: { children: React.ReactNode }) {
     const [mode, setMode] = useState<string | null>(null)
     const lastHeartbeat = useRef(0)
     const activityTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+    // Timestamp of the last start/stop mutation. Polls that were in-flight
+    // before a mutation are ignored so they can't overwrite the fresh state.
+    const lastMutation = useRef(0)
 
     // Load user preference
     useEffect(() => {
@@ -46,10 +49,13 @@ export function KeepAwakeProvider({ children }: { children: React.ReactNode }) {
         let mounted = true
 
         async function poll() {
+            const startedAt = Date.now()
             try {
                 const res = await fetch("/api/keep-awake/status")
                 const data: KeepAwakeStatus = await res.json()
-                if (mounted) setStatus(data)
+                // Ignore polls that started before the last mutation to prevent
+                // stale responses from overwriting the optimistic UI update.
+                if (mounted && startedAt >= lastMutation.current) setStatus(data)
             } catch { /* ignore */ }
         }
 
@@ -96,6 +102,7 @@ export function KeepAwakeProvider({ children }: { children: React.ReactNode }) {
     }, [mode])
 
     const start = useCallback(async (durationMin: number) => {
+        lastMutation.current = Date.now()
         try {
             const res = await fetch("/api/keep-awake/start", {
                 method: "POST",
@@ -108,9 +115,10 @@ export function KeepAwakeProvider({ children }: { children: React.ReactNode }) {
     }, [])
 
     const stop = useCallback(async () => {
+        lastMutation.current = Date.now()
+        setStatus({ state: "idle", mode: "" })
         try {
             await fetch("/api/keep-awake", { method: "DELETE" })
-            setStatus({ state: "idle", mode: "" })
         } catch { /* ignore */ }
     }, [])
 

@@ -40,6 +40,18 @@ type KeepAwakeManager struct {
 	doneCh chan struct{}
 }
 
+// keepAwakeReasonLabel returns a human-readable reason for nudge log lines.
+func keepAwakeReasonLabel(mode string) string {
+	switch mode {
+	case "manual":
+		return "Manual"
+	case "auto":
+		return "Auto Keep Awake"
+	default:
+		return "Keep Awake"
+	}
+}
+
 // NewKeepAwakeManager creates a new manager with a function to check if the
 // system is busy (archiving or processing drives).
 func NewKeepAwakeManager(isBusy func() bool) *KeepAwakeManager {
@@ -98,7 +110,7 @@ func (m *KeepAwakeManager) Start(mode string, duration time.Duration) error {
 		m.expiresAt = time.Now().Add(duration)
 		keepAwakeLog("Started (mode: %s, duration: %s)", mode, duration)
 		log.Printf("[keep-awake] Started (mode: %s, duration: %s)", mode, duration)
-		go startKeepAwake()
+		go startKeepAwake(keepAwakeReasonLabel(mode), m.expiresAt)
 		go m.expirationWatcher()
 	}
 
@@ -206,7 +218,7 @@ func (m *KeepAwakeManager) waitForIdleThenStart() {
 
 				keepAwakeLog("Started (mode: %s, duration: %s) — archive/processing finished", mode, dur)
 				log.Printf("[keep-awake] Started (mode: %s) — system now idle", mode)
-				go startKeepAwake()
+				go startKeepAwake(keepAwakeReasonLabel(mode), m.expiresAt)
 				go m.expirationWatcher()
 				return
 			}

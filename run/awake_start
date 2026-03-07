@@ -7,6 +7,20 @@ else
   function nudge {
     local retry=1
 
+    # Returns a label like "Archive", "Drive Processing", "Manual (8m left)"
+    function nudge_label {
+      local label="${KEEP_AWAKE_REASON:-Keep Awake}"
+      if [ -n "${KEEP_AWAKE_EXPIRES_AT:-}" ]; then
+        local now remaining
+        now=$(date +%s)
+        remaining=$((KEEP_AWAKE_EXPIRES_AT - now))
+        if [ "$remaining" -gt 0 ]; then
+          label="$label ($((remaining / 60))m left)"
+        fi
+      fi
+      echo "$label"
+    }
+
     while true
     do
       if [[ -n "${TESSIE_API_TOKEN:+x}" ]]
@@ -20,7 +34,7 @@ else
 
         # Extract HTTP status code
         http_status="${http_response: -3}"
-        
+
         # Check if HTTP status code is not 200 (OK)
         if [ "$http_status" != "200" ]
         then
@@ -36,6 +50,8 @@ else
             log "Tessie: Connection to the internet likely broken."
             break
           fi
+        else
+          log "Tessie: Nudge OK [$(nudge_label)] (charge port close command sent)."
         fi
       fi
 
@@ -60,10 +76,10 @@ else
               break
             fi
           else
-            log "Tesla BLE: Nudge OK (charge port already closed/cable connected)."
+            log "Tesla BLE: Nudge OK [$(nudge_label)] (charge port already closed/cable connected)."
           fi
         else
-          log "Tesla BLE: Nudge successful."
+          log "Tesla BLE: Nudge OK [$(nudge_label)]."
         fi
 
       elif [[ -n "${KEEP_AWAKE_WEBHOOK_URL:+x}" ]]
@@ -73,8 +89,6 @@ else
           -d "{\"awake_command\":\"nudge\"}" \
           -H "Content-Type: application/json" \
           "$KEEP_AWAKE_WEBHOOK_URL")
-        
-        log "Awake Webhook: Command sent \"nudge\""
 
         # Extract HTTP status code
         http_status="${http_response: -3}"
@@ -83,7 +97,9 @@ else
         if [ "$http_status" -lt 200 ] || [ "$http_status" -ge 300 ]
         then
           # Log an error
-          log "Awake Webhook: Failed to send command \"nudge\". Check if your KEEP_AWAKE_WEBHOOK_URL is set correctly. If it is, check the service receiving webhooks for logs."
+          log "Awake Webhook: Failed to send nudge. Check if your KEEP_AWAKE_WEBHOOK_URL is set correctly. If it is, check the service receiving webhooks for logs."
+        else
+          log "Awake Webhook: Nudge sent [$(nudge_label)]."
         fi
       fi
 

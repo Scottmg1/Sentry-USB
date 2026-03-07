@@ -301,6 +301,9 @@ function check_and_configure_tesla_ble () {
       "$install_path/tesla-keygen" -key-file /root/.ble/key_private.pem -output /root/.ble/key_public.pem create
       chmod 600 /root/.ble/key_private.pem
       chmod 644 /root/.ble/key_public.pem
+      # Mark these as freshly generated so the web UI knows pairing hasn't been
+      # confirmed yet and won't falsely show "BLE Paired" on a new install.
+      touch /root/.ble/key_pending_pairing
       log_progress "Generated keys for Tesla BLE interface."
     elif timeout 30 "$install_path/tesla-control" -ble -vin "${TESLA_BLE_VIN^^}" body-controller-state; then
       if timeout 30 "$install_path/tesla-control" -ble -vin "${TESLA_BLE_VIN^^}" session-info /root/.ble/key_private.pem infotainment; then

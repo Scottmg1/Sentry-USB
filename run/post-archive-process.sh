@@ -120,6 +120,32 @@ PROCESSED=$?
 
 log "Drive processing complete. $PROCESSED directories processed."
 
+# Sync drive-data.json to the rsync archive server.
+# For CIFS/NFS archive types, the Go server's SyncToArchive() handles this
+# while /mnt/archive is still mounted.  For rsync archive there is no local
+# mount, so SyncToArchive() silently skips — we handle it here instead.
+if [ -n "${RSYNC_SERVER:-}" ] && [ -n "${RSYNC_USER:-}" ] && [ -f /mutable/drive-data.json ]; then
+  log "Syncing drive-data.json to rsync archive..."
+  if rsync -avh --no-perms --omit-dir-times --timeout=60 \
+      /mutable/drive-data.json \
+      "$RSYNC_USER@$RSYNC_SERVER:${RSYNC_PATH}/drive-data.json" > /dev/null 2>&1; then
+    log "Synced drive-data.json to archive ($(wc -c < /mutable/drive-data.json) bytes)."
+  else
+    log "Warning: failed to sync drive-data.json to rsync archive."
+  fi
+fi
+
+# For rclone archive (no local mount; rclone pushes directly to cloud storage).
+if [ -n "${RCLONE_DRIVE:-}" ] && [ -f /mutable/drive-data.json ]; then
+  log "Syncing drive-data.json to rclone archive..."
+  if rclone --config /root/.config/rclone/rclone.conf copy \
+      /mutable/drive-data.json "$RCLONE_DRIVE:${RCLONE_PATH}/drive-data.json" > /dev/null 2>&1; then
+    log "Synced drive-data.json to rclone archive ($(wc -c < /mutable/drive-data.json) bytes)."
+  else
+    log "Warning: failed to sync drive-data.json to rclone archive."
+  fi
+fi
+
 # Send notification only if new drives were added
 if [ -x /root/bin/send-push-message ]; then
   STATS=$(curl -sf "${API_URL}/api/drives/stats" 2>/dev/null)

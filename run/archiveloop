@@ -51,6 +51,9 @@ export WRAPS_MOUNT=/mnt/wraps
 # read the setup variables and define other environment variables and functions
 source /root/bin/envsetup.sh
 
+# Reason passed to awake_start so nudge log lines show what is keeping the car awake.
+export KEEP_AWAKE_REASON=Archive
+
 # led triggers may have been built as modules, so try
 # to load them
 if ! grep -q timer "$STATUSLED/trigger"
