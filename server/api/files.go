@@ -92,14 +92,18 @@ func (h *handlers) listFiles(w http.ResponseWriter, r *http.Request) {
 
 	var files []fileEntry
 	for _, e := range entries {
-		info, err := e.Info()
+		// Use os.Stat (not e.Info) to follow symlinks and get the
+		// actual target size. TeslaCam clips are symlinks into snapshot
+		// mounts, and e.Info returns the symlink's own size (~100 B).
+		entryPath := filepath.Join(cleanPath, e.Name())
+		info, err := os.Stat(entryPath)
 		if err != nil {
 			continue
 		}
 		files = append(files, fileEntry{
 			Name:    e.Name(),
 			Path:    filepath.Join(reqPath, e.Name()),
-			IsDir:   e.IsDir(),
+			IsDir:   info.IsDir(),
 			Size:    info.Size(),
 			ModTime: info.ModTime().Format("2006-01-02T15:04:05Z"),
 		})
