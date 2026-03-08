@@ -95,8 +95,8 @@ function process_clips_dir() {
       return 0
     fi
 
-    # Log progress and update Live Activity every 60 seconds
-    if [ $((elapsed - last_progress_log)) -ge 60 ]; then
+    # Log progress and update Live Activity every 15 seconds
+    if [ $((elapsed - last_progress_log)) -ge 15 ]; then
       PROCESSED=$(echo "$STATUS" | grep -o '"processed_count":[0-9]*' | cut -d: -f2)
       ROUTES=$(echo "$STATUS" | grep -o '"routes_count":[0-9]*' | cut -d: -f2)
       log "Still processing $clips_dir... (${elapsed}s elapsed, ${PROCESSED:-?} files processed, ${ROUTES:-?} routes)"

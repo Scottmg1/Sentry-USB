@@ -1,5 +1,6 @@
 #!/bin/bash -eu
 # Send Live Activity start/update/end to paired iOS devices via the notification backend.
+# Uses both push-to-start (native) and silent push (fallback) for reliability.
 # Usage:
 #   send-live-activity start [total_files]
 #   send-live-activity update <phase> <current> <total>
@@ -18,6 +19,7 @@ DEVICE_NAME="${NOTIFICATION_TITLE:-SentryUSB}"
 case "$ACTION" in
   start)
     TOTAL="${2:-0}"
+    # Push-to-start (native Live Activity start)
     curl -sf -X POST \
       -H "Content-Type: application/json" \
       -H "X-Device-Secret: $MOBILE_PUSH_SECRET" \
@@ -28,6 +30,16 @@ case "$ACTION" in
         \"content_state\": {\"phase\": \"archiving\", \"current\": 0, \"total\": ${TOTAL}, \"isArchiving\": true}
       }" \
       "${BACKEND_URL}/start-activity" > /dev/null 2>&1 || true
+    # Silent push fallback (wakes app to start activity)
+    curl -sf -X POST \
+      -H "Content-Type: application/json" \
+      -H "X-Device-Secret: $MOBILE_PUSH_SECRET" \
+      -d "{
+        \"device_id\": \"${MOBILE_PUSH_DEVICE_ID}\",
+        \"silent\": true,
+        \"live_activity\": {\"action\": \"start\", \"phase\": \"archiving\", \"current\": 0, \"total\": ${TOTAL}, \"device_name\": \"${DEVICE_NAME}\"}
+      }" \
+      "${BACKEND_URL}/send" > /dev/null 2>&1 || true
     ;;
   update)
     PHASE="${2:-processing}"
@@ -54,5 +66,15 @@ case "$ACTION" in
         \"event\": \"end\"
       }" \
       "${BACKEND_URL}/send-activity-update" > /dev/null 2>&1 || true
+    # Silent push fallback to end activity
+    curl -sf -X POST \
+      -H "Content-Type: application/json" \
+      -H "X-Device-Secret: $MOBILE_PUSH_SECRET" \
+      -d "{
+        \"device_id\": \"${MOBILE_PUSH_DEVICE_ID}\",
+        \"silent\": true,
+        \"live_activity\": {\"action\": \"end\", \"phase\": \"${PHASE}\"}
+      }" \
+      "${BACKEND_URL}/send" > /dev/null 2>&1 || true
     ;;
 esac
