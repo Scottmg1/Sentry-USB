@@ -67,6 +67,11 @@ function process_clips_dir() {
 
   log "Processing triggered: $RESPONSE"
 
+  # Start Live Activity for processing phase
+  local total_estimate
+  total_estimate=$(echo "$RESPONSE" | grep -o '"total":[0-9]*' | cut -d: -f2 || echo "0")
+  /root/bin/send-live-activity update processing 0 "${total_estimate:-0}" || true
+
   local timeout=1800
   local elapsed=0
   local poll_interval=10
@@ -90,11 +95,12 @@ function process_clips_dir() {
       return 0
     fi
 
-    # Log progress every 60 seconds
+    # Log progress and update Live Activity every 60 seconds
     if [ $((elapsed - last_progress_log)) -ge 60 ]; then
       PROCESSED=$(echo "$STATUS" | grep -o '"processed_count":[0-9]*' | cut -d: -f2)
       ROUTES=$(echo "$STATUS" | grep -o '"routes_count":[0-9]*' | cut -d: -f2)
       log "Still processing $clips_dir... (${elapsed}s elapsed, ${PROCESSED:-?} files processed, ${ROUTES:-?} routes)"
+      /root/bin/send-live-activity update processing "${PROCESSED:-0}" "${total_estimate:-0}" || true
       last_progress_log=$elapsed
     fi
   done

@@ -765,6 +765,7 @@ function archive_teslacam_clips () {
     fi
     message+=" starting at $(date)"
     /root/bin/send-push-message "$NOTIFICATION_TITLE:" "$message" start archive || log "failed to send push message"
+    /root/bin/send-live-activity start "$total_count" || true
 
     # setup trigger files
     local -r triggerdir=/tmp/triggers
@@ -862,6 +863,7 @@ function archive_teslacam_clips () {
     local -r delta=$((end_ts - start_ts))
     message+=" in $(convert_seconds_to_nice_time $delta)"
     /root/bin/send-push-message "$NOTIFICATION_TITLE:" "${message}" finish archive
+    /root/bin/send-live-activity end complete || true
 
     if [ -e /tmp/archive-error.log ]
     then

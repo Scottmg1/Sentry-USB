@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -23,6 +25,7 @@ type fileEntry struct {
 type fileListResponse struct {
 	Path    string      `json:"path"`
 	Entries []fileEntry `json:"entries"`
+	Total   *int        `json:"total,omitempty"`
 }
 
 // Allowed base paths for file operations (security)
@@ -49,6 +52,15 @@ func (h *handlers) listFiles(w http.ResponseWriter, r *http.Request) {
 	reqPath := r.URL.Query().Get("path")
 	if reqPath == "" {
 		reqPath = "/"
+	}
+
+	// Pagination params
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	search := strings.ToLower(r.URL.Query().Get("search"))
+
+	if offset < 0 {
+		offset = 0
 	}
 
 	// Map relative paths to allowed bases
@@ -83,15 +95,51 @@ func (h *handlers) listFiles(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	entries, err := os.ReadDir(cleanPath)
+	dirEntries, err := os.ReadDir(cleanPath)
 	if err != nil {
 		// If directory doesn't exist (e.g. gadget not mounted), return empty list
 		writeJSON(w, http.StatusOK, fileListResponse{Path: reqPath, Entries: []fileEntry{}})
 		return
 	}
 
+	// Sort directory entries: directories first, then alphabetically
+	sort.Slice(dirEntries, func(i, j int) bool {
+		iDir := dirEntries[i].IsDir()
+		jDir := dirEntries[j].IsDir()
+		if iDir != jDir {
+			return iDir
+		}
+		return strings.ToLower(dirEntries[i].Name()) < strings.ToLower(dirEntries[j].Name())
+	})
+
+	// Apply search filter on names before stat (avoids unnecessary stat calls)
+	if search != "" {
+		filtered := dirEntries[:0]
+		for _, e := range dirEntries {
+			if strings.Contains(strings.ToLower(e.Name()), search) {
+				filtered = append(filtered, e)
+			}
+		}
+		dirEntries = filtered
+	}
+
+	total := len(dirEntries)
+
+	// Apply pagination if limit is specified
+	if limit > 0 {
+		if offset >= len(dirEntries) {
+			dirEntries = nil
+		} else {
+			end := offset + limit
+			if end > len(dirEntries) {
+				end = len(dirEntries)
+			}
+			dirEntries = dirEntries[offset:end]
+		}
+	}
+
 	var files []fileEntry
-	for _, e := range entries {
+	for _, e := range dirEntries {
 		// Use os.Stat (not e.Info) to follow symlinks and get the
 		// actual target size. TeslaCam clips are symlinks into snapshot
 		// mounts, and e.Info returns the symlink's own size (~100 B).
@@ -113,7 +161,13 @@ func (h *handlers) listFiles(w http.ResponseWriter, r *http.Request) {
 		files = []fileEntry{}
 	}
 
-	writeJSON(w, http.StatusOK, fileListResponse{Path: reqPath, Entries: files})
+	// Include total count when pagination is used
+	resp := fileListResponse{Path: reqPath, Entries: files}
+	if limit > 0 {
+		resp.Total = &total
+	}
+
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (h *handlers) createDir(w http.ResponseWriter, r *http.Request) {
