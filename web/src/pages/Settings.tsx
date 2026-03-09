@@ -1202,7 +1202,15 @@ export default function Settings() {
             {version || "loading..."}
           </p>
           <p className="text-slate-300">
-            <span className="text-slate-500">Project:</span> Sentry USB
+            <span className="text-slate-500">Project:</span>{" "}
+            <a
+              href="https://github.com/Scottmg1/Sentry-USB"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-400 hover:text-blue-300"
+            >
+              Sentry USB
+            </a>
           </p>
           <p className="text-slate-300">
             <span className="text-slate-500">Based on:</span>{" "}

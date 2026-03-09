@@ -413,6 +413,64 @@ function fix_cmdline_txt_modules_load () {
   setup_progress "$(cat "$CMDLINE_PATH")"
 }
 
+# Disable UAS for USB drives known to have issues with the UAS driver on
+# Raspberry Pi.  When UAS fails the kernel offlines the drive, making
+# /backingfiles and /mutable unavailable.  The quirk forces the drive to
+# use the simpler usb-storage driver instead.
+#
+# Each entry is  vendor:product  (hex, from lsusb / dmesg).
+# The ':u' suffix tells usb-storage to ignore UAS for that device.
+KNOWN_UAS_QUIRK_DEVICES=(
+  "04e8:4001"   # Samsung PSSD T7 / T7 Shield / T7 Touch
+  "04e8:4011"   # Samsung PSSD T5 EVO
+  "04e8:61f5"   # Samsung PSSD T5 / T3
+  "174c:55aa"   # ASMedia ASM1051E (common in USB-SATA enclosures)
+  "152d:0578"   # JMicron JMS578 (common in USB-SATA enclosures)
+)
+
+function fix_uas_quirks() {
+  if [ ! -f "$CMDLINE_PATH" ]; then
+    setup_progress "cmdline.txt does not exist, skipping UAS quirks"
+    return
+  fi
+
+  # Build the quirks string from all known devices not already present
+  local existing_quirks
+  existing_quirks=$(grep -P -o 'usb-storage\.quirks=[^\s]*' "$CMDLINE_PATH" || true)
+
+  local new_entries=()
+  for dev in "${KNOWN_UAS_QUIRK_DEVICES[@]}"; do
+    # skip comment-only entries
+    dev="${dev%%#*}"
+    dev="${dev// /}"
+    [ -z "$dev" ] && continue
+
+    if [[ "$existing_quirks" == *"$dev"* ]]; then
+      continue
+    fi
+    new_entries+=("${dev}:u")
+  done
+
+  if [ ${#new_entries[@]} -eq 0 ]; then
+    setup_progress "UAS quirks already up to date"
+    return
+  fi
+
+  local joined
+  joined=$(IFS=,; echo "${new_entries[*]}")
+
+  if [ -z "$existing_quirks" ]; then
+    # No quirks param yet — append one
+    sed -i "s|\$| usb-storage.quirks=${joined}|" "$CMDLINE_PATH"
+  else
+    # Append to existing quirks value (comma-separated)
+    sed -i "s|${existing_quirks}|${existing_quirks},${joined}|" "$CMDLINE_PATH"
+  fi
+
+  setup_progress "Added UAS quirks: ${joined}"
+  setup_progress "cmdline.txt is now: $(cat "$CMDLINE_PATH")"
+}
+
 BACKINGFILES_MOUNTPOINT=/backingfiles
 MUTABLE_MOUNTPOINT=/mutable
 
@@ -1319,6 +1377,7 @@ install_avahi_service
 pushd ~
 
 fix_cmdline_txt_modules_load
+fix_uas_quirks
 
 # Flash for stage 4 headless (Create backing files)
 headless_setup_progress_flash 4
