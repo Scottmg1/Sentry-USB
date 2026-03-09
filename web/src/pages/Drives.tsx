@@ -5,7 +5,7 @@ import "leaflet/dist/leaflet.css"
 import {
   MapPin, Navigation, Clock, Gauge, Play,
   Download, Upload, Loader2, ChevronLeft, Search, List, X,
-  Tag, Plus, Layers, BarChart3, RefreshCw, AlertTriangle,
+  Tag, Plus, Layers, RefreshCw, AlertTriangle,
   Eye, EyeOff, Zap, ChevronRight,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
