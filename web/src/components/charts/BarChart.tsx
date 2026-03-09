@@ -26,7 +26,6 @@ export default function BarChart({
 }: BarChartProps) {
   const [hovered, setHovered] = useState<number | null>(null)
   const maxValue = maxValueProp ?? Math.max(...data.map((d) => d.value), 1)
-  const barPadding = 4
   const labelHeight = 24
   const valueHeight = showValues ? 18 : 0
   const chartHeight = height - labelHeight - valueHeight
