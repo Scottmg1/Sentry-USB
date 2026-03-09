@@ -7,6 +7,9 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { ClipEntry, ClipGroup, EventMeta } from "@/lib/api"
+import { useTelemetry } from "@/hooks/useTelemetry"
+import TelemetryOverlay from "@/components/viewer/TelemetryOverlay"
+import MiniMap from "@/components/viewer/MiniMap"
 
 interface ClipSet {
   timestamp: string
@@ -102,6 +105,24 @@ export default function Viewer() {
   const [showPromo, setShowPromo] = useState(true)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
   const [segmentDurations, setSegmentDurations] = useState<number[]>([])
+  const [metric, setMetric] = useState(false)
+
+  // Load unit preference
+  useEffect(() => {
+    fetch("/api/config/preference?key=units")
+      .then((r) => r.json())
+      .then((d) => { if (d.value === "metric") setMetric(true) })
+      .catch(() => {})
+  }, [])
+
+  // Telemetry for the current clip set
+  const currentSet = clipSets[currentSetIdx] as ClipSet | undefined
+  const frontFile = currentSet?.cameras["front"]?.split("/").pop() ?? null
+  const { telemetry, frameAtTime } = useTelemetry(
+    selectedClip?.path ?? null,
+    frontFile
+  )
+  const currentFrame = frameAtTime(currentTime)
 
   const videoRefs = useRef<Map<string, HTMLVideoElement>>(new Map())
   const masterVideoRef = useRef<HTMLVideoElement | null>(null)
@@ -160,8 +181,6 @@ export default function Viewer() {
     })
     return () => cleanups.forEach((c) => c())
   }, [clipSets])
-
-  const currentSet = clipSets[currentSetIdx]
 
   // Set master video ref (front camera preferred)
   useEffect(() => {
@@ -614,9 +633,17 @@ export default function Viewer() {
                           Click to exit &middot; ESC
                         </span>
                       )}
+                      {/* Telemetry overlay on front camera */}
+                      {cam === "front" && (focusedCamera === "front" || !focusedCamera) && telemetry && (
+                        <TelemetryOverlay frame={currentFrame} metric={metric} />
+                      )}
                     </div>
                   )
                 })}
+                {/* Mini map */}
+                {telemetry && telemetry.has_gps && !focusedCamera && (
+                  <MiniMap telemetry={telemetry} currentFrame={currentFrame} />
+                )}
               </div>
 
               {/* Transport bar */}
@@ -663,6 +690,12 @@ export default function Viewer() {
                   <span className="w-28 text-xs tabular-nums text-slate-400">
                     {formatTime(globalTime)} / {formatTime(totalDuration)}
                   </span>
+                  {/* Segment indicator */}
+                  {segmentDurations.length > 1 && (
+                    <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] tabular-nums text-slate-500">
+                      {currentSetIdx + 1}/{segmentDurations.length}
+                    </span>
+                  )}
 
                   {/* Skip back */}
                   <button

@@ -88,9 +88,66 @@ export interface StorageBreakdown {
   free_space: number
 }
 
+export interface FSDDayStats {
+  date: string
+  dayName: string
+  disengagements: number
+  accelPushes: number
+  fsdPercent: number
+  drives: number
+  fsdDistanceKm?: number
+  fsdDistanceMi?: number
+  totalDurationMs?: number
+  fsdEngagedMs?: number
+}
+
+export interface FSDAnalytics {
+  period: string
+  period_start: string
+  total_drives: number
+  fsd_sessions: number
+  fsd_percent: number
+  today_percent: number
+  best_day: string
+  best_day_percent: number
+  fsd_engaged_ms: number
+  fsd_distance_km: number
+  fsd_distance_mi: number
+  total_distance_km: number
+  total_distance_mi: number
+  disengagements: number
+  accel_pushes: number
+  daily: FSDDayStats[]
+  fsd_grade: string
+  streak_days: number
+  fsd_time_formatted: string
+  avg_disengagements_per_drive: number
+}
+
+export interface TelemetryFrame {
+  t: number
+  lat: number
+  lng: number
+  speed_mps: number
+  gear: number
+  autopilot: number
+  accel_pos: number
+}
+
+export interface ClipTelemetry {
+  frames: TelemetryFrame[]
+  duration_sec: number
+  has_gps: boolean
+  has_autopilot: boolean
+}
+
 export const api = {
   getStatus: () => request<PiStatus>("/status"),
   getStorageBreakdown: () => request<StorageBreakdown>("/status/storage"),
   getDriveStats: () => request<DriveStats>("/drives/stats"),
   getDriveStatus: () => request<DriveStatus>("/drives/status"),
+  getFSDAnalytics: (period: string = "week") =>
+    request<FSDAnalytics>(`/drives/fsd-analytics?period=${period}`),
+  getClipTelemetry: (clipPath: string, file: string) =>
+    request<ClipTelemetry>(`/clips/telemetry?path=${encodeURIComponent(clipPath)}&file=${encodeURIComponent(file)}`),
 }

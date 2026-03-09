@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react"
+import { Link } from "react-router-dom"
 import L from "leaflet"
 import "leaflet/dist/leaflet.css"
 import {
   MapPin, Navigation, Clock, Gauge, Play,
   Download, Upload, Loader2, ChevronLeft, Search, List, X,
   Tag, Plus, Layers, BarChart3, RefreshCw, AlertTriangle,
-  Eye, EyeOff,
+  Eye, EyeOff, Zap, ChevronRight,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -67,34 +68,6 @@ interface DriveStats {
   fsd_percent: number
   fsd_disengagements: number
   fsd_accel_pushes: number
-}
-
-interface FSDDayStats {
-  date: string
-  dayName: string
-  disengagements: number
-  accelPushes: number
-  fsdPercent: number
-  drives: number
-}
-
-interface FSDAnalytics {
-  period: string
-  period_start: string
-  total_drives: number
-  fsd_sessions: number
-  fsd_percent: number
-  today_percent: number
-  best_day: string
-  best_day_percent: number
-  fsd_engaged_ms: number
-  fsd_distance_km: number
-  fsd_distance_mi: number
-  total_distance_km: number
-  total_distance_mi: number
-  disengagements: number
-  accel_pushes: number
-  daily: FSDDayStats[]
 }
 
 // ── Helpers ────────────────────────────────────────────────────────
@@ -208,11 +181,8 @@ export default function Drives() {
   const [listTagValue, setListTagValue] = useState("")
   const [showProcessMenu, setShowProcessMenu] = useState(false)
   const [archiving, setArchiving] = useState(false)
-  const [showFSDPanel, setShowFSDPanel] = useState(false)
   const [showFSDMarkers, setShowFSDMarkers] = useState(true)
   const fsdEventLayers = useRef<L.Layer[]>([])
-  const [fsdAnalytics, setFsdAnalytics] = useState<FSDAnalytics | null>(null)
-  const [fsdPeriod, setFsdPeriod] = useState<"day" | "week" | "trip">("week")
 
   // ── Init map ──
   useEffect(() => {
@@ -475,19 +445,6 @@ export default function Drives() {
     return () => clearInterval(iv)
   }, [])
 
-  // ── Load FSD analytics ──
-  async function loadFSDAnalytics(period: string) {
-    try {
-      const res = await fetch(`/api/drives/fsd-analytics?period=${period}`)
-      const data: FSDAnalytics = await res.json()
-      setFsdAnalytics(data)
-    } catch { /* ignore */ }
-  }
-
-  useEffect(() => {
-    if (showFSDPanel) loadFSDAnalytics(fsdPeriod)
-  }, [showFSDPanel, fsdPeriod])
-
   // ── Process ──
   async function triggerProcess(mode: "new" | "reprocess" = "new") {
     setProcessing(true)
@@ -628,11 +585,11 @@ export default function Drives() {
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {/* FSD Stats */}
+          {/* FSD Analytics */}
           {stats && stats.fsd_engaged_ms > 0 && (
-            <button onClick={() => setShowFSDPanel(!showFSDPanel)} className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400 transition-colors hover:bg-emerald-500/20">
-              <BarChart3 className="h-3 w-3" /> FSD Stats
-            </button>
+            <Link to="/fsd" className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400 transition-colors hover:bg-emerald-500/20">
+              <Zap className="h-3 w-3" /> FSD {stats.fsd_percent}% <ChevronRight className="h-3 w-3 opacity-50" />
+            </Link>
           )}
           {/* Process dropdown */}
           <div className="relative">
@@ -692,113 +649,6 @@ export default function Drives() {
       </div>
 
       {processMsg && <p className="text-xs text-amber-400">{processMsg}</p>}
-
-      {/* FSD Analytics Panel */}
-      {showFSDPanel && fsdAnalytics && (
-        <div className="rounded-xl border border-white/10 bg-slate-950/95 p-4 backdrop-blur-sm">
-          <div className="mb-3 flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-bold text-slate-100">FSD Analytics</h2>
-              <p className="text-xs text-slate-500">
-                {fsdAnalytics.period === "day" ? "Today" : fsdAnalytics.period === "week" ? `${fsdAnalytics.period_start} — Today` : "All Time"}
-              </p>
-            </div>
-            <div className="flex items-center gap-1 rounded-full border border-white/10 bg-white/5 p-0.5">
-              {(["trip", "day", "week"] as const).map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setFsdPeriod(p)}
-                  className={cn(
-                    "rounded-full px-3 py-1 text-xs font-medium transition-colors",
-                    fsdPeriod === p ? "bg-white/10 text-slate-100" : "text-slate-500 hover:text-slate-300"
-                  )}
-                >
-                  {p === "trip" ? "Trip" : p === "day" ? "Day" : "Week"}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Percentage row */}
-          <div className="mb-4 grid grid-cols-1 gap-4 text-center sm:grid-cols-3">
-            <div>
-              <p className={cn("text-2xl font-bold", fsdAnalytics.today_percent >= 95 ? "text-emerald-400" : fsdAnalytics.today_percent >= 80 ? "text-amber-400" : "text-slate-300")}>
-                {fsdAnalytics.today_percent}%
-              </p>
-              <p className="text-xs text-slate-500">Today</p>
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-slate-300">{fsdAnalytics.fsd_percent}%</p>
-              <p className="text-xs text-slate-500">{fsdAnalytics.period === "week" ? "Week" : fsdAnalytics.period === "day" ? "Day" : "All Time"}</p>
-            </div>
-            <div>
-              <p className={cn("text-2xl font-bold", fsdAnalytics.best_day_percent >= 100 ? "text-emerald-400" : "text-slate-300")}>
-                {fsdAnalytics.best_day_percent}%
-              </p>
-              <p className="text-xs text-slate-500">{fsdAnalytics.best_day ? new Date(fsdAnalytics.best_day + "T00:00:00").toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" }) : "—"} (Best)</p>
-            </div>
-          </div>
-
-          {/* Sessions & distance */}
-          <div className="mb-4">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-sm font-semibold text-slate-200">FSD Sessions</span>
-              <span className="text-lg font-bold text-slate-100">{fsdAnalytics.fsd_sessions}</span>
-            </div>
-            <div className="mb-3 h-2 w-full overflow-hidden rounded-full bg-slate-800">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-purple-500 to-purple-400"
-                style={{ width: `${Math.min(fsdAnalytics.fsd_percent, 100)}%` }}
-              />
-            </div>
-            <div className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-2">
-              <div className="flex items-center gap-2">
-                <div className="h-2.5 w-2.5 rounded-sm bg-purple-500" />
-                <span className="text-slate-400">Total FSD Distance</span>
-                <span className="ml-auto font-semibold text-slate-200">{metric ? `${fsdAnalytics.fsd_distance_km} km` : `${fsdAnalytics.fsd_distance_mi} mi`}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="h-2.5 w-2.5 rounded-sm bg-slate-600" />
-                <span className="text-slate-400">Total Distance (incl. manual)</span>
-                <span className="ml-auto font-semibold text-slate-200">{metric ? `${fsdAnalytics.total_distance_km} km` : `${fsdAnalytics.total_distance_mi} mi`}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Disengagements chart */}
-          <div>
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-sm font-semibold text-slate-200">Disengagements</span>
-              <span className="text-lg font-bold text-red-400">{fsdAnalytics.disengagements}</span>
-            </div>
-            {fsdAnalytics.daily && fsdAnalytics.daily.length > 0 && (
-              <div className="flex items-end gap-1">
-                {fsdAnalytics.daily.map((day) => (
-                  <div key={day.date} className="flex flex-1 flex-col items-center gap-1">
-                    <div className="flex h-14 w-full items-end justify-center">
-                      <div
-                        className="w-full max-w-[40px] rounded-t bg-slate-700"
-                        style={{ height: `${Math.max(day.disengagements * 3, day.disengagements > 0 ? 8 : 0)}px` }}
-                      >
-                        {day.disengagements > 0 && (
-                          <p className="pt-0.5 text-center text-[10px] font-bold text-red-400">{day.disengagements}</p>
-                        )}
-                      </div>
-                    </div>
-                    <p className="text-[10px] text-slate-500">{day.dayName}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-            {fsdAnalytics.accel_pushes > 0 && (
-              <div className="mt-3 flex items-center justify-between rounded-lg bg-amber-500/10 px-3 py-2 text-xs">
-                <span className="text-amber-400">Accelerator Pushes (while FSD active)</span>
-                <span className="font-bold text-amber-400">{fsdAnalytics.accel_pushes}</span>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Main content: sidebar + map */}
       <div className="relative flex flex-1 gap-4 overflow-hidden rounded-xl border border-white/5">

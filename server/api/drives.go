@@ -579,6 +579,10 @@ func (dh *DriveHandlers) fsdAnalytics(w http.ResponseWriter, r *http.Request) {
 		AccelPushes    int     `json:"accelPushes"`
 		FSDPercent     float64 `json:"fsdPercent"`
 		Drives         int     `json:"drives"`
+		FSDDistanceKm  float64 `json:"fsdDistanceKm"`
+		FSDDistanceMi  float64 `json:"fsdDistanceMi"`
+		TotalDurationMs int64  `json:"totalDurationMs"`
+		FSDEngagedMs   int64   `json:"fsdEngagedMs"`
 	}
 	dailyMap := make(map[string]*dayStats)
 
@@ -615,24 +619,22 @@ func (dh *DriveHandlers) fsdAnalytics(w http.ResponseWriter, r *http.Request) {
 		ds.Disengagements += d.FSDDisengagements
 		ds.AccelPushes += d.FSDAccelPushes
 		ds.Drives++
+		ds.FSDDistanceKm += d.FSDDistanceKm
+		ds.FSDDistanceMi += d.FSDDistanceMi
+		ds.TotalDurationMs += d.DurationMs
+		ds.FSDEngagedMs += d.FSDEngagedMs
 	}
 
 	// Compute daily FSD percent and find best day
-	for dateKey, ds := range dailyMap {
-		var dayDurMs, dayFSDMs int64
-		for _, d := range periodDrives {
-			dt, _ := time.Parse("2006-01-02T15:04:05", d.StartTime)
-			if dt.Format("2006-01-02") == dateKey {
-				dayDurMs += d.DurationMs
-				dayFSDMs += d.FSDEngagedMs
-			}
+	for _, ds := range dailyMap {
+		if ds.TotalDurationMs > 0 {
+			ds.FSDPercent = math.Round(float64(ds.FSDEngagedMs)/float64(ds.TotalDurationMs)*1000) / 10
 		}
-		if dayDurMs > 0 {
-			ds.FSDPercent = math.Round(float64(dayFSDMs)/float64(dayDurMs)*1000) / 10
-		}
+		ds.FSDDistanceKm = math.Round(ds.FSDDistanceKm*100) / 100
+		ds.FSDDistanceMi = math.Round(ds.FSDDistanceMi*100) / 100
 		if ds.FSDPercent > bestDayPercent {
 			bestDayPercent = ds.FSDPercent
-			bestDay = dateKey
+			bestDay = ds.Date
 		}
 	}
 
@@ -662,22 +664,67 @@ func (dh *DriveHandlers) fsdAnalytics(w http.ResponseWriter, r *http.Request) {
 		fsdPercent = math.Round(float64(fsdEngagedMs)/float64(totalDurationMs)*1000) / 10
 	}
 
+	// Compute FSD grade (3 tiers)
+	var fsdGrade string
+	if fsdPercent >= 90 {
+		fsdGrade = "Great"
+	} else if fsdPercent >= 60 {
+		fsdGrade = "Good"
+	} else {
+		fsdGrade = "Needs Improvement"
+	}
+
+	// Compute streak (consecutive days with FSD usage, counting backwards from today)
+	streakDays := 0
+	checkDate := now
+	for {
+		key := checkDate.Format("2006-01-02")
+		ds, ok := dailyMap[key]
+		if ok && ds.FSDEngagedMs > 0 {
+			streakDays++
+			checkDate = checkDate.AddDate(0, 0, -1)
+		} else {
+			break
+		}
+	}
+
+	// Format FSD engaged time
+	totalSec := fsdEngagedMs / 1000
+	hours := totalSec / 3600
+	mins := (totalSec % 3600) / 60
+	var fsdTimeFormatted string
+	if hours > 0 {
+		fsdTimeFormatted = fmt.Sprintf("%dh %dm", hours, mins)
+	} else {
+		fsdTimeFormatted = fmt.Sprintf("%dm", mins)
+	}
+
+	// Avg disengagements per drive
+	var avgDisengagements float64
+	if fsdSessions > 0 {
+		avgDisengagements = math.Round(float64(disengagements)/float64(fsdSessions)*100) / 100
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"period":            period,
-		"period_start":      periodStart.Format("2006-01-02"),
-		"total_drives":      len(periodDrives),
-		"fsd_sessions":      fsdSessions,
-		"fsd_percent":       fsdPercent,
-		"today_percent":     todayPercent,
-		"best_day":          bestDay,
-		"best_day_percent":  bestDayPercent,
-		"fsd_engaged_ms":    fsdEngagedMs,
-		"fsd_distance_km":   math.Round(fsdDistKm*100) / 100,
-		"fsd_distance_mi":   math.Round(fsdDistMi*100) / 100,
-		"total_distance_km": math.Round(totalDistKm*100) / 100,
-		"total_distance_mi": math.Round(totalDistMi*100) / 100,
-		"disengagements":    disengagements,
-		"accel_pushes":      accelPushes,
-		"daily":             dailyStats,
+		"period":                       period,
+		"period_start":                 periodStart.Format("2006-01-02"),
+		"total_drives":                 len(periodDrives),
+		"fsd_sessions":                 fsdSessions,
+		"fsd_percent":                  fsdPercent,
+		"today_percent":                todayPercent,
+		"best_day":                     bestDay,
+		"best_day_percent":             bestDayPercent,
+		"fsd_engaged_ms":               fsdEngagedMs,
+		"fsd_distance_km":              math.Round(fsdDistKm*100) / 100,
+		"fsd_distance_mi":              math.Round(fsdDistMi*100) / 100,
+		"total_distance_km":            math.Round(totalDistKm*100) / 100,
+		"total_distance_mi":            math.Round(totalDistMi*100) / 100,
+		"disengagements":               disengagements,
+		"accel_pushes":                 accelPushes,
+		"daily":                        dailyStats,
+		"fsd_grade":                    fsdGrade,
+		"streak_days":                  streakDays,
+		"fsd_time_formatted":           fsdTimeFormatted,
+		"avg_disengagements_per_drive":  avgDisengagements,
 	})
 }

@@ -30,6 +30,7 @@ func RegisterRoutes(mux *http.ServeMux, hub *ws.Hub) {
 
 	// Clips
 	mux.HandleFunc("GET /api/clips", h.getClips)
+	mux.HandleFunc("GET /api/clips/telemetry", h.getClipTelemetry)
 
 	// File operations
 	mux.HandleFunc("GET /api/files/ls", h.listFiles)

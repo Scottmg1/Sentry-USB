@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { Link } from "react-router-dom"
 import {
   Thermometer,
   HardDrive,
@@ -10,6 +11,8 @@ import {
   Archive,
   HeartPulse,
   Timer,
+  Zap,
+  ChevronRight,
 } from "lucide-react"
 import { api } from "@/lib/api"
 import { useKeepAwake } from "@/hooks/useKeepAwake"
@@ -425,27 +428,18 @@ export default function Dashboard() {
             </div>
 
             {driveStats.fsd_engaged_ms > 0 && (
-              <div className="mb-4 grid grid-cols-1 gap-3 rounded-lg border border-emerald-500/10 bg-emerald-500/5 p-3 sm:grid-cols-3">
-                <div>
-                  <p className="text-xs text-emerald-400/70">Lifetime FSD Usage</p>
-                  <p className="mt-0.5 text-lg font-semibold text-emerald-400">
-                    {driveStats.fsd_percent}%
-                  </p>
+              <Link to="/fsd" className="mb-4 flex items-center justify-between rounded-lg border border-emerald-500/10 bg-emerald-500/5 p-3 transition-colors hover:bg-emerald-500/10">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/20">
+                    <Zap className="h-4 w-4 text-emerald-400" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-emerald-400">FSD {driveStats.fsd_percent}%</p>
+                    <p className="text-xs text-slate-500">{driveStats.fsd_disengagements} disengagements</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-xs text-red-400/70">Lifetime Disengagements</p>
-                  <p className="mt-0.5 text-lg font-semibold text-red-400">
-                    {driveStats.fsd_disengagements}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-emerald-400/70">Lifetime FSD Distance</p>
-                  <p className="mt-0.5 text-lg font-semibold text-emerald-400">
-                    {metric ? driveStats.fsd_distance_km.toFixed(1) : driveStats.fsd_distance_mi.toFixed(1)}{" "}
-                    <span className="text-sm font-normal text-emerald-400/60">{metric ? "km" : "mi"}</span>
-                  </p>
-                </div>
-              </div>
+                <ChevronRight className="h-4 w-4 text-slate-600" />
+              </Link>
             )}
 
             {archiveProgress && archiveProgress.total > 0 ? (

@@ -21,6 +21,14 @@ else
       echo "$label"
     }
 
+    # Send a notification when the final nudge attempt fails
+    function notify_nudge_failure {
+      local provider="$1"
+      local reason="$2"
+      /root/bin/send-push-message "${NOTIFICATION_TITLE:-SentryUSB}:" \
+        "${provider}: Keep awake failed (attempt 3/3). ${reason}" "" "keep_awake_failure" || true
+    }
+
     while true
     do
       if [[ -n "${TESSIE_API_TOKEN:+x}" ]]
@@ -48,6 +56,7 @@ else
             continue
           else
             log "Tessie: Connection to the internet likely broken."
+            notify_nudge_failure "Tessie" "Connection likely broken. Check API token and VIN."
             break
           fi
         else
@@ -81,6 +90,7 @@ else
             continue
           else
             log "Tesla BLE: Giving up after 3 attempts."
+            notify_nudge_failure "Tesla BLE" "BLE command failed. Response: $BLE_response"
             break
           fi
         fi
@@ -99,8 +109,18 @@ else
         # Check if HTTP status code is not 200 (OK)
         if [ "$http_status" -lt 200 ] || [ "$http_status" -ge 300 ]
         then
-          # Log an error
-          log "Awake Webhook: Failed to send nudge. Check if your KEEP_AWAKE_WEBHOOK_URL is set correctly. If it is, check the service receiving webhooks for logs."
+          log "Awake Webhook: Failed to send nudge (HTTP $http_status). Check if your KEEP_AWAKE_WEBHOOK_URL is set correctly."
+          if [ "$retry" -lt "3" ]
+          then
+            log "Awake Webhook: Retrying after 30s (attempt $((retry+1))/3)..."
+            retry=$((retry+1))
+            sleep 30
+            continue
+          else
+            log "Awake Webhook: Giving up after 3 attempts."
+            notify_nudge_failure "Webhook" "HTTP status $http_status. Check KEEP_AWAKE_WEBHOOK_URL."
+            break
+          fi
         else
           log "Awake Webhook: Nudge sent [$(nudge_label)]."
         fi
@@ -135,11 +155,15 @@ else
         then
           # Log an error
           log "TeslaFi: Failed to set Sentry Mode. Check your TESLAFI_API_TOKEN is set correctly. If it is, your car may be offline or asleep."
+          /root/bin/send-push-message "${NOTIFICATION_TITLE:-SentryUSB}:" \
+            "TeslaFi: Failed to enable Sentry Mode (HTTP $http_status). Check API token." "" "keep_awake_failure" || true
         else
           # Check if the response is in JSON format
           if ! jq -e . >/dev/null 2>&1 <<<"$response_body"
           then
             log "TeslaFi: Failed to set Sentry Mode."
+            /root/bin/send-push-message "${NOTIFICATION_TITLE:-SentryUSB}:" \
+              "TeslaFi: Failed to enable Sentry Mode. Invalid response from API." "" "keep_awake_failure" || true
           else
             # Parse JSON and check if "result" is true
             result1=$(jq -r '.response' <<<"$response_body")
@@ -152,6 +176,8 @@ else
               log "TeslaFi: Sentry Mode Enabled. Monthly command counter = $commands."
             else
               log "TeslaFi: Failed to set Sentry Mode. Response data: $response_body"
+              /root/bin/send-push-message "${NOTIFICATION_TITLE:-SentryUSB}:" \
+                "TeslaFi: Failed to enable Sentry Mode. API returned failure." "" "keep_awake_failure" || true
             fi
           fi
         fi
@@ -176,17 +202,23 @@ else
         then
           # Log an error
           log "Tessie: Failed to set Sentry Mode. Check your TESSIE_API_TOKEN and TESSIE_VIN are set correctly. If they are, your car may not have a good connection."
+          /root/bin/send-push-message "${NOTIFICATION_TITLE:-SentryUSB}:" \
+            "Tessie: Failed to enable Sentry Mode (HTTP $http_status). Check API token and VIN." "" "keep_awake_failure" || true
         else
           # Check if the response is in JSON format
           if ! jq -e . >/dev/null 2>&1 <<<"$response_body"
           then
             log "Tessie: Failed to set Sentry Mode. Response data: $response_body"
+            /root/bin/send-push-message "${NOTIFICATION_TITLE:-SentryUSB}:" \
+              "Tessie: Failed to enable Sentry Mode. Invalid response from API." "" "keep_awake_failure" || true
           else
             # Parse JSON and check if "result" is true
             result=$(jq -r '.result' <<<"$response_body")
             if [[ "$result" != "true" ]]
             then
               log "Tessie: Failed to set Sentry Mode. Response data: $response_body"
+              /root/bin/send-push-message "${NOTIFICATION_TITLE:-SentryUSB}:" \
+                "Tessie: Failed to enable Sentry Mode. API returned failure." "" "keep_awake_failure" || true
             fi
           fi
         fi
@@ -199,6 +231,8 @@ else
           log "Tesla BLE: Command sent to enable Sentry Mode."
         else
           log "Tesla BLE: Failed to set Sentry Mode."
+          /root/bin/send-push-message "${NOTIFICATION_TITLE:-SentryUSB}:" \
+            "Tesla BLE: Failed to enable Sentry Mode via BLE." "" "keep_awake_failure" || true
         fi
         systemctl start sentryusb-ble 2>/dev/null || true
       elif [[ -n "${KEEP_AWAKE_WEBHOOK_URL:+x}" ]]
@@ -219,6 +253,8 @@ else
         then
           # Log an error
           log "Awake Webhook: Failed to send command \"start\". Check if your KEEP_AWAKE_WEBHOOK_URL is set correctly. If it is, check the service receiving webhooks for logs."
+          /root/bin/send-push-message "${NOTIFICATION_TITLE:-SentryUSB}:" \
+            "Webhook: Failed to send start command (HTTP $http_status). Check KEEP_AWAKE_WEBHOOK_URL." "" "keep_awake_failure" || true
         fi
       fi
       ;;
