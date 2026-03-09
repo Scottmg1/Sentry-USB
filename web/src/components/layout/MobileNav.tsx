@@ -15,6 +15,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useKeepAwake } from "@/hooks/useKeepAwake"
+import { useUpdateAvailable } from "@/hooks/useUpdateAvailable"
 
 interface MobileNavProps {
   open: boolean
@@ -35,6 +36,7 @@ const navItems = [
 export function MobileNav({ open, onClose }: MobileNavProps) {
   const { status } = useKeepAwake()
   const isAwake = status.state === "active" || status.state === "pending"
+  const updateAvailable = useUpdateAvailable()
 
   if (!open) return null
 
@@ -66,25 +68,40 @@ export function MobileNav({ open, onClose }: MobileNavProps) {
         </div>
 
         <nav className="flex-1 space-y-1 px-2 py-4">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.to === "/"}
-              onClick={onClose}
-              className={({ isActive }) =>
-                cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
-                  isActive
-                    ? "bg-blue-500/15 text-blue-400"
-                    : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
-                )
-              }
-            >
-              <item.icon className="h-5 w-5 shrink-0" />
-              <span>{item.label}</span>
-            </NavLink>
-          ))}
+          {navItems.map((item) => {
+            const showBadge = updateAvailable && item.to === "/settings"
+            return (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.to === "/"}
+                onClick={onClose}
+                className={({ isActive }) =>
+                  cn(
+                    "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                    isActive
+                      ? "bg-blue-500/15 text-blue-400"
+                      : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
+                  )
+                }
+              >
+                <span className="relative shrink-0">
+                  <item.icon className="h-5 w-5" />
+                  {showBadge && (
+                    <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-amber-400" />
+                  )}
+                </span>
+                <span className="flex flex-1 items-center justify-between">
+                  {item.label}
+                  {showBadge && (
+                    <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-medium text-amber-400">
+                      Update
+                    </span>
+                  )}
+                </span>
+              </NavLink>
+            )
+          })}
         </nav>
 
         {/* Keep-awake indicator */}

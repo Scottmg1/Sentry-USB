@@ -259,10 +259,22 @@ else
       fi
       ;;
     3)
-      # Nudge car periodically without using Sentry Mode
-      # Use a caller-specific PID file so archive and web UI keep-awake
-      # loops don't overwrite each other's PID and orphan the other process.
-      pid_file="${KEEP_AWAKE_PID_FILE:-/tmp/keep_awake_task_pid}"
+      # Nudge car periodically without using Sentry Mode.
+      # Use a single global PID file so only one nudge loop runs at a time.
+      # Kill any existing loop first to prevent BLE contention when multiple
+      # callers (archiveloop, webui) both request keep-awake.
+      pid_file="/tmp/keep_awake_nudge_pid"
+      if [ -e "$pid_file" ]; then
+        kill "$(cat "$pid_file")" 2>/dev/null || true
+        rm -f "$pid_file"
+      fi
+      # Clean up legacy per-caller PID files from older versions
+      for pf in /tmp/keep_awake_archive_pid /tmp/keep_awake_webui_pid /tmp/keep_awake_task_pid; do
+        if [ -e "$pf" ]; then
+          kill "$(cat "$pf")" 2>/dev/null || true
+          rm -f "$pf"
+        fi
+      done
       log "Starting background task to keep car awake."
       nudge &
       echo $! > "$pid_file"

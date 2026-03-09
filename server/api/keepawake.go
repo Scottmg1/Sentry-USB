@@ -227,9 +227,13 @@ func (m *KeepAwakeManager) waitForIdleThenStart() {
 }
 
 // expirationWatcher monitors the expiration time and stops keep-awake when it expires.
+// It also detects when archiving finishes (busy→idle) while keep-awake is still active
+// and re-launches the nudge loop, because archiveloop's awake_stop kills our nudge.
 func (m *KeepAwakeManager) expirationWatcher() {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
+
+	wasBusy := m.isBusy()
 
 	for {
 		select {
@@ -238,6 +242,9 @@ func (m *KeepAwakeManager) expirationWatcher() {
 		case <-ticker.C:
 			m.mu.RLock()
 			expired := m.state == KeepAwakeActive && time.Now().After(m.expiresAt)
+			active := m.state == KeepAwakeActive
+			mode := m.mode
+			expiresAt := m.expiresAt
 			m.mu.RUnlock()
 
 			if expired {
@@ -257,6 +264,16 @@ func (m *KeepAwakeManager) expirationWatcher() {
 				m.mu.Unlock()
 				return
 			}
+
+			// Re-arm: if archiving just finished while we're still active,
+			// re-launch the nudge loop (archiveloop's awake_stop killed ours).
+			nowBusy := m.isBusy()
+			if wasBusy && !nowBusy && active {
+				keepAwakeLog("Archive/processing finished — re-launching keep-awake (mode: %s)", mode)
+				log.Printf("[keep-awake] Re-arming nudge after archive finished (mode: %s)", mode)
+				go startKeepAwake(keepAwakeReasonLabel(mode), expiresAt)
+			}
+			wasBusy = nowBusy
 		}
 	}
 }

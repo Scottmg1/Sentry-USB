@@ -119,13 +119,14 @@ case "${SENTRY_CASE}" in
     fi
   ;;
   3)
-    pid_file="${KEEP_AWAKE_PID_FILE:-/tmp/keep_awake_task_pid}"
-    if [ -e "$pid_file" ]
-    then
-      log "Stopping background task that is keeping car awake."
-      kill "$(cat "$pid_file")" || true
-      rm -f "$pid_file"
-    fi
+    # Stop the single global nudge loop, plus clean up any legacy per-caller PID files
+    for pf in /tmp/keep_awake_nudge_pid /tmp/keep_awake_archive_pid /tmp/keep_awake_webui_pid /tmp/keep_awake_task_pid; do
+      if [ -e "$pf" ]; then
+        log "Stopping background task that is keeping car awake."
+        kill "$(cat "$pf")" 2>/dev/null || true
+        rm -f "$pf"
+      fi
+    done
   ;;
   *)
     log "Invalid or no SENTRY_CASE defined."

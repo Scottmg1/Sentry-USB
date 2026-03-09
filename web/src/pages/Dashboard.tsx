@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Link } from "react-router-dom"
 import {
   Thermometer,
@@ -83,6 +83,29 @@ interface ProcessProgress {
   total: number
 }
 
+interface ProgressSample {
+  time: number
+  current: number
+}
+
+const RATE_WINDOW = 6 // ~30s at 5s poll interval
+
+// Computes ETA using a rolling window of recent samples for a responsive rate estimate.
+function computeETA(current: number, total: number, history: ProgressSample[]): string | null {
+  if (history.length < 2) return null
+  const oldest = history[0]
+  const newest = history[history.length - 1]
+  const elapsed = (newest.time - oldest.time) / 1000
+  const done = newest.current - oldest.current
+  if (done <= 0 || elapsed < 5) return null
+  const rate = done / elapsed
+  const remaining = (total - current) / rate
+  if (!isFinite(remaining) || remaining <= 0) return null
+  if (remaining < 60) return `~${Math.round(remaining)}s`
+  if (remaining < 3600) return `~${Math.round(remaining / 60)}m`
+  return `~${(remaining / 3600).toFixed(1)}h`
+}
+
 export default function Dashboard() {
   const [status, setStatus] = useState<PiStatus | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -94,6 +117,9 @@ export default function Dashboard() {
   const [processProgress, setProcessProgress] = useState<ProcessProgress | null>(null)
   const [metric, setMetric] = useState(false)
   const [useFahrenheit, setUseFahrenheit] = useState(false)
+
+  const archiveHistoryRef = useRef<ProgressSample[]>([])
+  const processHistoryRef = useRef<ProgressSample[]>([])
 
   const active = archiveProgress !== null || processing
 
@@ -200,6 +226,26 @@ export default function Dashboard() {
       unsubscribe()
     }
   }, [])
+
+  useEffect(() => {
+    if (archiveProgress && archiveProgress.current > 0) {
+      const h = archiveHistoryRef.current
+      h.push({ time: Date.now(), current: archiveProgress.current })
+      if (h.length > RATE_WINDOW) h.shift()
+    } else {
+      archiveHistoryRef.current = []
+    }
+  }, [archiveProgress])
+
+  useEffect(() => {
+    if (processProgress && processProgress.current > 0) {
+      const h = processHistoryRef.current
+      h.push({ time: Date.now(), current: processProgress.current })
+      if (h.length > RATE_WINDOW) h.shift()
+    } else {
+      processHistoryRef.current = []
+    }
+  }, [processProgress])
 
   if (error) {
     return (
@@ -448,6 +494,10 @@ export default function Dashboard() {
                   <span>
                     Archiving: {archiveProgress.current.toLocaleString()} /{" "}
                     {archiveProgress.total.toLocaleString()} files
+                    {(() => {
+                      const eta = computeETA(archiveProgress.current, archiveProgress.total, archiveHistoryRef.current)
+                      return eta ? <span className="ml-2 text-emerald-400/70">{eta} left</span> : null
+                    })()}
                   </span>
                   <span>
                     {Math.round(
@@ -471,6 +521,10 @@ export default function Dashboard() {
                   <span>
                     Processing: {processProgress.current.toLocaleString()} /{" "}
                     {processProgress.total.toLocaleString()} files
+                    {(() => {
+                      const eta = computeETA(processProgress.current, processProgress.total, processHistoryRef.current)
+                      return eta ? <span className="ml-2 text-emerald-400/70">{eta} left</span> : null
+                    })()}
                   </span>
                   <span>
                     {Math.round(

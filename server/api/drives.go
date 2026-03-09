@@ -230,9 +230,9 @@ declare -F log > /dev/null 2>&1 || {
   function log { echo "$(date): $*" >> "${LOG_FILE:-/mutable/archiveloop.log}" 2>/dev/null || true; }
   export -f log
 }
-# Separate PID file from the archive loop so the two nudge processes don't
-# overwrite each other's PID and orphan the other background task.
-export KEEP_AWAKE_PID_FILE=/tmp/keep_awake_webui_pid
+# Single global PID file shared with archiveloop. awake_start kills any
+# existing nudge loop before starting a new one, preventing BLE contention.
+export KEEP_AWAKE_PID_FILE=/tmp/keep_awake_nudge_pid
 `
 
 // startKeepAwake runs awake_start in the background to keep the car from sleeping.
