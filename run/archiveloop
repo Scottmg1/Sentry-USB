@@ -558,7 +558,8 @@ function archive_progress_monitor () {
   local listfile="$2"
   local overlay="$3"
   local push_counter=0
-  local start_time=$(date +%s)
+  local start_time
+  start_time=$(date +%s)
 
   while true; do
     sleep 5
