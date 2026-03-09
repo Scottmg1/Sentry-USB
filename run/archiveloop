@@ -778,7 +778,7 @@ function archive_teslacam_clips () {
       message+="$trackmode_count track mode file(s)"
     fi
     message+=" starting at $(date)"
-    /root/bin/send-push-message "$NOTIFICATION_TITLE:" "$message" start archive || log "failed to send push message"
+    ARCHIVE_TOTAL_COUNT=$total_count /root/bin/send-push-message "$NOTIFICATION_TITLE:" "$message" start archive || log "failed to send push message"
     /root/bin/send-live-activity start "$total_count" || true
 
     # setup trigger files
@@ -877,11 +877,7 @@ function archive_teslacam_clips () {
     local -r delta=$((end_ts - start_ts))
     message+=" in $(convert_seconds_to_nice_time $delta)"
     /root/bin/send-push-message "$NOTIFICATION_TITLE:" "${message}" finish archive
-    if [ "${DRIVE_MAP_ENABLED:-false}" = "true" ]; then
-      /root/bin/send-live-activity update processing 0 0 || true
-    else
-      /root/bin/send-live-activity end complete || true
-    fi
+    /root/bin/send-live-activity end complete || true
 
     if [ -e /tmp/archive-error.log ]
     then
