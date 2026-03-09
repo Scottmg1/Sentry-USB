@@ -70,12 +70,13 @@ function process_clips_dir() {
   # Start Live Activity for processing phase
   local total_estimate
   total_estimate=$(echo "$RESPONSE" | grep -o '"total":[0-9]*' | cut -d: -f2 || echo "0")
-  /root/bin/send-live-activity update processing 0 "${total_estimate:-0}" || true
+  /root/bin/send-live-activity update processing 0 "${total_estimate:-0}" 0 || true
 
   local timeout=1800
   local elapsed=0
   local poll_interval=10
   local last_progress_log=0
+  local process_start_time=$(date +%s)
 
   while [ $elapsed -lt $timeout ]; do
     sleep $poll_interval
@@ -100,7 +101,14 @@ function process_clips_dir() {
       PROCESSED=$(echo "$STATUS" | grep -o '"processed_count":[0-9]*' | cut -d: -f2)
       ROUTES=$(echo "$STATUS" | grep -o '"routes_count":[0-9]*' | cut -d: -f2)
       log "Still processing $clips_dir... (${elapsed}s elapsed, ${PROCESSED:-?} files processed, ${ROUTES:-?} routes)"
-      /root/bin/send-live-activity update processing "${PROCESSED:-0}" "${total_estimate:-0}" || true
+      # Compute ETA from elapsed time and progress
+      local eta=0
+      local proc_elapsed=$(( $(date +%s) - process_start_time ))
+      if [ "${PROCESSED:-0}" -gt 0 ] && [ $proc_elapsed -gt 5 ]; then
+        eta=$(( (${total_estimate:-0} - ${PROCESSED:-0}) * proc_elapsed / ${PROCESSED:-0} ))
+        [ $eta -lt 0 ] && eta=0
+      fi
+      /root/bin/send-live-activity update processing "${PROCESSED:-0}" "${total_estimate:-0}" "$eta" || true
       last_progress_log=$elapsed
     fi
   done
@@ -219,5 +227,8 @@ if [ "$AUTO_UPDATE_CHECK" != "disabled" ]; then
     log "Could not check for updates (no internet?)."
   fi
 fi
+
+# End the Live Activity now that all post-archive work is done
+/root/bin/send-live-activity end complete || true
 
 exit 0

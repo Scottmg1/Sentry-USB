@@ -23,9 +23,17 @@ export default function FSDAnalytics() {
   const [metric, setMetric] = useState(false)
 
   useEffect(() => {
-    fetch("/api/config/preference?key=units")
+    fetch("/api/setup/config")
       .then((r) => r.json())
-      .then((d) => { if (d.value === "metric") setMetric(true) })
+      .then((cfg) => {
+        const entry = cfg.DRIVE_MAP_UNIT
+        if (entry) {
+          const val = typeof entry === "object"
+            ? (entry.active ? entry.value : null)
+            : entry
+          if (val !== null) setMetric(val === "km")
+        }
+      })
       .catch(() => {})
   }, [])
 
@@ -110,8 +118,8 @@ export default function FSDAnalytics() {
       <div className={cn("rounded-xl border p-5 backdrop-blur-sm", grade.bgClass)}>
         <div className="flex flex-col items-center gap-5 sm:flex-row">
           <RadialProgress value={data.fsd_percent} size={140} strokeWidth={10} color={grade.ringColor}>
-            <div className="text-center">
-              <p className={cn("text-2xl font-bold", grade.color)}>{data.fsd_grade}</p>
+            <div className="text-center px-3">
+              <p className={cn("font-bold leading-tight", grade.color, data.fsd_grade.length > 5 ? "text-sm" : "text-2xl")}>{data.fsd_grade}</p>
               <p className="text-xs text-slate-400">{Math.round(data.fsd_percent)}%</p>
             </div>
           </RadialProgress>

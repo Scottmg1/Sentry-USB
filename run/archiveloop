@@ -557,6 +557,8 @@ function archive_progress_monitor () {
   local total="$1"
   local listfile="$2"
   local overlay="$3"
+  local push_counter=0
+  local start_time=$(date +%s)
 
   while true; do
     sleep 5
@@ -565,6 +567,17 @@ function archive_progress_monitor () {
       [ -L "$overlay/$line" ] || done=$((done + 1))
     done < "$listfile"
     write_archive_status "{\"phase\":\"archiving\",\"current\":$done,\"total\":$total}"
+
+    # Send APNs Live Activity update every ~30s (6 × 5s)
+    push_counter=$((push_counter + 1))
+    if [ $((push_counter % 6)) -eq 0 ]; then
+      local eta=0
+      local elapsed=$(( $(date +%s) - start_time ))
+      if [ $done -gt 0 ] && [ $elapsed -gt 5 ]; then
+        eta=$(( (total - done) * elapsed / done ))
+      fi
+      /root/bin/send-live-activity update archiving "$done" "$total" "$eta" || true
+    fi
   done
 }
 
@@ -864,7 +877,11 @@ function archive_teslacam_clips () {
     local -r delta=$((end_ts - start_ts))
     message+=" in $(convert_seconds_to_nice_time $delta)"
     /root/bin/send-push-message "$NOTIFICATION_TITLE:" "${message}" finish archive
-    /root/bin/send-live-activity end complete || true
+    if [ "${DRIVE_MAP_ENABLED:-false}" = "true" ]; then
+      /root/bin/send-live-activity update processing 0 0 || true
+    else
+      /root/bin/send-live-activity end complete || true
+    fi
 
     if [ -e /tmp/archive-error.log ]
     then
@@ -950,6 +967,7 @@ function archive_clips () {
   # recording immediately instead of waiting for processing to finish.
   connect_usb_drives_to_host
   /root/bin/post-archive-process.sh || log "ERROR: post-archive-process.sh failed (exit $?)"
+  /root/bin/send-live-activity end complete || true
   /root/bin/disconnect-archive.sh
 }
 

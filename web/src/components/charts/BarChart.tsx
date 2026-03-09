@@ -33,13 +33,17 @@ export default function BarChart({
 
   if (!data.length) return null
 
+  const vbWidth = 600
+  const barSlot = vbWidth / data.length
+  const scaledPad = Math.min(barSlot * 0.1, 8)
+
   return (
     <div className={className}>
-      <svg width="100%" height={height} viewBox={`0 0 ${data.length * 48} ${height}`} preserveAspectRatio="none">
+      <svg width="100%" height={height} viewBox={`0 0 ${vbWidth} ${height}`}>
         {data.map((item, i) => {
           const barH = maxValue > 0 ? (item.value / maxValue) * chartHeight : 0
-          const x = i * 48 + barPadding
-          const w = 48 - barPadding * 2
+          const x = i * barSlot + scaledPad
+          const w = barSlot - scaledPad * 2
           const y = valueHeight + chartHeight - barH
           const color = item.color || "#3b82f6"
           const isHovered = hovered === i
@@ -60,7 +64,7 @@ export default function BarChart({
                 rx={4}
                 fill={color}
                 opacity={isHovered ? 1 : 0.85}
-                className="transition-all duration-200"
+                className="transition-opacity duration-200"
               />
 
               {/* Value on top */}
