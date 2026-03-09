@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, memo } from "react"
 import L from "leaflet"
 import "leaflet/dist/leaflet.css"
 import { MapPin, Minimize2, Maximize2 } from "lucide-react"
@@ -9,10 +9,11 @@ interface MiniMapProps {
   currentFrame: TelemetryFrame | null
 }
 
-export default function MiniMap({ telemetry, currentFrame }: MiniMapProps) {
+export default memo(function MiniMap({ telemetry, currentFrame }: MiniMapProps) {
   const mapRef = useRef<HTMLDivElement>(null)
   const mapInstance = useRef<L.Map | null>(null)
   const markerRef = useRef<L.CircleMarker | null>(null)
+  const lastMapUpdateRef = useRef(0)
   const [collapsed, setCollapsed] = useState(false)
 
   // Build GPS path from frames
@@ -86,10 +87,13 @@ export default function MiniMap({ telemetry, currentFrame }: MiniMapProps) {
     }
   }, [telemetry])
 
-  // Update marker position
+  // Update marker position — throttled to ~10fps
   useEffect(() => {
     if (!markerRef.current || !currentFrame) return
     if (currentFrame.lat === 0 && currentFrame.lng === 0) return
+    const now = performance.now()
+    if (now - lastMapUpdateRef.current < 100) return
+    lastMapUpdateRef.current = now
     markerRef.current.setLatLng([currentFrame.lat, currentFrame.lng])
   }, [currentFrame])
 
@@ -125,4 +129,4 @@ export default function MiniMap({ telemetry, currentFrame }: MiniMapProps) {
       )}
     </div>
   )
-}
+})

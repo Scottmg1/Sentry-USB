@@ -37,7 +37,7 @@ const navItems = [
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const { status } = useKeepAwake()
   const isAwake = status.state === "active" || status.state === "pending"
-  const updateAvailable = useUpdateAvailable()
+  const { available: updateAvailable } = useUpdateAvailable()
 
   return (
     <aside

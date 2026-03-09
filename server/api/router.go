@@ -41,6 +41,7 @@ func RegisterRoutes(mux *http.ServeMux, hub *ws.Hub) {
 	mux.HandleFunc("POST /api/files/upload", h.uploadFile)
 	mux.HandleFunc("GET /api/files/download", h.downloadFile)
 	mux.HandleFunc("GET /api/files/download-zip", h.downloadZip)
+	mux.HandleFunc("POST /api/files/download-zip-multi", h.downloadZipMulti)
 
 	// Logs
 	mux.HandleFunc("GET /api/logs/{name}", h.getLog)

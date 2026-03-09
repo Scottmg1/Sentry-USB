@@ -420,6 +420,80 @@ func (h *handlers) downloadZip(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *handlers) downloadZipMulti(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid form data")
+		return
+	}
+
+	var paths []string
+	if err := json.Unmarshal([]byte(r.FormValue("paths")), &paths); err != nil || len(paths) == 0 {
+		writeError(w, http.StatusBadRequest, "Missing or invalid paths")
+		return
+	}
+
+	// Validate all paths before starting the zip
+	cleanPaths := make([]string, 0, len(paths))
+	for _, p := range paths {
+		cp, allowed := isPathAllowed(p)
+		if !allowed {
+			writeError(w, http.StatusForbidden, "Access denied: "+p)
+			return
+		}
+		if _, err := os.Stat(cp); err != nil {
+			writeError(w, http.StatusNotFound, "Not found: "+p)
+			return
+		}
+		cleanPaths = append(cleanPaths, cp)
+	}
+
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", `attachment; filename="download.zip"`)
+
+	zw := zip.NewWriter(w)
+	defer zw.Close()
+
+	for _, cp := range cleanPaths {
+		info, err := os.Stat(cp)
+		if err != nil {
+			continue
+		}
+		if info.IsDir() {
+			filepath.Walk(cp, func(path string, fi os.FileInfo, err error) error {
+				if err != nil || fi.IsDir() {
+					return nil
+				}
+				rel, err := filepath.Rel(filepath.Dir(cp), path)
+				if err != nil {
+					return nil
+				}
+				zf, err := zw.Create(rel)
+				if err != nil {
+					return nil
+				}
+				f, err := os.Open(path)
+				if err != nil {
+					return nil
+				}
+				defer f.Close()
+				io.Copy(zf, f)
+				return nil
+			})
+		} else {
+			zf, err := zw.Create(filepath.Base(cp))
+			if err != nil {
+				continue
+			}
+			f, err := os.Open(cp)
+			if err != nil {
+				continue
+			}
+			io.Copy(zf, f)
+			f.Close()
+		}
+	}
+}
+
 // cleanupSnapshotSymlinks removes symlinks in snapshot directories that
 // correspond to a deleted SavedClips or SentryClips path. This prevents
 // deleted clips from being re-archived on the next sync.

@@ -13,9 +13,11 @@ import {
   Timer,
   Zap,
   ChevronRight,
+  Download,
 } from "lucide-react"
 import { api } from "@/lib/api"
 import { useKeepAwake } from "@/hooks/useKeepAwake"
+import { useUpdateAvailable } from "@/hooks/useUpdateAvailable"
 import type { PiStatus, DriveStats, StorageBreakdown } from "@/lib/api"
 import { wsClient } from "@/lib/ws"
 import { formatUptime, formatBytes, formatTemp } from "@/lib/utils"
@@ -120,6 +122,7 @@ export default function Dashboard() {
 
   const archiveHistoryRef = useRef<ProgressSample[]>([])
   const processHistoryRef = useRef<ProgressSample[]>([])
+  const updateInfo = useUpdateAvailable()
 
   const active = archiveProgress !== null || processing
 
@@ -288,6 +291,24 @@ export default function Dashboard() {
           System overview and status
         </p>
       </div>
+
+      {updateInfo.available && (
+        <Link
+          to="/settings"
+          className="glass-card flex items-center gap-3 border border-amber-500/20 bg-amber-500/5 p-3 transition-colors hover:bg-amber-500/10"
+        >
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-500/20">
+            <Download className="h-4 w-4 text-amber-400" />
+          </div>
+          <div className="flex-1">
+            <span className="text-sm font-semibold text-amber-200">
+              Update Available{updateInfo.latestVersion ? `: ${updateInfo.latestVersion}` : ""}
+            </span>
+            <p className="text-xs text-slate-500">Go to Settings to install</p>
+          </div>
+          <ChevronRight className="h-4 w-4 text-slate-600" />
+        </Link>
+      )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <StatCard

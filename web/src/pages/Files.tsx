@@ -391,12 +391,18 @@ export default function Files() {
                 </span>
                 <button
                   onClick={() => {
-                    for (const p of selected) {
-                      const a = document.createElement("a")
-                      a.href = `/api/files/download?path=${encodeURIComponent(p)}`
-                      a.download = ""
-                      a.click()
-                    }
+                    const form = document.createElement("form")
+                    form.method = "POST"
+                    form.action = "/api/files/download-zip-multi"
+                    form.style.display = "none"
+                    const input = document.createElement("input")
+                    input.type = "hidden"
+                    input.name = "paths"
+                    input.value = JSON.stringify(Array.from(selected))
+                    form.appendChild(input)
+                    document.body.appendChild(form)
+                    form.submit()
+                    form.remove()
                   }}
                   className="rounded p-1 text-slate-500 hover:bg-white/5 hover:text-blue-400"
                   title="Download selected"

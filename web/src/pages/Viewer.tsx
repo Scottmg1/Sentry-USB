@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import {
   Video, Play, Pause, SkipBack, SkipForward, Loader2,
   Maximize, Minimize, Trash2,
@@ -122,7 +122,7 @@ export default function Viewer() {
     selectedClip?.path ?? null,
     frontFile
   )
-  const currentFrame = frameAtTime(currentTime)
+  const currentFrame = useMemo(() => frameAtTime(currentTime), [currentTime, frameAtTime])
 
   const videoRefs = useRef<Map<string, HTMLVideoElement>>(new Map())
   const masterVideoRef = useRef<HTMLVideoElement | null>(null)
@@ -131,18 +131,60 @@ export default function Viewer() {
   const animFrameRef = useRef<number>(0)
   const pendingSeekRef = useRef<number | null>(null)
 
-  // Continuous timeline across all segments
-  const priorSegmentsTime = segmentDurations.slice(0, currentSetIdx).reduce((a, b) => a + b, 0)
-  const globalTime = priorSegmentsTime + currentTime
-  const totalDuration = segmentDurations.reduce((a, b) => a + b, 0)
+  // Refs for high-frequency values — avoids triggering React renders at video frame rate
+  const currentTimeRef = useRef(0)
+  const globalTimeRef = useRef(0)
+  const playingRef = useRef(false)
+  const currentSetIdxRef = useRef(0)
+  const playbackSpeedRef = useRef(1)
+  const lastUIUpdateRef = useRef(0)
 
-  // Fetch clips
+  // Keep refs in sync with state
+  useEffect(() => { currentSetIdxRef.current = currentSetIdx }, [currentSetIdx])
+  useEffect(() => { playbackSpeedRef.current = playbackSpeed }, [playbackSpeed])
+
+  // Memoized timeline computations (only recompute when segments change)
+  const priorSegmentsTime = useMemo(
+    () => segmentDurations.slice(0, currentSetIdx).reduce((a, b) => a + b, 0),
+    [segmentDurations, currentSetIdx]
+  )
+  const totalDuration = useMemo(
+    () => segmentDurations.reduce((a, b) => a + b, 0),
+    [segmentDurations]
+  )
+  const priorSegmentsTimeRef = useRef(0)
+  useEffect(() => { priorSegmentsTimeRef.current = priorSegmentsTime }, [priorSegmentsTime])
+  const totalDurationRef = useRef(0)
+  useEffect(() => { totalDurationRef.current = totalDuration }, [totalDuration])
+
+  const globalTime = priorSegmentsTime + currentTime
+
+  // Memoized segment marker positions for seek bar
+  const segmentPositions = useMemo(() => {
+    if (segmentDurations.length <= 1 || totalDuration <= 0) return []
+    const positions: number[] = []
+    let cumulative = 0
+    for (let i = 1; i < segmentDurations.length; i++) {
+      cumulative += segmentDurations[i - 1]
+      positions.push((cumulative / totalDuration) * 100)
+    }
+    return positions
+  }, [segmentDurations, totalDuration])
+
+  // Fetch clips by category (only active category, not all 3)
   useEffect(() => {
-    fetch("/api/clips")
+    setLoading(true)
+    fetch(`/api/clips?category=${activeCategory}`)
       .then((r) => r.json())
-      .then((data: ClipGroup[]) => { setGroups(data); setLoading(false) })
+      .then((data: ClipGroup[]) => {
+        setGroups((prev) => {
+          const others = prev.filter((g) => g.name !== activeCategory)
+          return [...others, ...data]
+        })
+        setLoading(false)
+      })
       .catch(() => setLoading(false))
-  }, [])
+  }, [activeCategory])
 
   const activeGroup = groups.find((g) => g.name === activeCategory)
 
@@ -156,30 +198,49 @@ export default function Viewer() {
       setFocusedCamera(null)
       pendingSeekRef.current = null
       setCurrentTime(0)
+      currentTimeRef.current = 0
+      globalTimeRef.current = 0
     }
   }, [selectedClip])
 
-  // Preload segment durations for continuous timeline
+  // Preload segment durations (batched, max 3 concurrent)
   useEffect(() => {
     if (!clipSets.length) { setSegmentDurations([]); return }
     const durations = new Array(clipSets.length).fill(60)
     setSegmentDurations([...durations])
+
+    let cancelled = false
     const cleanups: (() => void)[] = []
-    clipSets.forEach((set, i) => {
-      const url = set.cameras["front"] || Object.values(set.cameras)[0]
-      if (!url) return
-      const v = document.createElement("video")
-      v.preload = "metadata"
-      v.src = url
-      v.onloadedmetadata = () => {
-        if (Number.isFinite(v.duration)) {
-          durations[i] = v.duration
-          setSegmentDurations([...durations])
-        }
+
+    async function loadBatched() {
+      const BATCH = 3
+      for (let start = 0; start < clipSets.length; start += BATCH) {
+        if (cancelled) return
+        const batch = clipSets.slice(start, start + BATCH)
+        await Promise.all(batch.map((set, j) => {
+          const i = start + j
+          return new Promise<void>((resolve) => {
+            const url = set.cameras["front"] || Object.values(set.cameras)[0]
+            if (!url) { resolve(); return }
+            const v = document.createElement("video")
+            v.preload = "metadata"
+            v.src = url
+            v.onloadedmetadata = () => {
+              if (!cancelled && Number.isFinite(v.duration)) {
+                durations[i] = v.duration
+                setSegmentDurations([...durations])
+              }
+              resolve()
+            }
+            v.onerror = () => resolve()
+            cleanups.push(() => { v.src = ""; v.remove() })
+          })
+        }))
       }
-      cleanups.push(() => { v.src = ""; v.remove() })
-    })
-    return () => cleanups.forEach((c) => c())
+    }
+
+    loadBatched()
+    return () => { cancelled = true; cleanups.forEach((c) => c()) }
   }, [clipSets])
 
   // Set master video ref (front camera preferred)
@@ -187,25 +248,38 @@ export default function Viewer() {
     if (!currentSet) { masterVideoRef.current = null; return }
     const front = videoRefs.current.get("front")
     if (front) { masterVideoRef.current = front; return }
-    // Fallback to first available
     for (const v of videoRefs.current.values()) {
       if (v) { masterVideoRef.current = v; return }
     }
     masterVideoRef.current = null
   }, [currentSet, currentSetIdx])
 
-  // Time update animation loop
-  useEffect(() => {
+  // Time update animation loop — only runs during playback, throttles React updates to ~15fps
+  const startAnimLoop = useCallback(() => {
+    const UI_INTERVAL = 66 // ~15fps for React state updates
     function tick() {
+      if (!playingRef.current) return // stop loop when paused
       const master = masterVideoRef.current
       if (master) {
-        setCurrentTime(master.currentTime)
+        currentTimeRef.current = master.currentTime
+        globalTimeRef.current = priorSegmentsTimeRef.current + master.currentTime
+        const now = performance.now()
+        if (now - lastUIUpdateRef.current >= UI_INTERVAL) {
+          lastUIUpdateRef.current = now
+          setCurrentTime(master.currentTime)
+        }
       }
       animFrameRef.current = requestAnimationFrame(tick)
     }
+    cancelAnimationFrame(animFrameRef.current)
     animFrameRef.current = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(animFrameRef.current)
   }, [])
+
+  useEffect(() => {
+    playingRef.current = playing
+    if (playing) startAnimLoop()
+    return () => cancelAnimationFrame(animFrameRef.current)
+  }, [playing, startAnimLoop])
 
   // Apply playback speed to all videos
   useEffect(() => {
@@ -215,49 +289,50 @@ export default function Viewer() {
 
   // Auto-advance to next clip set
   const handleVideoEnded = useCallback(() => {
-    if (currentSetIdx < clipSets.length - 1) {
-      setCurrentSetIdx((i) => i + 1)
-      // Will auto-play via the effect below
-    } else {
+    setCurrentSetIdx((i) => {
+      if (i < clipSets.length - 1) return i + 1
       setPlaying(false)
-    }
-  }, [currentSetIdx, clipSets.length])
-
-  // Auto-play when advancing clip sets
-  useEffect(() => {
-    if (!currentSet || !playing) return
-    const timer = setTimeout(() => {
-      videoRefs.current.forEach((v) => {
-        if (v) v.play().catch(() => { })
-      })
-    }, 100)
-    return () => clearTimeout(timer)
-  }, [currentSetIdx]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Sync all videos to master on seek
-  const syncVideos = useCallback((time: number) => {
-    videoRefs.current.forEach((v) => {
-      if (v) v.currentTime = time
+      return i
     })
+  }, [clipSets.length])
+
+  // Sync all videos to a time — batched in RAF for smoother seeking
+  const syncVideos = useCallback((time: number) => {
+    requestAnimationFrame(() => {
+      videoRefs.current.forEach((v) => {
+        if (v) v.currentTime = time
+      })
+    })
+    // Update UI immediately for paused seeks
+    currentTimeRef.current = time
+    if (!playingRef.current) {
+      globalTimeRef.current = priorSegmentsTimeRef.current + time
+      setCurrentTime(time)
+    }
   }, [])
 
   const togglePlay = useCallback(() => {
-    const wasPlaying = playing
+    const wasPlaying = playingRef.current
     videoRefs.current.forEach((v) => {
       if (!v) return
       if (wasPlaying) v.pause()
       else v.play().catch(() => { })
     })
     setPlaying(!wasPlaying)
-  }, [playing])
+  }, [])
+
+  const segmentDurationsRef = useRef<number[]>([])
+  useEffect(() => { segmentDurationsRef.current = segmentDurations }, [segmentDurations])
 
   const seekToGlobal = useCallback((globalT: number) => {
-    const clamped = Math.max(0, Math.min(globalT, totalDuration))
+    const durations = segmentDurationsRef.current
+    const total = totalDurationRef.current
+    const clamped = Math.max(0, Math.min(globalT, total))
     let remaining = clamped
-    for (let i = 0; i < segmentDurations.length; i++) {
-      if (remaining <= segmentDurations[i] + 0.05 || i === segmentDurations.length - 1) {
-        const offset = Math.min(remaining, segmentDurations[i])
-        if (i !== currentSetIdx) {
+    for (let i = 0; i < durations.length; i++) {
+      if (remaining <= durations[i] + 0.05 || i === durations.length - 1) {
+        const offset = Math.min(remaining, durations[i])
+        if (i !== currentSetIdxRef.current) {
           pendingSeekRef.current = offset
           setCurrentSetIdx(i)
         } else {
@@ -265,21 +340,22 @@ export default function Viewer() {
         }
         return
       }
-      remaining -= segmentDurations[i]
+      remaining -= durations[i]
     }
-  }, [segmentDurations, totalDuration, currentSetIdx, syncVideos])
+  }, [syncVideos])
 
   const skip = useCallback((seconds: number) => {
-    seekToGlobal(globalTime + seconds)
-  }, [globalTime, seekToGlobal])
+    seekToGlobal(globalTimeRef.current + seconds)
+  }, [seekToGlobal])
 
   const handleSeek = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const bar = seekBarRef.current
-    if (!bar || totalDuration <= 0) return
+    const total = totalDurationRef.current
+    if (!bar || total <= 0) return
     const rect = bar.getBoundingClientRect()
     const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
-    seekToGlobal(pct * totalDuration)
-  }, [totalDuration, seekToGlobal])
+    seekToGlobal(pct * total)
+  }, [seekToGlobal])
 
   // Fullscreen toggle
   const toggleFullscreen = useCallback(() => {
@@ -297,7 +373,7 @@ export default function Viewer() {
     return () => document.removeEventListener("fullscreenchange", onFS)
   }, [])
 
-  // Keyboard shortcuts
+  // Keyboard shortcuts — stable callbacks mean this only re-attaches on focusedCamera change
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
@@ -325,7 +401,7 @@ export default function Viewer() {
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [togglePlay, skip, toggleFullscreen, focusedCamera]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [togglePlay, skip, toggleFullscreen, focusedCamera])
 
   // Delete clip
   async function handleDeleteClip(clip: ClipEntry) {
@@ -354,15 +430,15 @@ export default function Viewer() {
     window.open(`/api/files/download-zip?path=${encodeURIComponent(fullPath)}`, "_blank")
   }
 
-  // Register video ref
+  // Register video ref — stable (reads speed from ref)
   const setVideoRef = useCallback((cam: string) => (el: HTMLVideoElement | null) => {
     if (el) {
       videoRefs.current.set(cam, el)
-      el.playbackRate = playbackSpeed
+      el.playbackRate = playbackSpeedRef.current
     } else {
       videoRefs.current.delete(cam)
     }
-  }, [playbackSpeed])
+  }, [])
 
   const progress = totalDuration > 0 ? (globalTime / totalDuration) * 100 : 0
 
@@ -411,7 +487,7 @@ export default function Viewer() {
         {["RecentClips", "SavedClips", "SentryClips"].map((cat) => (
           <button
             key={cat}
-            onClick={() => { setActiveCategory(cat); setSelectedClip(null); setClipSets([]) }}
+            onClick={() => { setActiveCategory(cat); setSelectedClip(null); setClipSets([]); setSegmentDurations([]) }}
             className={cn(
               "rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
               activeCategory === cat
@@ -602,12 +678,12 @@ export default function Viewer() {
                           onEnded={cam === "front" ? handleVideoEnded : undefined}
                           onLoadedData={(e) => {
                             const v = e.currentTarget
-                            v.playbackRate = playbackSpeed
+                            v.playbackRate = playbackSpeedRef.current
                             if (pendingSeekRef.current !== null) {
                               v.currentTime = pendingSeekRef.current
                               if (cam === "front" || !currentSet.cameras["front"]) pendingSeekRef.current = null
                             }
-                            if (playing) v.play().catch(() => { })
+                            if (playingRef.current) v.play().catch(() => { })
                           }}
                         />
                       ) : (
@@ -655,12 +731,17 @@ export default function Viewer() {
                   onClick={handleSeek}
                   onMouseDown={(e) => {
                     handleSeek(e)
+                    let lastDragTime = 0
                     const onMove = (ev: MouseEvent) => {
+                      const now = performance.now()
+                      if (now - lastDragTime < 33) return // ~30fps throttle
+                      lastDragTime = now
                       const bar = seekBarRef.current
-                      if (!bar || totalDuration <= 0) return
+                      const total = totalDurationRef.current
+                      if (!bar || total <= 0) return
                       const rect = bar.getBoundingClientRect()
                       const pct = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width))
-                      seekToGlobal(pct * totalDuration)
+                      seekToGlobal(pct * total)
                     }
                     const onUp = () => {
                       document.removeEventListener("mousemove", onMove)
@@ -677,11 +758,9 @@ export default function Viewer() {
                     >
                       <div className="absolute -right-1 -top-0.5 hidden h-3 w-3 rounded-full bg-blue-400 shadow-lg group-hover:block" />
                     </div>
-                    {segmentDurations.length > 1 && segmentDurations.map((_, i) => {
-                      if (i === 0 || totalDuration <= 0) return null
-                      const pos = segmentDurations.slice(0, i).reduce((a, b) => a + b, 0) / totalDuration * 100
-                      return <div key={i} className="absolute top-0 h-full w-px bg-white/20" style={{ left: `${pos}%` }} />
-                    })}
+                    {segmentPositions.map((pos, i) => (
+                      <div key={i} className="absolute top-0 h-full w-px bg-white/20" style={{ left: `${pos}%` }} />
+                    ))}
                   </div>
                 </div>
 

@@ -1,3 +1,4 @@
+import { memo } from "react"
 import type { TelemetryFrame } from "@/lib/api"
 
 const GEAR_LABELS: Record<number, { text: string; color: string }> = {
@@ -12,7 +13,7 @@ interface TelemetryOverlayProps {
   metric?: boolean
 }
 
-export default function TelemetryOverlay({ frame, metric = false }: TelemetryOverlayProps) {
+export default memo(function TelemetryOverlay({ frame, metric = false }: TelemetryOverlayProps) {
   if (!frame) return null
 
   const speedVal = frame.speed_mps * (metric ? 3.6 : 2.237)
@@ -66,4 +67,4 @@ export default function TelemetryOverlay({ frame, metric = false }: TelemetryOve
       )}
     </div>
   )
-}
+})

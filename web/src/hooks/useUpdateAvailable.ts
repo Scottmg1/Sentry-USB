@@ -1,13 +1,23 @@
 import { useEffect, useState } from "react"
 
-export function useUpdateAvailable(): boolean {
-  const [updateAvailable, setUpdateAvailable] = useState(false)
+interface UpdateInfo {
+  available: boolean
+  latestVersion?: string
+}
+
+export function useUpdateAvailable(): UpdateInfo {
+  const [info, setInfo] = useState<UpdateInfo>({ available: false })
 
   useEffect(() => {
     function check() {
       fetch("/api/system/update-status")
         .then((r) => r.json())
-        .then((data) => setUpdateAvailable(!!data.update_available))
+        .then((data) =>
+          setInfo({
+            available: !!data.update_available,
+            latestVersion: data.latest_version || undefined,
+          })
+        )
         .catch(() => {})
     }
 
@@ -16,5 +26,5 @@ export function useUpdateAvailable(): boolean {
     return () => clearInterval(interval)
   }, [])
 
-  return updateAvailable
+  return info
 }

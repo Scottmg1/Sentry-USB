@@ -36,7 +36,7 @@ const navItems = [
 export function MobileNav({ open, onClose }: MobileNavProps) {
   const { status } = useKeepAwake()
   const isAwake = status.state === "active" || status.state === "pending"
-  const updateAvailable = useUpdateAvailable()
+  const { available: updateAvailable } = useUpdateAvailable()
 
   if (!open) return null
 

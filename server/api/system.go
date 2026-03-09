@@ -297,6 +297,16 @@ func (h *handlers) generateSSHKey(w http.ResponseWriter, r *http.Request) {
 func (h *handlers) getClips(w http.ResponseWriter, r *http.Request) {
 	categories := []string{"RecentClips", "SavedClips", "SentryClips"}
 
+	// Optional: filter to single category for faster loading
+	if cat := r.URL.Query().Get("category"); cat != "" {
+		for _, c := range categories {
+			if c == cat {
+				categories = []string{cat}
+				break
+			}
+		}
+	}
+
 	type eventMeta struct {
 		Timestamp string `json:"timestamp,omitempty"`
 		City      string `json:"city,omitempty"`
