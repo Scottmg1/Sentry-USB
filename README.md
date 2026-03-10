@@ -18,31 +18,27 @@ Sentry USB turns a Raspberry Pi (or compatible SBC) into a smart USB drive for y
 ## Documentation
 
 - **[Wiki](https://github.com/Scottmg1/Sentry-USB/wiki)** — Getting Started, Setup Wizard Guide, Archive Methods, Notifications, Troubleshooting, FAQ, Developer Guide
-- **[Raspberry Pi Setup Guide](doc/RaspberryPiSetup.md)** — Detailed installation instructions
 - **[Build Guide](BUILD.md)** — Building from source
 
 ## Prerequisites
 
-- A Raspberry Pi (Zero W, Zero 2, Pi 4, or Pi 5) or compatible SBC with USB OTG
+- A Raspberry Pi (Zero 2 W, Pi 4, or Pi 5) or compatible SBC with USB OTG
 - A MicroSD card, 64 GB minimum (128 GB+ recommended)
 - USB cable to connect the Pi to the Tesla
 
 ## Quick Start
 
-**Option A** — Flash the Sentry USB image (recommended):
-1. Flash the image to your SD card using **Raspberry Pi Imager** — configure WiFi, hostname (`sentryusb`), and SSH in the imager settings before writing
-2. Boot, open `http://sentryusb.local`, complete the Setup Wizard, wait for reboots (10–20 min), plug into your Tesla
-
-**Option B** — Install on existing Raspberry Pi OS:
+1. Flash **Raspberry Pi OS Lite (64-bit)** to your SD card using **Raspberry Pi Imager** — configure WiFi, hostname (`sentryusb`), and SSH in the imager settings before writing
+2. Boot the Pi, SSH in, and install:
 ```bash
 sudo -i
 curl -fsSL https://usb.sentry-six.com | bash
 ```
-Then open `http://sentryusb.local` and complete the Setup Wizard.
+3. Open `http://sentryusb.local`, complete the Setup Wizard, wait for reboots (10–20 min), plug into your Tesla
 
 > **Note:** The Pi will reboot several times during setup — this is normal. Do not power off.
 
-See [Raspberry Pi Setup Guide](doc/RaspberryPiSetup.md) for detailed instructions.
+See the [Getting Started guide](https://github.com/Scottmg1/Sentry-USB/wiki/GettingStarted) for detailed instructions.
 
 ## Development
 
@@ -88,7 +84,7 @@ SentryUSB/
 │   └── ws/           # WebSocket hub
 ├── run/              # Runtime scripts (archiveloop, gadget, sync, etc.)
 ├── setup/            # Pi setup & configuration scripts
-└── doc/              # Documentation
+└── wiki/             # Documentation (GitHub wiki)
 ```
 
 ## Architecture
