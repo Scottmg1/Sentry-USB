@@ -21,54 +21,35 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
   const [state, setState] = useState<ConnectionState>("connected")
   const disconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const httpOk = useRef(true)
-  const wsOk = useRef(wsClient.isConnected)
+  const httpFailCount = useRef(0)
 
+  // HTTP is the primary connectivity signal. WebSocket connections cycle
+  // naturally (server timeouts, keepalive, etc.) and don't indicate a real
+  // connectivity problem. Only show "reconnecting"/"disconnected" when
+  // HTTP polls actually fail.
   function evaluate() {
-    if (wsOk.current && httpOk.current) {
+    if (httpOk.current) {
       if (disconnectTimer.current) {
         clearTimeout(disconnectTimer.current)
         disconnectTimer.current = null
       }
+      httpFailCount.current = 0
       setState("connected")
-    } else if (!wsOk.current && !httpOk.current) {
+    } else if (httpFailCount.current >= 2) {
+      // Multiple HTTP failures — truly disconnected
       setState("disconnected")
     } else {
-      // One is up, one is down — transitional
+      // First HTTP failure — show reconnecting, give it time
       setState("reconnecting")
     }
   }
 
-  // WebSocket state tracking
+  // Ensure WebSocket stays connected (it handles its own reconnection)
   useEffect(() => {
-    // Ensure WS is connecting
     wsClient.connect()
-
-    const unsub = wsClient.onStatusChange((connected) => {
-      wsOk.current = connected
-      if (!connected) {
-        // Give it time before showing "disconnected"
-        if (!disconnectTimer.current) {
-          setState("reconnecting")
-          disconnectTimer.current = setTimeout(() => {
-            disconnectTimer.current = null
-            evaluate()
-          }, 10_000)
-        }
-      } else {
-        evaluate()
-      }
-    })
-
-    // Sync initial state
-    wsOk.current = wsClient.isConnected
-
-    return () => {
-      unsub()
-      if (disconnectTimer.current) clearTimeout(disconnectTimer.current)
-    }
   }, [])
 
-  // HTTP heartbeat poll
+  // HTTP heartbeat poll — primary connectivity signal
   useEffect(() => {
     let mounted = true
 
@@ -80,11 +61,14 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
         clearTimeout(timeout)
         if (mounted) {
           httpOk.current = res.ok
+          if (res.ok) httpFailCount.current = 0
+          else httpFailCount.current++
           evaluate()
         }
       } catch {
         if (mounted) {
           httpOk.current = false
+          httpFailCount.current++
           evaluate()
         }
       }
@@ -97,17 +81,19 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
 
   function retry() {
     wsClient.reconnect()
+    setState("reconnecting")
     // Immediate HTTP check
     fetch("/api/status")
       .then((res) => {
         httpOk.current = res.ok
+        if (res.ok) httpFailCount.current = 0
         evaluate()
       })
       .catch(() => {
         httpOk.current = false
+        httpFailCount.current++
         evaluate()
       })
-    setState("reconnecting")
   }
 
   return (

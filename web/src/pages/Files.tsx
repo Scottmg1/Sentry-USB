@@ -190,21 +190,22 @@ export default function Files() {
     return () => document.removeEventListener("mousedown", handleClick)
   }, [showSortMenu])
 
-  // Client-side sorting (directories always first)
+  // Client-side sorting (directories always first, name tiebreaker for stability)
   const sortedFiles = useMemo(() => {
     const sorted = [...files]
     sorted.sort((a, b) => {
       // Directories always come first
       if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1
+      const nameCmp = a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
       switch (sortOption) {
         case "name-asc":
-          return a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+          return nameCmp
         case "name-desc":
-          return b.name.localeCompare(a.name, undefined, { sensitivity: "base" })
+          return -nameCmp
         case "date-newest":
-          return new Date(b.modified).getTime() - new Date(a.modified).getTime()
+          return (new Date(b.modified).getTime() - new Date(a.modified).getTime()) || -nameCmp
         case "date-oldest":
-          return new Date(a.modified).getTime() - new Date(b.modified).getTime()
+          return (new Date(a.modified).getTime() - new Date(b.modified).getTime()) || nameCmp
         case "size-largest":
           return b.size - a.size
         case "size-smallest":
