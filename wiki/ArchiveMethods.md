@@ -1,6 +1,6 @@
 # Archive Methods
 
-SentryUSB can automatically back up your Tesla dashcam clips to a remote server or cloud storage whenever the Pi connects to WiFi. Choose the method that fits your setup.
+Sentry USB can automatically back up your Tesla dashcam clips to a Network Attached Storage (NAS) or Cloud Storage whenever the Pi connects to WiFi. Choose the method that best fits your setup.
 
 ## Overview
 
@@ -34,18 +34,6 @@ The simplest archive method. Works with Windows shares, macOS Sharing, Samba on 
 | **Domain** | Optional — only needed for domain-joined Windows environments |
 | **CIFS Version** | Optional — defaults to `3.0`. Use `2.0` or `1.0` for older servers. |
 
-### Manual Configuration (SSH)
-
-```bash
-export ARCHIVE_SYSTEM="cifs"
-export ARCHIVE_SERVER="your-server"
-export SHARE_NAME="SentryArchive"
-export SHARE_USER="username"
-export SHARE_PASSWORD="password"
-```
-
-Then run `/root/bin/setup-sentryusb` to apply.
-
 ---
 
 ## rsync (SSH-based File Sync)
@@ -73,17 +61,6 @@ sudo -i
 ssh-keygen
 ssh-copy-id user@archiveserver
 ```
-
-### Manual Configuration (SSH)
-
-```bash
-export ARCHIVE_SYSTEM=rsync
-export RSYNC_USER=pi
-export RSYNC_SERVER=192.168.1.254
-export RSYNC_PATH=/mnt/storage/SentryArchive/
-```
-
-Then run `/root/bin/setup-sentryusb` to apply.
 
 ---
 
@@ -114,22 +91,11 @@ rclone config    # Use the same remote name you entered in the wizard
 rclone mkdir "remotename:SentryArchive"
 ```
 
-### Manual Configuration (SSH)
-
-```bash
-export ARCHIVE_SYSTEM=rclone
-export RCLONE_DRIVE="gdrive"
-export RCLONE_PATH="SentryArchive"
-export RCLONE_FLAGS=()
-```
-
-Then run `/root/bin/setup-sentryusb` to apply.
-
 ---
 
-## NFS (Network File System)
+## Network File System (NFS)
 
-Direct NFS mount. Common on Linux servers and many NAS devices (Synology, QNAP, etc.).
+Direct NFS mount. Common on Linux servers and many NAS devices (Synology, QNAP, Unifi, UGreen etc.).
 
 ### What You Need
 - An NFS server with an exported path

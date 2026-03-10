@@ -1,6 +1,6 @@
 # Developer Guide
 
-Guide for building SentryUSB from source, understanding the architecture, and contributing.
+Guide for building Sentry USB from source, understanding the architecture, and contributing.
 
 ## Architecture
 
