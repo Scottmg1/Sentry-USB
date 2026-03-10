@@ -83,6 +83,13 @@ then
     log_progress "Unmounting partitions on $DATA_DRIVE..."
     killall archiveloop 2>/dev/null || true
     /root/bin/disable_gadget.sh 2>/dev/null || true
+    # Detach loop devices backed by files on the data drive partitions.
+    # Old TeslaUSB/SentryUSB backing file images (cam_disk.bin etc.) stay
+    # loop-mounted and block unmount/wipefs if not detached first.
+    for loop in $(losetup -a 2>/dev/null | grep -E '/backingfiles/|/mnt/' | cut -d: -f1); do
+      umount "$loop" 2>/dev/null || true
+      losetup -d "$loop" 2>/dev/null || true
+    done
     for mp in /mnt/cam /mnt/music /mnt/lightshow /mnt/boombox /backingfiles /mutable; do
       umount "$mp" 2>/dev/null || true
     done
@@ -90,7 +97,9 @@ then
     for part in "${P1}" "${P2}"; do
       umount "$part" 2>/dev/null || true
     done
-    sleep 1
+    # Give the kernel time to release device handles, especially on
+    # large drives previously used by TeslaUSB with many open files.
+    sleep 3
 
     log_progress "WARNING !!! This will delete EVERYTHING in $DATA_DRIVE."
     wipefs -afq "$DATA_DRIVE"
