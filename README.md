@@ -13,7 +13,7 @@ Sentry USB turns a Raspberry Pi (or compatible SBC) into a smart USB drive for y
 - **Multi-camera Viewer** — 6 layout options for synchronized playback of all Tesla camera angles
 - **Archive Support** — CIFS/SMB, rsync, rclone (cloud), and NFS
 - **Keep-Awake** — BLE, TeslaFi, Tessie, and Webhook methods
-- **11+ Notification Providers** — Pushover, Discord, Telegram, Slack, Signal, Matrix, AWS SNS, IFTTT, Gotify, NTFY, Webhooks
+- **13+ Notification Providers** — Pushover, Discord, Telegram, Slack, Signal, Matrix, AWS SNS, IFTTT, Gotify, NTFY, Webhooks, Sentry Connect
 
 ## Documentation
 
@@ -39,64 +39,6 @@ curl -fsSL https://usb.sentry-six.com | bash
 > **Note:** The Pi will reboot several times during setup — this is normal. Do not power off.
 
 See the [Getting Started guide](https://github.com/Scottmg1/Sentry-USB/wiki/GettingStarted) for detailed instructions.
-
-## Development
-
-### Frontend (React)
-
-```bash
-cd web
-npm install
-npm run dev          # Starts Vite dev server on :5173
-```
-
-### Backend (Go)
-
-```bash
-cd server
-go mod tidy
-make dev             # Starts Go API server on :8788 in dev mode
-```
-
-### Production Build
-
-```bash
-cd web && npm run build          # Build frontend
-cd ../server && make build-arm64 # Cross-compile for Pi 4/5
-cd ../server && make build-armv7 # Cross-compile for Pi Zero
-```
-
-## Project Structure
-
-```
-SentryUSB/
-├── web/              # React frontend (Vite + TailwindCSS)
-│   └── src/
-│       ├── components/
-│       │   ├── layout/     # AppShell, Sidebar, MobileNav
-│       │   └── setup/      # SetupWizard + 9 step components
-│       ├── pages/          # Dashboard, Viewer, Files, Logs, Settings
-│       └── lib/            # API client, WebSocket, utilities
-├── server/           # Go API server
-│   ├── api/          # HTTP handlers (status, config, files, system, etc.)
-│   ├── config/       # Config file parser/writer
-│   ├── shell/        # Safe subprocess execution
-│   └── ws/           # WebSocket hub
-├── run/              # Runtime scripts (archiveloop, gadget, sync, etc.)
-├── setup/            # Pi setup & configuration scripts
-└── wiki/             # Documentation (GitHub wiki)
-```
-
-## Architecture
-
-```
-Browser (React SPA)  ←→  Go API Server (single ARM binary)  ←→  Shell Scripts + Pi Hardware
-```
-
-- **Frontend**: React + Vite + TailwindCSS — builds to static files
-- **Backend**: Go HTTP server with REST API + WebSocket for live updates
-- **Legacy**: Existing bash scripts preserved; Go shells out to them
-
 
 ## Based On
 
