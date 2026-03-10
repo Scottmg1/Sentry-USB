@@ -1,20 +1,42 @@
 type MessageHandler = (data: unknown) => void
+type StatusListener = (connected: boolean) => void
 
 class WebSocketClient {
   private ws: WebSocket | null = null
   private handlers: Map<string, Set<MessageHandler>> = new Map()
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private url: string
+  private _connected = false
+  private statusListeners: Set<StatusListener> = new Set()
 
   constructor() {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:"
     this.url = `${protocol}//${window.location.host}/api/ws`
   }
 
+  get isConnected() {
+    return this._connected
+  }
+
+  private setConnected(value: boolean) {
+    if (this._connected === value) return
+    this._connected = value
+    this.statusListeners.forEach((cb) => cb(value))
+  }
+
+  onStatusChange(cb: StatusListener): () => void {
+    this.statusListeners.add(cb)
+    return () => { this.statusListeners.delete(cb) }
+  }
+
   connect() {
     if (this.ws?.readyState === WebSocket.OPEN) return
 
     this.ws = new WebSocket(this.url)
+
+    this.ws.onopen = () => {
+      this.setConnected(true)
+    }
 
     this.ws.onmessage = (event) => {
       try {
@@ -29,6 +51,7 @@ class WebSocketClient {
     }
 
     this.ws.onclose = () => {
+      this.setConnected(false)
       this.scheduleReconnect()
     }
 
@@ -58,6 +81,11 @@ class WebSocketClient {
     return () => {
       this.handlers.get(type)?.delete(handler)
     }
+  }
+
+  reconnect() {
+    this.disconnect()
+    this.connect()
   }
 
   disconnect() {

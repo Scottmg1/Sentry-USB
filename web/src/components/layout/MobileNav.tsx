@@ -16,6 +16,7 @@ import {
 import { cn } from "@/lib/utils"
 import { useKeepAwake } from "@/hooks/useKeepAwake"
 import { useUpdateAvailable } from "@/hooks/useUpdateAvailable"
+import { useConnectionStatus } from "@/hooks/useConnectionStatus"
 
 interface MobileNavProps {
   open: boolean
@@ -37,6 +38,7 @@ export function MobileNav({ open, onClose }: MobileNavProps) {
   const { status } = useKeepAwake()
   const isAwake = status.state === "active" || status.state === "pending"
   const { available: updateAvailable } = useUpdateAvailable()
+  const { state: connState } = useConnectionStatus()
 
   if (!open) return null
 
@@ -103,6 +105,20 @@ export function MobileNav({ open, onClose }: MobileNavProps) {
             )
           })}
         </nav>
+
+        {/* Connection status */}
+        <div className={cn(
+          "mx-2 mb-1 flex items-center gap-2 rounded-lg px-3 py-2 text-xs",
+          connState === "connected" ? "text-emerald-400" : connState === "reconnecting" ? "text-amber-400" : "text-red-400"
+        )}>
+          <span className={cn(
+            "h-2 w-2 shrink-0 rounded-full",
+            connState === "connected" ? "bg-emerald-400" : connState === "reconnecting" ? "bg-amber-400 animate-pulse" : "bg-red-400"
+          )} />
+          <span className="opacity-70">
+            {connState === "connected" ? "Connected" : connState === "reconnecting" ? "Reconnecting" : "Offline"}
+          </span>
+        </div>
 
         {/* Keep-awake indicator */}
         {isAwake && (
