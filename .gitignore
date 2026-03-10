@@ -18,3 +18,4 @@ deploy/
 internal/
 
 cmd/
+internal/
