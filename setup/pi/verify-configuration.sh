@@ -86,28 +86,31 @@ function check_available_space () {
 function check_available_space_sd () {
   setup_progress "Verifying that there is sufficient space available on the MicroSD card..."
 
+  # Minimum usable space: 8 GiB for backingfiles partition, or 8 GiB unpartitioned.
+  # Old 32 GiB threshold blocked cards smaller than ~38 GB even after root shrink.
+  local min_space=$(( (1<<30) * 8 ))
+
   # check if backingfiles and mutable already exist
   if [ -e /dev/disk/by-label/backingfiles ] && [ -e /dev/disk/by-label/mutable ]
   then
     backingfiles_size=$(blockdev --getsize64 /dev/disk/by-label/backingfiles)
-    if [ "$backingfiles_size" -lt  $(( (1<<30) * 32)) ]
+    if [ "$backingfiles_size" -lt "$min_space" ]
     then
-      setup_progress "STOP: Existing backingfiles partition is too small"
+      setup_progress "STOP: Existing backingfiles partition is too small ($(( backingfiles_size / 1024 / 1024 / 1024 ))GB, need at least 8GB)"
       exit 1
     fi
   else
     # The following assumes that all the partitions are at the start
     # of the disk, and that all the free space is at the end.
- 
+
     local available_space
- 
+
     # query unpartitioned space
     available_space=$(sfdisk -F "$BOOT_DISK" | grep -o '[0-9]* bytes' | head -1 | awk '{print $1}')
- 
-    # Require at least 40 GB of available space.
-    if [ "$available_space" -lt  $(( (1<<30) * 32)) ]
+
+    if [ "$available_space" -lt "$min_space" ]
     then
-      setup_progress "STOP: The MicroSD card is too small: $available_space bytes available."
+      setup_progress "STOP: The MicroSD card is too small: $(( available_space / 1024 / 1024 / 1024 ))GB available, need at least 8GB."
       setup_progress "$(parted "${BOOT_DISK}" print)"
       exit 1
     fi
@@ -119,9 +122,14 @@ function check_available_space_sd () {
 function check_available_space_usb () {
   setup_progress "Verifying that there is sufficient space available on the USB drive ..."
 
-  # Verify that the disk has been provided and not a partition
+  # Verify that the disk has been provided and not a partition.
+  # Use timeout to avoid hanging indefinitely on unresponsive drives
+  # (e.g. USB drive in sleep mode, I/O errors after interrupted setup).
   local drive_type
-  drive_type=$(lsblk -pno TYPE "$DATA_DRIVE" | head -n 1)
+  drive_type=$(timeout 30 lsblk -pno TYPE "$DATA_DRIVE" 2>/dev/null | head -n 1) || {
+    setup_progress "STOP: Could not read $DATA_DRIVE (drive may be unresponsive or disconnected). Try unplugging and reconnecting it."
+    exit 1
+  }
 
   if [ "$drive_type" != "disk" ]
   then
@@ -134,7 +142,10 @@ function check_available_space_usb () {
   # EXISTING DATA ON THE DATA_DRIVE WILL BE REMOVED.
 
   local drive_size
-  drive_size=$(blockdev --getsize64 "$DATA_DRIVE")
+  drive_size=$(timeout 30 blockdev --getsize64 "$DATA_DRIVE") || {
+    setup_progress "STOP: Could not read size of $DATA_DRIVE (drive may be unresponsive). Try unplugging and reconnecting it."
+    exit 1
+  }
 
   # Require at least 64GB drive size, or 59 GiB.
   if [ "$drive_size" -lt  $(( (1<<30) * 59)) ]
