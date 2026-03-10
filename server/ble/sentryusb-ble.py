@@ -287,78 +287,62 @@ def update_avahi_service_name(name):
 # ============================================================
 
 def scan_wifi_networks():
-    """Scan for visible WiFi networks using iwlist."""
+    """Scan for visible WiFi networks using nmcli."""
     try:
+        # Trigger a fresh scan (ignore errors — list still returns cached results)
+        subprocess.run(['nmcli', 'device', 'wifi', 'rescan'],
+                       capture_output=True, timeout=10)
         output = subprocess.check_output(
-            ['iwlist', 'wlan0', 'scan'], text=True, timeout=15, stderr=subprocess.DEVNULL
+            ['nmcli', '-t', '-f', 'SSID,SIGNAL,SECURITY', 'device', 'wifi', 'list'],
+            text=True, timeout=10, stderr=subprocess.DEVNULL
         )
-        networks = []
-        current = {}
-        for line in output.split('\n'):
-            line = line.strip()
-            if line.startswith('Cell '):
-                if current.get('ssid'):
-                    networks.append(current)
-                current = {}
-            elif 'ESSID:' in line:
-                ssid = line.split('ESSID:')[1].strip('"')
-                if ssid:
-                    current['ssid'] = ssid
-            elif 'Signal level=' in line:
-                try:
-                    sig = line.split('Signal level=')[1].split(' ')[0]
-                    current['signal'] = int(sig.replace('/100', ''))
-                except (ValueError, IndexError):
-                    current['signal'] = 0
-            elif 'Encryption key:on' in line:
-                current['encrypted'] = True
-            elif 'Encryption key:off' in line:
-                current['encrypted'] = False
-        if current.get('ssid'):
-            networks.append(current)
-        # Deduplicate by SSID, keep strongest signal
         seen = {}
-        for net in networks:
-            ssid = net['ssid']
-            if ssid not in seen or net.get('signal', 0) > seen[ssid].get('signal', 0):
-                seen[ssid] = net
+        for line in output.strip().split('\n'):
+            if not line.strip():
+                continue
+            parts = line.split(':')
+            if len(parts) < 3:
+                continue
+            ssid = parts[0].strip()
+            if not ssid:
+                continue
+            try:
+                signal = int(parts[1])
+            except (ValueError, IndexError):
+                signal = 0
+            security = parts[2].strip() if len(parts) > 2 else ''
+            encrypted = security != '' and security != '--'
+            # Keep strongest signal per SSID
+            if ssid not in seen or signal > seen[ssid].get('signal', 0):
+                seen[ssid] = {'ssid': ssid, 'signal': signal, 'encrypted': encrypted}
         return list(seen.values())
     except Exception as e:
         log.error(f'WiFi scan failed: {e}')
         return []
 
 def configure_wifi(ssid, password, hostname=None):
-    """Configure WiFi via wpa_supplicant and optionally set hostname."""
+    """Configure WiFi via NetworkManager and optionally set hostname."""
     result = {'connected': False, 'ip': '', 'error': ''}
     try:
-        # Write wpa_supplicant config
-        wpa_conf = f'''
-country=US
-ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
-update_config=1
-
-network={{
-    ssid="{ssid}"
-    psk="{password}"
-    key_mgmt=WPA-PSK
-}}
-'''
-        wpa_path = '/etc/wpa_supplicant/wpa_supplicant.conf'
-        # Remount rw if needed
-        subprocess.run(['/root/bin/remountfs_rw'], capture_output=True, timeout=5)
-        with open(wpa_path, 'w') as f:
-            f.write(wpa_conf)
-
-        # Set hostname if provided
+        # Set hostname if provided (needs rw filesystem)
         if hostname:
+            subprocess.run(['/root/bin/remountfs_rw'], capture_output=True, timeout=5)
             subprocess.run(['hostnamectl', 'set-hostname', hostname], capture_output=True, timeout=5)
 
-        # Restart networking
-        subprocess.run(['wpa_cli', '-i', 'wlan0', 'reconfigure'], capture_output=True, timeout=10)
+        # Connect via NetworkManager
+        connect_result = subprocess.run(
+            ['nmcli', 'device', 'wifi', 'connect', ssid, 'password', password],
+            capture_output=True, text=True, timeout=30
+        )
+        if connect_result.returncode != 0:
+            err_msg = connect_result.stderr.strip() or connect_result.stdout.strip()
+            result['error'] = err_msg or 'nmcli connect failed'
+            log.error(f'WiFi connect failed: {err_msg}')
+            return result
 
-        # Wait for connection (up to 20 seconds)
+        # Wait for IP address (up to 15 seconds)
         import time
-        for _ in range(20):
+        for _ in range(15):
             time.sleep(1)
             try:
                 ip_output = subprocess.check_output(
