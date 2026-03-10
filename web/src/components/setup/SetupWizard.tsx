@@ -34,10 +34,7 @@ function networkError(data: SetupFormData): string | null {
   return null
 }
 
-function storageError(data: SetupFormData): string | null {
-  const musicSize = (data.MUSIC_SIZE ?? "").replace(/[^0-9]/g, "")
-  if (musicSize && !(data.MUSIC_SHARE_NAME ?? "").trim())
-    return "Music Share Name is required when a music drive size is set."
+function storageError(_data: SetupFormData): string | null {
   return null
 }
 

@@ -158,29 +158,20 @@ export function StorageStep({ data, onChange }: StepProps) {
           <div className="rounded-lg border border-white/5 bg-white/[0.02] p-4">
             <div className="mb-2">
               <label className="text-sm font-medium text-slate-300">Music Share Name</label>
+              <span className="ml-2 text-xs text-slate-600">(optional)</span>
             </div>
             <input
               type="text"
               value={data.MUSIC_SHARE_NAME ?? ""}
               onChange={(e) => onChange("MUSIC_SHARE_NAME", e.target.value)}
               placeholder={(data.ARCHIVE_SYSTEM ?? "cifs") === "rsync" ? "/mnt/user/music" : "e.g. Music or Media/Music"}
-              className={`w-full rounded-lg border bg-white/5 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none transition focus:ring-1 ${
-                !(data.MUSIC_SHARE_NAME ?? "").trim()
-                  ? "border-red-500/50 focus:border-red-500/50 focus:ring-red-500/25"
-                  : "border-white/10 focus:border-blue-500/50 focus:ring-blue-500/25"
-              }`}
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none transition focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/25"
             />
             <p className="mt-1 text-xs text-slate-600">
               {(data.ARCHIVE_SYSTEM ?? "cifs") === "rsync"
-                ? "The absolute path to your music folder on the rsync server (e.g. /mnt/user/music)."
-                : "The share name on your Archive Server where your music is stored (e.g. the share or subfolder path)."}
+                ? "The absolute path to your music folder on the rsync server (e.g. /mnt/user/music). Leave empty to skip music syncing."
+                : "The share name on your Archive Server where your music is stored. Leave empty to skip music syncing — the drive will be created but not auto-synced."}
             </p>
-            {!(data.MUSIC_SHARE_NAME ?? "").trim() && (
-              <div className="mt-2 flex items-start gap-2 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2">
-                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-400" />
-                <p className="text-xs text-red-300">Required when a music drive size is set.</p>
-              </div>
-            )}
           </div>
         )}
         <SizeInput

@@ -73,7 +73,16 @@ marker="/root/RESIZE_ATTEMPTED"
 lastpart=$(sfdisk -q -l "$rootdev" | tail +2 | sort -n -k 2 | tail -1 | awk '{print $1}')
 unpart=$(sfdisk -F "$rootdev" | grep -o '[0-9]* bytes' | head -1 | awk '{print $1}')
 
-if [ "${1:-}" != "norootshrink" ] && [ "$unpart" -lt $(( (1<<30) * 32)) ]; then
+# Dynamic threshold: at least 40% of disk should be unpartitioned for SentryUSB data.
+# Old hardcoded 32 GiB limit caused infinite loops on cards smaller than ~38 GB
+# because even after shrinking root, unpartitioned space never reached 32 GiB.
+disksize_bytes=$(blockdev --getsize64 "$rootdev")
+min_free_bytes=$((disksize_bytes * 40 / 100))
+if [ "$min_free_bytes" -lt $((4 * (1<<30))) ]; then
+    min_free_bytes=$((4 * (1<<30)))
+fi
+
+if [ "${1:-}" != "norootshrink" ] && [ "$unpart" -lt "$min_free_bytes" ]; then
     if [ "$rootpart" != "$lastpart" ]; then
         error_exit "Insufficient unpartitioned space, and root partition is not the last partition."
     fi
