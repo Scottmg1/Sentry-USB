@@ -139,6 +139,36 @@ The log viewer supports live tailing with a "Follow" button for auto-scroll.
 
 ---
 
+## Sentry Connect (iOS App)
+
+### Is there a mobile app?
+
+Yes. **[Sentry Connect](https://apps.apple.com/app/sentry-connect/id6759679030)** is a native iOS/iPadOS app (requires 17.2+) for managing your SentryUSB Pi from your iPhone or iPad. It includes a dashboard, camera viewer, file browser, live logs, drive stats, and push notifications with Live Activity progress on your lock screen.
+
+See [Sentry Connect](SentryConnect) for full details.
+
+### How do I get push notifications on my iPhone?
+
+1. Install [Sentry Connect](https://apps.apple.com/app/sentry-connect/id6759679030) from the App Store
+2. Open the SentryUSB web UI → **Settings** → **Mobile Notifications** → **Generate Pairing Code**
+3. In Sentry Connect → **Settings** → **Pair for Notifications** → enter the 6-character code
+
+If your phone is on the same WiFi as the Pi, you can tap **Pair Automatically** instead.
+
+### What are Live Activities?
+
+When an archive is running, Sentry Connect shows real-time progress on your Lock Screen and Dynamic Island (iPhone 14 Pro+). It displays the current phase, file count, ETA, and a progress bar. The Pi can start a Live Activity remotely even when the app isn't open.
+
+### Can I use Sentry Connect over Bluetooth?
+
+Yes. When WiFi isn't available, the app connects over Bluetooth LE for access to the dashboard, logs, settings, and drive stats. Video playback and file transfers are not available over BLE. BLE is also used for initial WiFi setup before the Pi has joined a network.
+
+### Is there an Android app?
+
+Not currently. Sentry Connect is iOS-only. For Android, you can use any of the [11 notification providers](Notifications) (Pushover, Telegram, ntfy, etc.) and access the full web UI from your phone's browser.
+
+---
+
 ## Troubleshooting
 
 ### My Tesla doesn't see the USB drive

@@ -153,6 +153,13 @@ The Go server exposes these REST API routes:
 | GET | `/api/system/version` | Current version info |
 | GET | `/api/system/health-check` | Comprehensive health check |
 
+### Notifications (Mobile Push Pairing)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/notifications/generate-code` | Generate a 6-character pairing code (expires in 5 min) |
+| GET | `/api/notifications/paired-devices` | List all paired mobile devices |
+| DELETE | `/api/notifications/paired-devices/{id}` | Remove a paired device |
+
 ### WebSocket
 | Endpoint | Description |
 |----------|-------------|

@@ -151,6 +151,21 @@ Free, open-source pub-sub notification service. Works with [ntfy.sh](https://ntf
 
 ---
 
+## Sentry Connect (iOS Push Notifications)
+
+If you have the **Sentry Connect** iPhone app, you can receive native iOS push notifications — no third-party service setup required. This also enables **Live Activities** with real-time archive progress on your Lock Screen and Dynamic Island.
+
+Pairing is done with a one-time 6-character code. No accounts or API keys needed.
+
+1. Open the SentryUSB web UI → **Settings** → **Mobile Notifications** → **Generate Pairing Code**
+2. In the Sentry Connect app → **Settings** → **Pair for Notifications** → enter the code
+
+Or, if your phone is connected to the Pi over WiFi, tap **Pair Automatically** in the app for a one-tap setup.
+
+See [Sentry Connect](SentryConnect) for full details on the iOS app, Live Activities, and BLE connectivity.
+
+---
+
 ## Manual Configuration
 
 Notifications can also be configured by editing `/root/sentryusb.conf` via SSH. Set the `*_ENABLED` variable to `true` and provide the required fields:
