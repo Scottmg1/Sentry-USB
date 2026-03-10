@@ -77,11 +77,27 @@ then
      blkid "$P1" | grep -q 'TYPE="ext4"'
   then
     log_progress "Existing backingfiles (xfs) and mutable (ext4) partitions found on $DATA_DRIVE. Keeping them."
+    # Unmount before xfs_repair — otherwise it hangs on a busy device.
+    killall archiveloop 2>/dev/null || true
+    /root/bin/disable_gadget.sh 2>/dev/null || true
+    for loop in $(losetup -a 2>/dev/null | grep -E '/backingfiles/|/mnt/' | cut -d: -f1); do
+      umount "$loop" 2>/dev/null || true
+      losetup -d "$loop" 2>/dev/null || true
+    done
+    for mp in /mnt/cam /mnt/music /mnt/lightshow /mnt/boombox /backingfiles /mutable; do
+      umount "$mp" 2>/dev/null || true
+    done
+    umount "$P1" 2>/dev/null || true
+    umount "$P2" 2>/dev/null || true
+    sleep 2
     # Clear XFS log to prevent slow journal replay when mounting later.
     # On large drives (1TB+) previously used by TeslaUSB, a dirty journal
     # can cause the mount to hang for 10+ minutes during replay.
     log_progress "Clearing XFS log on $P2..."
-    xfs_repair -L "$P2" 2>/dev/null || true
+    if ! timeout 60 xfs_repair -L "$P2" 2>/dev/null; then
+      log_progress "xfs_repair timed out or failed on $P2, reformatting..."
+      mkfs.xfs -f -m reflink=1 -L backingfiles "$P2"
+    fi
   else
     # Unmount any partitions on the data drive before wiping, otherwise
     # wipefs/parted/mkfs will hang waiting for exclusive device access.
