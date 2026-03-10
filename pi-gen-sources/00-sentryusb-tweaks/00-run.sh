@@ -86,6 +86,24 @@ else
 fi
 chmod +x "${BLE_SCRIPT}" 2>/dev/null || true
 
+# ── Install remountfs_rw helper (needed by BLE daemon to save PIN on read-only rootfs) ──
+if [ -f "../../run/remountfs_rw" ]; then
+    install -m 755 "../../run/remountfs_rw" "${ROOTFS_DIR}/root/bin/remountfs_rw"
+else
+    # Inline fallback so the image always has this script
+    cat > "${ROOTFS_DIR}/root/bin/remountfs_rw" << 'RWEOF'
+#!/bin/bash
+mount / -o remount,rw
+for _mp in /sentryusb /teslausb; do
+  if findmnt "$_mp" > /dev/null 2>&1; then
+    mount "$_mp" -o remount,rw
+    break
+  fi
+done
+RWEOF
+    chmod +x "${ROOTFS_DIR}/root/bin/remountfs_rw"
+fi
+
 BLE_SERVICE="${ROOTFS_DIR}/lib/systemd/system/sentryusb-ble.service"
 if [ -f "files/sentryusb-ble.service" ]; then
     cp "files/sentryusb-ble.service" "${BLE_SERVICE}"
