@@ -77,6 +77,11 @@ then
      blkid "$P1" | grep -q 'TYPE="ext4"'
   then
     log_progress "Existing backingfiles (xfs) and mutable (ext4) partitions found on $DATA_DRIVE. Keeping them."
+    # Clear XFS log to prevent slow journal replay when mounting later.
+    # On large drives (1TB+) previously used by TeslaUSB, a dirty journal
+    # can cause the mount to hang for 10+ minutes during replay.
+    log_progress "Clearing XFS log on $P2..."
+    xfs_repair -L "$P2" 2>/dev/null || true
   else
     # Unmount any partitions on the data drive before wiping, otherwise
     # wipefs/parted/mkfs will hang waiting for exclusive device access.
