@@ -68,6 +68,9 @@ func getOrCreateCredentials() *NotificationCredentials {
 			DeviceSecret: deviceSecret,
 		}
 
+		// Remount root filesystem read-write before persisting (root FS is read-only at runtime)
+		shell.Run("bash", "-c", "/root/bin/remountfs_rw")
+
 		// Persist to disk
 		dir := filepath.Dir(notificationCredentialsPath)
 		os.MkdirAll(dir, 0700)
