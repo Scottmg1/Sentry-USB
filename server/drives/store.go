@@ -114,8 +114,14 @@ func (s *Store) saveLocked() error {
 		return err
 	}
 
-	enc := json.NewEncoder(f)
-	if err := enc.Encode(&s.data); err != nil {
+	data, err := json.MarshalIndent(&s.data, "", "  ")
+	if err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
+	data = append(data, '\n')
+	if _, err := f.Write(data); err != nil {
 		f.Close()
 		os.Remove(tmp)
 		return err

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import {
   FolderOpen,
   Upload,
@@ -15,8 +15,23 @@ import {
   RectangleHorizontal,
   CheckCircle,
   X,
+  Search,
+  ArrowUpDown,
+  Check,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+
+type SortOption = "name-asc" | "name-desc" | "date-newest" | "date-oldest" | "size-largest" | "size-smallest" | "type"
+
+const SORT_LABELS: Record<SortOption, string> = {
+  "name-asc": "Name (A-Z)",
+  "name-desc": "Name (Z-A)",
+  "date-newest": "Date (Newest)",
+  "date-oldest": "Date (Oldest)",
+  "size-largest": "Size (Largest)",
+  "size-smallest": "Size (Smallest)",
+  "type": "Type",
+}
 
 interface FileEntry {
   name: string
@@ -75,6 +90,11 @@ export default function Files() {
   const [uploads, setUploads] = useState<UploadProgress[]>([])
   const [uploading, setUploading] = useState(false)
   const [effectiveBase, setEffectiveBase] = useState("")
+  const [search, setSearch] = useState("")
+  const [sortOption, setSortOption] = useState<SortOption>("name-asc")
+  const [showSortMenu, setShowSortMenu] = useState(false)
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const sortMenuRef = useRef<HTMLDivElement>(null)
 
   // Fetch config to determine which tabs to show
   useEffect(() => {
@@ -108,12 +128,14 @@ export default function Files() {
     loadConfig()
   }, [])
 
-  async function fetchFiles(path: string) {
+  async function fetchFiles(path: string, searchQuery?: string) {
     setLoading(true)
     setError(null)
     setSelected(new Set())
     try {
-      const res = await fetch(`/api/files/ls?path=${encodeURIComponent(path)}`)
+      let url = `/api/files/ls?path=${encodeURIComponent(path)}`
+      if (searchQuery) url += `&search=${encodeURIComponent(searchQuery)}`
+      const res = await fetch(url)
       if (!res.ok) {
         const data = await res.json().catch(() => ({ error: "Failed to load" }))
         setError(data.error || "Failed to load directory")
@@ -125,7 +147,7 @@ export default function Files() {
         // Auto-navigate into the matching subfolder when at a drive's base path
         // (Music/LightShow/Boombox disk images have a root folder matching the
         // drive name, possibly alongside hidden macOS/Tesla metadata folders)
-        if (activeDrive && path === activeDrive.base) {
+        if (activeDrive && path === activeDrive.base && !searchQuery) {
           const match = data.find(
             (e) => e.is_dir && e.name === activeDrive.id
           )
@@ -145,8 +167,59 @@ export default function Files() {
   }
 
   useEffect(() => {
-    if (currentPath) fetchFiles(currentPath)
+    if (currentPath) fetchFiles(currentPath, search || undefined)
   }, [currentPath])
+
+  // Debounced search
+  function handleSearchChange(value: string) {
+    setSearch(value)
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
+    searchTimerRef.current = setTimeout(() => {
+      if (currentPath) fetchFiles(currentPath, value || undefined)
+    }, 300)
+  }
+
+  // Close sort menu on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (sortMenuRef.current && !sortMenuRef.current.contains(e.target as Node)) {
+        setShowSortMenu(false)
+      }
+    }
+    if (showSortMenu) document.addEventListener("mousedown", handleClick)
+    return () => document.removeEventListener("mousedown", handleClick)
+  }, [showSortMenu])
+
+  // Client-side sorting (directories always first)
+  const sortedFiles = useMemo(() => {
+    const sorted = [...files]
+    sorted.sort((a, b) => {
+      // Directories always come first
+      if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1
+      switch (sortOption) {
+        case "name-asc":
+          return a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+        case "name-desc":
+          return b.name.localeCompare(a.name, undefined, { sensitivity: "base" })
+        case "date-newest":
+          return new Date(b.modified).getTime() - new Date(a.modified).getTime()
+        case "date-oldest":
+          return new Date(a.modified).getTime() - new Date(b.modified).getTime()
+        case "size-largest":
+          return b.size - a.size
+        case "size-smallest":
+          return a.size - b.size
+        case "type": {
+          const extA = a.name.includes(".") ? a.name.split(".").pop()!.toLowerCase() : ""
+          const extB = b.name.includes(".") ? b.name.split(".").pop()!.toLowerCase() : ""
+          return extA.localeCompare(extB) || a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+        }
+        default:
+          return 0
+      }
+    })
+    return sorted
+  }, [files, sortOption])
 
   function navigate(entry: FileEntry) {
     if (entry.is_dir) {
@@ -165,6 +238,7 @@ export default function Files() {
   function switchDrive(drive: DriveTab) {
     setActiveDrive(drive)
     setEffectiveBase("")
+    setSearch("")
     setCurrentPath(drive.base)
   }
 
@@ -309,6 +383,57 @@ export default function Files() {
         ))}
       </div>
 
+      {/* Search and Sort */}
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-600" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            placeholder="Search files..."
+            className="w-full rounded-lg border border-white/10 bg-white/5 py-1.5 pl-8 pr-8 text-sm text-slate-300 placeholder-slate-600 outline-none transition focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/25"
+          />
+          {search && (
+            <button
+              onClick={() => handleSearchChange("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-600 hover:text-slate-400"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+        <div className="relative" ref={sortMenuRef}>
+          <button
+            onClick={() => setShowSortMenu(!showSortMenu)}
+            className={cn(
+              "glass-card glass-card-hover flex items-center gap-1.5 whitespace-nowrap px-3 py-1.5 text-sm transition-colors",
+              showSortMenu ? "text-blue-400" : "text-slate-400 hover:text-slate-200"
+            )}
+          >
+            <ArrowUpDown className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">{SORT_LABELS[sortOption]}</span>
+          </button>
+          {showSortMenu && (
+            <div className="absolute right-0 top-full z-20 mt-1 w-44 overflow-hidden rounded-lg border border-white/10 bg-slate-900 shadow-xl">
+              {(Object.keys(SORT_LABELS) as SortOption[]).map((opt) => (
+                <button
+                  key={opt}
+                  onClick={() => { setSortOption(opt); setShowSortMenu(false) }}
+                  className={cn(
+                    "flex w-full items-center justify-between px-3 py-2 text-left text-sm transition-colors hover:bg-white/5",
+                    sortOption === opt ? "text-blue-400" : "text-slate-400"
+                  )}
+                >
+                  {SORT_LABELS[opt]}
+                  {sortOption === opt && <Check className="h-3.5 w-3.5" />}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Upload progress */}
       {uploads.length > 0 && (
         <div className="glass-card space-y-2 p-3">
@@ -431,18 +556,18 @@ export default function Files() {
               <FolderOpen className="mb-2 h-10 w-10 text-slate-700" />
               <p className="text-sm text-slate-500">{error}</p>
             </div>
-          ) : files.length === 0 ? (
+          ) : sortedFiles.length === 0 ? (
             <div className="flex flex-col items-center justify-center p-8">
               {(() => { const Icon = TAB_ICONS[activeDrive.icon]; return <Icon className="mb-2 h-10 w-10 text-slate-700" /> })()}
-              <p className="text-sm text-slate-500">Empty folder</p>
+              <p className="text-sm text-slate-500">{search ? "No matching files" : "Empty folder"}</p>
               <p className="mt-1 text-xs text-slate-600">
-                {activeDrive.icon === "cam" ? "No clips in this folder" : "Upload files to get started"}
+                {search ? "Try a different search term" : activeDrive.icon === "cam" ? "No clips in this folder" : "Upload files to get started"}
               </p>
             </div>
           ) : (
             <table className="w-full text-sm">
               <tbody>
-                {files.map((f) => (
+                {sortedFiles.map((f) => (
                   <tr
                     key={f.path}
                     className={cn(
@@ -470,6 +595,9 @@ export default function Files() {
                       )}
                     </td>
                     <td className="min-w-0 truncate py-3 text-slate-300">{f.name}</td>
+                    <td className="hidden px-3 py-3 text-right text-xs text-slate-600 sm:table-cell">
+                      {f.modified ? new Date(f.modified).toLocaleDateString() : ""}
+                    </td>
                     <td className="px-3 py-3 text-right text-xs text-slate-600">
                       {f.is_dir ? "" : formatSize(f.size)}
                     </td>

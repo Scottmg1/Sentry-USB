@@ -1,4 +1,5 @@
-import { Archive } from "lucide-react"
+import { useState } from "react"
+import { Archive, Loader2, CheckCircle, XCircle } from "lucide-react"
 import type { StepProps } from "../SetupWizard"
 import { SecretInput } from "../SecretInput"
 import { cn } from "@/lib/utils"
@@ -64,9 +65,37 @@ function Field({
 
 export function ArchiveStep({ data, onChange }: StepProps) {
   const system = data.ARCHIVE_SYSTEM ?? "cifs"
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<{ success: boolean; error?: string } | null>(null)
 
   function req(field: string, systems: string[]): boolean {
     return systems.includes(system) && !data[field]?.trim()
+  }
+
+  function canTest(): boolean {
+    if (system === "none") return false
+    if (system === "cifs") return !!(data.ARCHIVE_SERVER?.trim() && data.SHARE_NAME?.trim() && data.SHARE_USER?.trim() && data.SHARE_PASSWORD?.trim())
+    if (system === "rsync") return !!(data.RSYNC_SERVER?.trim() && data.RSYNC_USER?.trim() && data.RSYNC_PATH?.trim())
+    if (system === "rclone") return !!(data.RCLONE_DRIVE?.trim() && data.RCLONE_PATH?.trim())
+    if (system === "nfs") return !!(data.ARCHIVE_SERVER?.trim() && data.SHARE_NAME?.trim())
+    return false
+  }
+
+  async function handleTest() {
+    setTesting(true)
+    setTestResult(null)
+    try {
+      const res = await fetch("/api/setup/test-archive", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      })
+      const result = await res.json()
+      setTestResult(result)
+    } catch {
+      setTestResult({ success: false, error: "Unable to connect to device" })
+    }
+    setTesting(false)
   }
 
   return (
@@ -88,7 +117,7 @@ export function ArchiveStep({ data, onChange }: StepProps) {
         {archiveSystems.map((s) => (
           <button
             key={s.id}
-            onClick={() => onChange("ARCHIVE_SYSTEM", s.id)}
+            onClick={() => { onChange("ARCHIVE_SYSTEM", s.id); setTestResult(null) }}
             className={cn(
               "rounded-lg border p-3 text-left transition-colors",
               system === s.id
@@ -141,6 +170,46 @@ export function ArchiveStep({ data, onChange }: StepProps) {
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="NFS Server" field="ARCHIVE_SERVER" placeholder="hostname or IP" data={data} onChange={onChange} error={req("ARCHIVE_SERVER", ["nfs"])} />
           <Field label="Export Path" field="SHARE_NAME" placeholder="/volume1/TeslaCam" data={data} onChange={onChange} hint="Exact export path on the NAS" error={req("SHARE_NAME", ["nfs"])} />
+        </div>
+      )}
+
+      {/* Test Connection */}
+      {system !== "none" && (
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleTest}
+            disabled={testing || !canTest()}
+            className={cn(
+              "flex items-center gap-1.5 rounded-lg border px-4 py-2 text-sm font-medium transition-colors",
+              testing || !canTest()
+                ? "cursor-not-allowed border-white/5 text-slate-600"
+                : "border-white/10 text-slate-300 hover:bg-white/5 hover:text-slate-100"
+            )}
+          >
+            {testing ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Testing...
+              </>
+            ) : (
+              "Test Connection"
+            )}
+          </button>
+          {testResult && (
+            <div className={cn("flex items-center gap-1.5 text-sm", testResult.success ? "text-emerald-400" : "text-red-400")}>
+              {testResult.success ? (
+                <>
+                  <CheckCircle className="h-4 w-4" />
+                  Connection successful
+                </>
+              ) : (
+                <>
+                  <XCircle className="h-4 w-4 shrink-0" />
+                  <span className="line-clamp-2">{testResult.error || "Connection failed"}</span>
+                </>
+              )}
+            </div>
+          )}
         </div>
       )}
 

@@ -27,6 +27,7 @@ func RegisterRoutes(mux *http.ServeMux, hub *ws.Hub) {
 	mux.HandleFunc("GET /api/setup/config", h.getSetupConfig)
 	mux.HandleFunc("PUT /api/setup/config", h.saveSetupConfig)
 	mux.HandleFunc("POST /api/setup/run", h.runSetup)
+	mux.HandleFunc("POST /api/setup/test-archive", h.testArchive)
 
 	// Clips
 	mux.HandleFunc("GET /api/clips", h.getClips)

@@ -2,12 +2,14 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Scottmg1/Sentry-USB/server/config"
 	"github.com/Scottmg1/Sentry-USB/server/shell"
@@ -213,4 +215,125 @@ func (h *handlers) runSetup(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "started"})
+}
+
+// testArchive tests archive connectivity without running full setup.
+func (h *handlers) testArchive(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Failed to read request body")
+		return
+	}
+	defer r.Body.Close()
+
+	var params map[string]string
+	if err := json.Unmarshal(body, &params); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid JSON")
+		return
+	}
+
+	system := params["ARCHIVE_SYSTEM"]
+	if system == "" || system == "none" {
+		writeError(w, http.StatusBadRequest, "No archive system specified")
+		return
+	}
+
+	timeout := 15 * time.Second
+	var testErr error
+
+	switch system {
+	case "cifs":
+		server := params["ARCHIVE_SERVER"]
+		share := params["SHARE_NAME"]
+		user := params["SHARE_USER"]
+		pass := params["SHARE_PASSWORD"]
+		domain := params["SHARE_DOMAIN"]
+		cifsVer := params["CIFS_VERSION"]
+		if server == "" || share == "" || user == "" || pass == "" {
+			writeError(w, http.StatusBadRequest, "Missing required CIFS fields")
+			return
+		}
+		tmpDir := "/tmp/sentryusb-archive-test"
+		os.MkdirAll(tmpDir, 0755)
+		defer os.Remove(tmpDir)
+
+		opts := fmt.Sprintf("username=%s,password=%s,iocharset=utf8", user, pass)
+		if domain != "" {
+			opts += ",domain=" + domain
+		}
+		if cifsVer != "" {
+			opts += ",vers=" + cifsVer
+		}
+		src := fmt.Sprintf("//%s/%s", server, share)
+		_, testErr = shell.RunWithTimeout(timeout, "mount", "-t", "cifs", src, tmpDir, "-o", opts)
+		if testErr == nil {
+			shell.RunWithTimeout(5*time.Second, "umount", tmpDir)
+		}
+
+	case "rsync":
+		server := params["RSYNC_SERVER"]
+		user := params["RSYNC_USER"]
+		path := params["RSYNC_PATH"]
+		if server == "" || user == "" || path == "" {
+			writeError(w, http.StatusBadRequest, "Missing required rsync fields")
+			return
+		}
+		// Test SSH connectivity (rsync uses SSH)
+		_, testErr = shell.RunWithTimeout(timeout, "ssh",
+			"-o", "ConnectTimeout=10",
+			"-o", "StrictHostKeyChecking=no",
+			"-o", "BatchMode=yes",
+			fmt.Sprintf("%s@%s", user, server),
+			"echo", "ok")
+
+	case "rclone":
+		drive := params["RCLONE_DRIVE"]
+		rpath := params["RCLONE_PATH"]
+		if drive == "" || rpath == "" {
+			writeError(w, http.StatusBadRequest, "Missing required rclone fields")
+			return
+		}
+		// Test rclone remote accessibility
+		_, testErr = shell.RunWithTimeout(timeout, "rclone", "lsd", fmt.Sprintf("%s:%s", drive, rpath))
+
+	case "nfs":
+		server := params["ARCHIVE_SERVER"]
+		exportPath := params["SHARE_NAME"]
+		if server == "" || exportPath == "" {
+			writeError(w, http.StatusBadRequest, "Missing required NFS fields")
+			return
+		}
+		tmpDir := "/tmp/sentryusb-archive-test"
+		os.MkdirAll(tmpDir, 0755)
+		defer os.Remove(tmpDir)
+
+		src := fmt.Sprintf("%s:%s", server, exportPath)
+		_, testErr = shell.RunWithTimeout(timeout, "mount", "-t", "nfs", src, tmpDir, "-o", "nolock,soft,timeo=50")
+		if testErr == nil {
+			shell.RunWithTimeout(5*time.Second, "umount", tmpDir)
+		}
+
+	default:
+		writeError(w, http.StatusBadRequest, "Unknown archive system: "+system)
+		return
+	}
+
+	if testErr != nil {
+		errMsg := testErr.Error()
+		// Clean up verbose error prefix for display
+		if idx := strings.Index(errMsg, "stderr: "); idx >= 0 {
+			errMsg = errMsg[idx+len("stderr: "):]
+		}
+		log.Printf("[setup] Archive test failed for %s: %v", system, testErr)
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"success": false,
+			"error":   strings.TrimSpace(errMsg),
+		})
+		return
+	}
+
+	log.Printf("[setup] Archive test succeeded for %s", system)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+	})
 }
