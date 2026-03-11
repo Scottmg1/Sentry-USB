@@ -345,5 +345,9 @@ func (h *handlers) sendTestNotification(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(testResp.StatusCode)
 	w.Write(testBody)
 
-	log.Printf("[notifications] Test notification sent, backend returned %d", testResp.StatusCode)
+	if testResp.StatusCode >= 200 && testResp.StatusCode < 300 {
+		log.Printf("[notifications] Test notification sent successfully (HTTP %d)", testResp.StatusCode)
+	} else {
+		log.Printf("[notifications] Test notification failed — HTTP %d: %s", testResp.StatusCode, string(testBody))
+	}
 }

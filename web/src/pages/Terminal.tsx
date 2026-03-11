@@ -84,9 +84,15 @@ export default function TerminalPage() {
             }
         }
 
-        ws.onclose = () => {
+        ws.onclose = (ev) => {
             if (wsRef.current) {
-                disconnect()
+                if (ev.code === 1006) {
+                    setState("error")
+                    setErrorMsg("Connection lost. Check your network and try again.")
+                    wsRef.current = null
+                } else {
+                    disconnect()
+                }
             }
         }
 
@@ -210,6 +216,8 @@ export default function TerminalPage() {
                         <p className="mt-1 text-center text-sm text-slate-500">
                             {state === "disconnected"
                                 ? "Session ended. Log in again to reconnect."
+                                : state === "error"
+                                ? "Authentication failed. Check your credentials and try again."
                                 : "Enter your Linux credentials to open a terminal session."
                             }
                         </p>

@@ -691,8 +691,8 @@ func buildDriveStats(clips []timedRoute, idx int) Drive {
 
 	durationMs := endTime.Sub(startTime).Milliseconds()
 	var fsdPercent float64
-	if durationMs > 0 {
-		fsdPercent = math.Round(float64(fsdEngagedMs)/float64(durationMs)*1000) / 10
+	if totalDistanceM > 0 {
+		fsdPercent = math.Round(fsdDistanceM/totalDistanceM*1000) / 10
 	}
 
 	var fsdStateResult []int

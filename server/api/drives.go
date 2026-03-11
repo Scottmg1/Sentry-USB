@@ -510,8 +510,8 @@ func (dh *DriveHandlers) driveStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var fsdPercent float64
-	if totalDurationMs > 0 {
-		fsdPercent = math.Round(float64(totalFSDEngagedMs)/float64(totalDurationMs)*1000) / 10
+	if totalDistKm > 0 {
+		fsdPercent = math.Round(totalFSDDistKm/totalDistKm*1000) / 10
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -573,16 +573,17 @@ func (dh *DriveHandlers) fsdAnalytics(w http.ResponseWriter, r *http.Request) {
 
 	// Daily breakdown
 	type dayStats struct {
-		Date           string  `json:"date"`
-		DayName        string  `json:"dayName"`
-		Disengagements int     `json:"disengagements"`
-		AccelPushes    int     `json:"accelPushes"`
-		FSDPercent     float64 `json:"fsdPercent"`
-		Drives         int     `json:"drives"`
-		FSDDistanceKm  float64 `json:"fsdDistanceKm"`
-		FSDDistanceMi  float64 `json:"fsdDistanceMi"`
-		TotalDurationMs int64  `json:"totalDurationMs"`
-		FSDEngagedMs   int64   `json:"fsdEngagedMs"`
+		Date            string  `json:"date"`
+		DayName         string  `json:"dayName"`
+		Disengagements  int     `json:"disengagements"`
+		AccelPushes     int     `json:"accelPushes"`
+		FSDPercent      float64 `json:"fsdPercent"`
+		Drives          int     `json:"drives"`
+		FSDDistanceKm   float64 `json:"fsdDistanceKm"`
+		FSDDistanceMi   float64 `json:"fsdDistanceMi"`
+		TotalDurationMs int64   `json:"totalDurationMs"`
+		FSDEngagedMs    int64   `json:"fsdEngagedMs"`
+		TotalDistanceKm float64 `json:"-"`
 	}
 	dailyMap := make(map[string]*dayStats)
 
@@ -623,12 +624,13 @@ func (dh *DriveHandlers) fsdAnalytics(w http.ResponseWriter, r *http.Request) {
 		ds.FSDDistanceMi += d.FSDDistanceMi
 		ds.TotalDurationMs += d.DurationMs
 		ds.FSDEngagedMs += d.FSDEngagedMs
+		ds.TotalDistanceKm += d.DistanceKm
 	}
 
 	// Compute daily FSD percent and find best day
 	for _, ds := range dailyMap {
-		if ds.TotalDurationMs > 0 {
-			ds.FSDPercent = math.Round(float64(ds.FSDEngagedMs)/float64(ds.TotalDurationMs)*1000) / 10
+		if ds.TotalDistanceKm > 0 {
+			ds.FSDPercent = math.Round(ds.FSDDistanceKm/ds.TotalDistanceKm*1000) / 10
 		}
 		ds.FSDDistanceKm = math.Round(ds.FSDDistanceKm*100) / 100
 		ds.FSDDistanceMi = math.Round(ds.FSDDistanceMi*100) / 100
@@ -660,8 +662,8 @@ func (dh *DriveHandlers) fsdAnalytics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var fsdPercent float64
-	if totalDurationMs > 0 {
-		fsdPercent = math.Round(float64(fsdEngagedMs)/float64(totalDurationMs)*1000) / 10
+	if totalDistKm > 0 {
+		fsdPercent = math.Round(fsdDistKm/totalDistKm*1000) / 10
 	}
 
 	// Compute FSD grade (3 tiers)

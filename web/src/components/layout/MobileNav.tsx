@@ -11,7 +11,7 @@ import {
   Shield,
   TerminalSquare,
   HeartPulse,
-  Clock,
+  Timer,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useKeepAwake } from "@/hooks/useKeepAwake"
@@ -131,10 +131,10 @@ export function MobileNav({ open, onClose }: MobileNavProps) {
             {status.state === "active" ? (
               <HeartPulse className="h-3.5 w-3.5 animate-pulse" />
             ) : (
-              <Clock className="h-3.5 w-3.5 animate-pulse" />
+              <Timer className="h-3.5 w-3.5 animate-pulse" />
             )}
             <span className="opacity-70">
-              {status.state === "active" ? "Keeping awake" : "Waiting..."}
+              {status.state === "active" ? "Keeping awake" : "Waiting for archive..."}
             </span>
           </div>
         )}

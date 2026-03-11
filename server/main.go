@@ -29,6 +29,9 @@ func main() {
 	// setup-wizard configuration.
 	go runStartupMigration()
 
+	// Load web auth credentials from config
+	api.InitAuth()
+
 	hub := ws.NewHub()
 	go hub.Run()
 
@@ -82,7 +85,8 @@ func main() {
 		log.Printf("Running in development mode (no static file serving)")
 	}
 
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	handler := api.NewAuthMiddleware(mux)
+	if err := http.ListenAndServe(addr, handler); err != nil {
 		log.Fatal(err)
 		os.Exit(1)
 	}

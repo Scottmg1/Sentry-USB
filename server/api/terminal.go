@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"os/exec"
 	"sync"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"github.com/creack/pty"
@@ -156,18 +158,37 @@ func (h *handlers) handleTerminal(w http.ResponseWriter, r *http.Request) {
 }
 
 // validateCredentials checks if the username/password is valid by running
-// su -c whoami with the password piped to stdin.
+// su -c true <username> inside a PTY (so su gets a real terminal for password
+// input) and writing the password when prompted. A 5-second timeout prevents
+// hangs if su blocks unexpectedly.
 func validateCredentials(username, password string) bool {
-	cmd := exec.Command("su", "-c", "whoami", username)
-	stdin, err := cmd.StdinPipe()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "su", "-c", "true", username)
+	ptmx, err := pty.Start(cmd)
 	if err != nil {
+		log.Printf("[terminal] validateCredentials: pty.Start failed: %v", err)
 		return false
 	}
+	defer ptmx.Close()
+
+	// Read until we get a prompt (or timeout via context)
 	go func() {
-		defer stdin.Close()
-		io.WriteString(stdin, password+"\n")
+		buf := make([]byte, 512)
+		// Read the "Password:" prompt — we don't need the content, just wait for it
+		ptmx.Read(buf)
+		// Write the password
+		ptmx.Write([]byte(password + "\n"))
 	}()
-	if err := cmd.Run(); err != nil {
+
+	err = cmd.Wait()
+	if ctx.Err() != nil {
+		log.Printf("[terminal] validateCredentials: timed out for user %q", username)
+		return false
+	}
+	if err != nil {
+		log.Printf("[terminal] validateCredentials: failed for user %q: %v", username, err)
 		return false
 	}
 	return true

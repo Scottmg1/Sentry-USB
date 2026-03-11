@@ -11,13 +11,16 @@ import Drives from "@/pages/Drives"
 import Support from "@/pages/Support"
 import Terminal from "@/pages/Terminal"
 import FSDAnalytics from "@/pages/FSDAnalytics"
+import Login from "@/pages/Login"
 import { SetupWizard } from "@/components/setup/SetupWizard"
 import { SetupProgress } from "@/components/setup/SetupProgress"
+import { useAuth } from "@/hooks/useAuth"
 
 type AppState = "loading" | "setup" | "configuring" | "ready"
 
 export default function App() {
   const [appState, setAppState] = useState<AppState>("loading")
+  const { state: authState, login } = useAuth()
 
   useEffect(() => {
     let cancelled = false
@@ -98,6 +101,19 @@ export default function App() {
         <SetupWizard onClose={() => setAppState("ready")} />
       </div>
     )
+  }
+
+  // Auth check — show login if required and not authenticated
+  if (authState === "loading") {
+    return (
+      <div className="flex h-screen items-center justify-center bg-slate-950">
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+      </div>
+    )
+  }
+
+  if (authState === "unauthenticated") {
+    return <Login onLogin={login} />
   }
 
   return (

@@ -5,17 +5,35 @@ message="$2"
 type="${3:-}"
 notification_type="${4:-}"
 
+# Helper: run curl and check the HTTP status code. Logs errors with response body.
+# Usage: checked_curl "ServiceName" curl_args...
+function checked_curl () {
+  local service="$1"; shift
+  local response http_code body
+  response=$(curl -s -w "\n%{http_code}" "$@") || {
+    log "ERROR: $service — curl failed (exit code $?)"
+    return 1
+  }
+  http_code=$(echo "$response" | tail -1)
+  body=$(echo "$response" | sed '$d')
+  if [ "$http_code" -lt 200 ] 2>/dev/null || [ "$http_code" -ge 300 ] 2>/dev/null; then
+    log "ERROR: $service — HTTP $http_code — $body"
+    return 1
+  fi
+}
+
 function send_signal () {
   log "Sending Signal message."
 
-  curl -X POST -H "Content-Type: application/json" "$SIGNAL_URL/v2/send" \
+  checked_curl "Signal" -X POST -H "Content-Type: application/json" "$SIGNAL_URL/v2/send" \
      -d '{"message": "'"$message"'", "number": "'"$SIGNAL_FROM_NUM"'", "recipients": [ "'"$SIGNAL_TO_NUM"'" ]}'
- }
+}
 
 function send_pushover () {
   log "Sending Pushover message."
 
-  curl -F "token=$PUSHOVER_APP_KEY" \
+  checked_curl "Pushover" \
+    -F "token=$PUSHOVER_APP_KEY" \
     -F "user=$PUSHOVER_USER_KEY" \
     -F "title=$title" \
     -F "message=$message" \
@@ -25,7 +43,7 @@ function send_pushover () {
 function send_gotify () {
   log "Sending Gotify message."
 
-  curl -X POST \
+  checked_curl "Gotify" -X POST \
     -F "title=$title" \
     -F "message=$message" \
     -F "priority=$GOTIFY_PRIORITY" \
@@ -35,7 +53,7 @@ function send_gotify () {
 function send_discord() {
   log "Sending Discord message."
 
-  curl -H "Content-Type: application/json" -d \
+  checked_curl "Discord" -H "Content-Type: application/json" -d \
     '{"username": "'"$title"'", "content": "'"$message"'"}' \
     "$DISCORD_WEBHOOK_URL"
 }
@@ -43,7 +61,7 @@ function send_discord() {
 function send_ifttt () {
   log "Sending IFTTT message."
 
-  curl -X POST -H "Content-Type: application/json" -d \
+  checked_curl "IFTTT" -X POST -H "Content-Type: application/json" -d \
     '{"value1":"'"$title"'","value2":"'"$message"'"}' \
     "https://maker.ifttt.com/trigger/$IFTTT_EVENT_NAME/with/key/$IFTTT_KEY"
 }
@@ -51,26 +69,30 @@ function send_ifttt () {
 function send_sns () {
   log "Sending SNS message."
 
-  python3 /root/bin/send_sns.py -t "$AWS_SNS_TOPIC_ARN" -s "$title" -m "$message"
+  if ! python3 /root/bin/send_sns.py -t "$AWS_SNS_TOPIC_ARN" -s "$title" -m "$message"; then
+    log "ERROR: SNS — python script failed (exit code $?)"
+  fi
 }
 
 function send_matrix() {
   log "Send Matrix message."
 
-  python3 /root/bin/send_matrix.py "$MATRIX_SERVER_URL" "$MATRIX_USERNAME" "$MATRIX_PASSWORD" "$MATRIX_ROOM" "$title: $message"
+  if ! python3 /root/bin/send_matrix.py "$MATRIX_SERVER_URL" "$MATRIX_USERNAME" "$MATRIX_PASSWORD" "$MATRIX_ROOM" "$title: $message"; then
+    log "ERROR: Matrix — python script failed (exit code $?)"
+  fi
 }
 
 function send_telegram () {
   log "Sending Telegram message."
-  curl -v -H "Content-Type: application/json" -d \
+  checked_curl "Telegram" -H "Content-Type: application/json" -d \
     '{"chat_id": "'"$TELEGRAM_CHAT_ID"'", "text": "'"$title: $message"'", "disable_notification": '"$TELEGRAM_SILENT_NOTIFY"' }' \
     https://api.telegram.org/"$TELEGRAM_BOT_TOKEN"/sendMessage
 }
 
 function send_webhook () {
   log "Sending Webhook message."
-  
-  curl -X POST \
+
+  checked_curl "Webhook" -X POST \
     -d "{\"value1\":\"${title}\",\"value2\":\"${message}\"}" \
     -H "Content-Type: application/json" \
     "$WEBHOOK_URL"
@@ -79,13 +101,13 @@ function send_webhook () {
 function send_slack () {
   log "Sending Slack message."
   payload="{\"text\":\"$title: $message\",\"username\": \"Tesla\",\"icon_emoji\": \":tesla:\"}"
-  curl -X POST --data-urlencode "payload=$payload" "$SLACK_WEBHOOK_URL"
+  checked_curl "Slack" -X POST --data-urlencode "payload=$payload" "$SLACK_WEBHOOK_URL"
 }
 
 function send_ntfy () {
   log "Sending ntfy message."
 
-  curl -X POST \
+  checked_curl "ntfy" -X POST \
     -H "Title: $title" \
     -H "Priority: ${NTFY_PRIORITY:-3}" \
     ${NTFY_TOKEN:+-H "Authorization: Bearer $NTFY_TOKEN"} \
@@ -109,7 +131,7 @@ function send_mobile_push () {
   fi
   payload+="}"
 
-  curl -s -X POST \
+  checked_curl "Mobile Push" -X POST \
     -H "Content-Type: application/json" \
     -H "X-Device-Secret: $MOBILE_PUSH_SECRET" \
     -d "$payload" \
