@@ -159,28 +159,30 @@ func (h *handlers) handleTerminal(w http.ResponseWriter, r *http.Request) {
 	s.ServeHTTP(w, r)
 }
 
-// verifyPasswordScript reads the password from stdin and verifies it against
-// /etc/shadow using Python's crypt module. The username is passed as argv[1].
-const verifyPasswordScript = `
-import crypt, sys
-password = sys.stdin.readline().rstrip('\n')
-username = sys.argv[1]
-with open('/etc/shadow') as f:
-    for line in f:
-        parts = line.strip().split(':')
-        if parts[0] == username:
-            stored = parts[1]
-            if not stored or stored in ('*', '!!') or stored.startswith('!'):
-                sys.exit(1)
-            if crypt.crypt(password, stored) == stored:
-                sys.exit(0)
-            sys.exit(1)
-sys.exit(1)
-`
+// verifyPasswordScript is a Perl script that reads the password from stdin
+// and verifies it against /etc/shadow. Perl's crypt() calls the system's
+// crypt(3) which supports all hash formats (SHA-512, yescrypt, etc.).
+// Username is passed as the first argument.
+const verifyPasswordScript = `use strict;
+use warnings;
+my $username = $ARGV[0];
+my $password = <STDIN>;
+chomp $password;
+open(my $fh, '<', '/etc/shadow') or exit 1;
+while (<$fh>) {
+    chomp;
+    my @parts = split(/:/, $_, -1);
+    if ($parts[0] eq $username) {
+        my $stored = $parts[1];
+        exit 1 if !$stored || $stored eq '*' || $stored eq '!!' || $stored =~ /^!/;
+        exit(crypt($password, $stored) eq $stored ? 0 : 1);
+    }
+}
+exit 1;`
 
 // validateCredentials checks if the username/password is valid by reading
-// /etc/shadow and verifying the password hash. The server runs as root so
-// it has direct access to the shadow file.
+// /etc/shadow and verifying the password hash via Perl's crypt(). The server
+// runs as root so it has direct access to the shadow file.
 func validateCredentials(username, password string) bool {
 	// Check that the user exists on the system
 	if _, err := user.Lookup(username); err != nil {
@@ -192,10 +194,13 @@ func validateCredentials(username, password string) bool {
 	defer cancel()
 
 	// Password is passed via stdin to avoid exposing it in /proc/PID/cmdline.
-	cmd := exec.CommandContext(ctx, "python3", "-W", "ignore::DeprecationWarning", "-c", verifyPasswordScript, username)
+	cmd := exec.CommandContext(ctx, "perl", "-e", verifyPasswordScript, username)
 	cmd.Stdin = strings.NewReader(password + "\n")
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		log.Printf("[terminal] validateCredentials: failed for user %q: %v", username, err)
+		errMsg := strings.TrimSpace(stderr.String())
+		log.Printf("[terminal] validateCredentials: failed for user %q: %v (stderr: %s)", username, err, errMsg)
 		return false
 	}
 	return true
