@@ -1,15 +1,19 @@
 import { useState } from "react"
 import { Shield, LogIn, Loader2, AlertCircle } from "lucide-react"
+import { useAuth } from "@/hooks/useAuth"
 
 interface LoginProps {
-  onLogin: (username: string, password: string) => Promise<string | null>
+  onLogin?: (username: string, password: string) => Promise<string | null>
 }
 
 export default function Login({ onLogin }: LoginProps) {
+  const { login: contextLogin } = useAuth()
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
+
+  const doLogin = onLogin || contextLogin
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -17,7 +21,7 @@ export default function Login({ onLogin }: LoginProps) {
 
     setLoading(true)
     setError("")
-    const err = await onLogin(username.trim(), password)
+    const err = await doLogin(username.trim(), password)
     if (err) {
       setError(err)
       setLoading(false)

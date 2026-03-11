@@ -13,11 +13,13 @@ import {
   TerminalSquare,
   HeartPulse,
   Timer,
+  LogOut,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useKeepAwake } from "@/hooks/useKeepAwake"
 import { useUpdateAvailable } from "@/hooks/useUpdateAvailable"
 import { useConnectionStatus } from "@/hooks/useConnectionStatus"
+import { useAuth } from "@/hooks/useAuth"
 
 interface SidebarProps {
   collapsed: boolean
@@ -40,6 +42,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const isAwake = status.state === "active" || status.state === "pending"
   const { available: updateAvailable } = useUpdateAvailable()
   const { state: connState } = useConnectionStatus()
+  const { authRequired, logout } = useAuth()
 
   return (
     <aside
@@ -134,6 +137,17 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             </span>
           )}
         </div>
+      )}
+
+      {/* Logout */}
+      {authRequired && (
+        <button
+          onClick={logout}
+          className="mx-2 mb-1 flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-slate-600 transition-colors hover:bg-white/5 hover:text-slate-400"
+        >
+          <LogOut className="h-3.5 w-3.5 shrink-0" />
+          {!collapsed && <span>Logout</span>}
+        </button>
       )}
 
       {/* Collapse toggle */}

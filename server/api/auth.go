@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -26,8 +28,11 @@ var webCredentials struct {
 	password string
 }
 
-// sessions is the in-memory session store.
+// sessions is the session store (persisted to disk).
 var sessions = newSessionStore()
+
+// sessionsFile is the path to the on-disk session store.
+var sessionsFile string
 
 type sessionStore struct {
 	mu       sync.RWMutex
@@ -50,6 +55,7 @@ func (s *sessionStore) create() string {
 	s.mu.Lock()
 	s.sessions[token] = time.Now().Add(sessionTTL)
 	s.mu.Unlock()
+	s.saveToDisk()
 	return token
 }
 
@@ -67,6 +73,7 @@ func (s *sessionStore) remove(token string) {
 	s.mu.Lock()
 	delete(s.sessions, token)
 	s.mu.Unlock()
+	s.saveToDisk()
 }
 
 func (s *sessionStore) cleanupLoop() {
@@ -74,18 +81,71 @@ func (s *sessionStore) cleanupLoop() {
 		time.Sleep(cleanupInterval)
 		s.mu.Lock()
 		now := time.Now()
+		removed := 0
 		for token, expiry := range s.sessions {
 			if now.After(expiry) {
 				delete(s.sessions, token)
+				removed++
 			}
 		}
 		s.mu.Unlock()
+		if removed > 0 {
+			s.saveToDisk()
+		}
 	}
+}
+
+func (s *sessionStore) loadFromDisk() {
+	if sessionsFile == "" {
+		return
+	}
+	data, err := os.ReadFile(sessionsFile)
+	if err != nil {
+		return
+	}
+	var stored map[string]int64
+	if err := json.Unmarshal(data, &stored); err != nil {
+		return
+	}
+	s.mu.Lock()
+	now := time.Now()
+	loaded := 0
+	for token, unix := range stored {
+		expiry := time.Unix(unix, 0)
+		if now.Before(expiry) {
+			s.sessions[token] = expiry
+			loaded++
+		}
+	}
+	s.mu.Unlock()
+	if loaded > 0 {
+		log.Printf("[auth] Restored %d active sessions from disk", loaded)
+	}
+}
+
+func (s *sessionStore) saveToDisk() {
+	if sessionsFile == "" {
+		return
+	}
+	s.mu.RLock()
+	stored := make(map[string]int64, len(s.sessions))
+	for token, expiry := range s.sessions {
+		stored[token] = expiry.Unix()
+	}
+	s.mu.RUnlock()
+	data, err := json.Marshal(stored)
+	if err != nil {
+		return
+	}
+	os.WriteFile(sessionsFile, data, 0600)
 }
 
 // InitAuth loads web credentials from the config file. Call at startup.
 func InitAuth() {
 	path := config.FindConfigPath()
+	sessionsFile = filepath.Join(filepath.Dir(path), ".sentryusb-sessions.json")
+	sessions.loadFromDisk()
+
 	active, _, err := config.ParseFile(path)
 	if err != nil {
 		log.Printf("[auth] Could not read config for web auth: %v", err)

@@ -1,8 +1,26 @@
-import { useState, useEffect, useCallback } from "react"
+import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react"
 
 type AuthState = "loading" | "authenticated" | "unauthenticated"
 
+interface AuthContextValue {
+  state: AuthState
+  authRequired: boolean
+  login: (username: string, password: string) => Promise<string | null>
+  logout: () => Promise<void>
+}
+
+const AuthContext = createContext<AuthContextValue>({
+  state: "loading",
+  authRequired: false,
+  login: async () => null,
+  logout: async () => {},
+})
+
 export function useAuth() {
+  return useContext(AuthContext)
+}
+
+export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>("loading")
   const [authRequired, setAuthRequired] = useState(false)
 
@@ -43,7 +61,15 @@ export function useAuth() {
 
   useEffect(() => {
     checkAuth()
+    // Re-check periodically so we detect invalidated sessions (e.g., after
+    // server restart which clears in-memory sessions).
+    const iv = setInterval(checkAuth, 10_000)
+    return () => clearInterval(iv)
   }, [checkAuth])
 
-  return { state, authRequired, login, logout }
+  return (
+    <AuthContext.Provider value={{ state, authRequired, login, logout }}>
+      {children}
+    </AuthContext.Provider>
+  )
 }

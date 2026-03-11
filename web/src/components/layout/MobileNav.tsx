@@ -12,11 +12,13 @@ import {
   TerminalSquare,
   HeartPulse,
   Timer,
+  LogOut,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useKeepAwake } from "@/hooks/useKeepAwake"
 import { useUpdateAvailable } from "@/hooks/useUpdateAvailable"
 import { useConnectionStatus } from "@/hooks/useConnectionStatus"
+import { useAuth } from "@/hooks/useAuth"
 
 interface MobileNavProps {
   open: boolean
@@ -39,6 +41,7 @@ export function MobileNav({ open, onClose }: MobileNavProps) {
   const isAwake = status.state === "active" || status.state === "pending"
   const { available: updateAvailable } = useUpdateAvailable()
   const { state: connState } = useConnectionStatus()
+  const { authRequired, logout } = useAuth()
 
   if (!open) return null
 
@@ -123,7 +126,7 @@ export function MobileNav({ open, onClose }: MobileNavProps) {
         {/* Keep-awake indicator */}
         {isAwake && (
           <div className={cn(
-            "mx-2 mb-4 flex items-center gap-2 rounded-lg px-3 py-2 text-xs",
+            "mx-2 mb-2 flex items-center gap-2 rounded-lg px-3 py-2 text-xs",
             status.state === "active"
               ? "text-rose-400"
               : "text-amber-400"
@@ -137,6 +140,17 @@ export function MobileNav({ open, onClose }: MobileNavProps) {
               {status.state === "active" ? "Keeping awake" : "Waiting for archive..."}
             </span>
           </div>
+        )}
+
+        {/* Logout */}
+        {authRequired && (
+          <button
+            onClick={() => { logout(); onClose() }}
+            className="mx-2 mb-4 flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-slate-600 transition-colors hover:bg-white/5 hover:text-slate-400"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+            <span>Logout</span>
+          </button>
         )}
       </div>
     </>

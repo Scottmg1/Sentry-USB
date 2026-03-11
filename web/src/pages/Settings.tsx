@@ -569,7 +569,7 @@ function SpeedTestButton() {
         const now = Date.now()
         if (now - lastUpdate >= 250) {
           const elapsedSec = (now - start) / 1000
-          setMbps(((totalBytes * 8) / elapsedSec / 1_000_000).toFixed(1))
+          if (elapsedSec > 0) setMbps(((totalBytes * 8) / elapsedSec / 1_000_000).toFixed(1))
           lastUpdate = now
         }
       }
@@ -578,7 +578,9 @@ function SpeedTestButton() {
     }
 
     const elapsed = (Date.now() - start) / 1000
-    setMbps(((totalBytes * 8) / elapsed / 1_000_000).toFixed(1))
+    if (elapsed > 0 && totalBytes > 0) {
+      setMbps(((totalBytes * 8) / elapsed / 1_000_000).toFixed(1))
+    }
   }
 
   async function startTest() {

@@ -159,10 +159,28 @@ func (h *handlers) handleTerminal(w http.ResponseWriter, r *http.Request) {
 	s.ServeHTTP(w, r)
 }
 
-// validateCredentials checks if the username/password is valid using
-// unix_chkpwd, the PAM helper that verifies passwords against /etc/shadow.
-// This works correctly even when the server runs as root (unlike su, which
-// skips password prompts for root).
+// verifyPasswordScript reads the password from stdin and verifies it against
+// /etc/shadow using Python's crypt module. The username is passed as argv[1].
+const verifyPasswordScript = `
+import crypt, sys
+password = sys.stdin.readline().rstrip('\n')
+username = sys.argv[1]
+with open('/etc/shadow') as f:
+    for line in f:
+        parts = line.strip().split(':')
+        if parts[0] == username:
+            stored = parts[1]
+            if not stored or stored in ('*', '!!') or stored.startswith('!'):
+                sys.exit(1)
+            if crypt.crypt(password, stored) == stored:
+                sys.exit(0)
+            sys.exit(1)
+sys.exit(1)
+`
+
+// validateCredentials checks if the username/password is valid by reading
+// /etc/shadow and verifying the password hash. The server runs as root so
+// it has direct access to the shadow file.
 func validateCredentials(username, password string) bool {
 	// Check that the user exists on the system
 	if _, err := user.Lookup(username); err != nil {
@@ -170,13 +188,12 @@ func validateCredentials(username, password string) bool {
 		return false
 	}
 
-	// unix_chkpwd reads the password from stdin (null-terminated) and
-	// checks it against /etc/shadow. Exit code 0 = valid.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "unix_chkpwd", username)
-	cmd.Stdin = strings.NewReader(password + "\x00")
+	// Password is passed via stdin to avoid exposing it in /proc/PID/cmdline.
+	cmd := exec.CommandContext(ctx, "python3", "-W", "ignore::DeprecationWarning", "-c", verifyPasswordScript, username)
+	cmd.Stdin = strings.NewReader(password + "\n")
 	if err := cmd.Run(); err != nil {
 		log.Printf("[terminal] validateCredentials: failed for user %q: %v", username, err)
 		return false

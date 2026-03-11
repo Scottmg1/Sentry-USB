@@ -14,11 +14,19 @@ import FSDAnalytics from "@/pages/FSDAnalytics"
 import Login from "@/pages/Login"
 import { SetupWizard } from "@/components/setup/SetupWizard"
 import { SetupProgress } from "@/components/setup/SetupProgress"
-import { useAuth } from "@/hooks/useAuth"
+import { AuthProvider, useAuth } from "@/hooks/useAuth"
 
 type AppState = "loading" | "setup" | "configuring" | "ready"
 
 export default function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
+  )
+}
+
+function AppContent() {
   const [appState, setAppState] = useState<AppState>("loading")
   const { state: authState, login } = useAuth()
 
