@@ -266,6 +266,14 @@ func NewAuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
+		// Allow localhost requests (internal scripts like post-archive-process.sh,
+		// archiveloop snapshot processing, etc. call the API from 127.0.0.1).
+		host := r.RemoteAddr
+		if strings.HasPrefix(host, "127.0.0.1:") || strings.HasPrefix(host, "[::1]:") {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		// Only protect /api/* paths (not static files, TeslaCam, etc.)
 		if !strings.HasPrefix(r.URL.Path, "/api/") {
 			next.ServeHTTP(w, r)

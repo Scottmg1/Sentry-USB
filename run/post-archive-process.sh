@@ -19,9 +19,20 @@ function log() {
 SENTRYUSB_PORT="${SENTRYUSB_PORT:-80}"
 API_URL="http://127.0.0.1:${SENTRYUSB_PORT}"
 
-# Check if sentryusb service is running
-if ! curl -sf "${API_URL}/api/drives/status" > /dev/null 2>&1; then
-  log "SentryUSB API not reachable, skipping drive processing"
+# Wait for the SentryUSB API to become reachable (it may still be starting
+# after a reboot, or briefly unavailable during an update).
+API_READY=false
+for i in 1 2 3 4 5 6; do
+  if curl -sf "${API_URL}/api/drives/status" > /dev/null 2>&1; then
+    API_READY=true
+    break
+  fi
+  log "SentryUSB API not reachable (attempt $i/6), retrying in 5s..."
+  sleep 5
+done
+
+if [ "$API_READY" != "true" ]; then
+  log "SentryUSB API not reachable after 30s, skipping drive processing"
   exit 0
 fi
 
