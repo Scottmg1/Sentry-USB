@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { ArrowLeft, Zap, Calendar, TrendingUp, AlertTriangle, Flame } from "lucide-react"
+import { ArrowLeft, Zap, Calendar, TrendingUp, AlertTriangle, Flame, ChevronLeft } from "lucide-react"
 import { api } from "@/lib/api"
 import type { FSDAnalytics as FSDAnalyticsData } from "@/lib/api"
 import { cn } from "@/lib/utils"
@@ -21,6 +21,7 @@ export default function FSDAnalytics() {
   const [period, setPeriod] = useState<Period>("week")
   const [loading, setLoading] = useState(true)
   const [metric, setMetric] = useState(false)
+  const [selectedMonth, setSelectedMonth] = useState<string | null>(null) // "YYYY-MM" for drill-down
 
   useEffect(() => {
     fetch("/api/setup/config")
@@ -71,19 +72,69 @@ export default function FSDAnalytics() {
 
   const grade = gradeConfig[data.fsd_grade] || gradeConfig["Needs Improvement"]
 
-  const barData = (data.daily || []).map((day) => {
-    let label = day.dayName
-    if (period === "all" && day.date) {
-      const [, m, d] = day.date.split("-")
-      label = `${parseInt(m)}/${parseInt(d)}`
-    }
-    return {
-      label,
+  // For "all" period: group by month, with drill-down into daily view
+  const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+  const daily = data.daily || []
+
+  // Monthly buckets: { key: "YYYY-MM", days: FSDDayStats[] }
+  const monthlyMap = new Map<string, typeof daily>()
+  for (const day of daily) {
+    if (!day.date) continue
+    const key = day.date.slice(0, 7) // "YYYY-MM"
+    const arr = monthlyMap.get(key)
+    if (arr) arr.push(day)
+    else monthlyMap.set(key, [day])
+  }
+  const monthKeys = Array.from(monthlyMap.keys()).sort()
+
+  const isMonthDrillDown = period === "all" && selectedMonth !== null
+  const showMonthly = period === "all" && selectedMonth === null && monthKeys.length > 1
+
+  let barData: { label: string; value: number; color?: string; subLabel?: string }[]
+  let chartTitle: string
+  let onBarClick: ((i: number) => void) | undefined
+
+  if (showMonthly) {
+    // Monthly overview bars
+    chartTitle = "Monthly FSD Usage"
+    barData = monthKeys.map((key) => {
+      const days = monthlyMap.get(key)!
+      const avg = days.reduce((s, d) => s + d.fsdPercent, 0) / days.length
+      const totalDisengagements = days.reduce((s, d) => s + d.disengagements, 0)
+      const [y, m] = key.split("-")
+      const label = `${MONTH_NAMES[parseInt(m) - 1]} '${y.slice(2)}`
+      return {
+        label,
+        value: Math.round(avg),
+        color: avg >= 90 ? "#34d399" : avg >= 60 ? "#60a5fa" : "#fbbf24",
+        subLabel: totalDisengagements > 0 ? `${totalDisengagements}` : undefined,
+      }
+    })
+    onBarClick = (i) => setSelectedMonth(monthKeys[i])
+  } else if (isMonthDrillDown) {
+    // Drill-down: daily bars for selected month
+    const days = monthlyMap.get(selectedMonth!) || []
+    const [y, m] = selectedMonth!.split("-")
+    chartTitle = `${MONTH_NAMES[parseInt(m) - 1]} ${y}`
+    barData = days.map((day) => {
+      const [, , d] = day.date.split("-")
+      return {
+        label: `${day.dayName} ${parseInt(d)}`,
+        value: Math.round(day.fsdPercent),
+        color: day.fsdPercent >= 90 ? "#34d399" : day.fsdPercent >= 60 ? "#60a5fa" : "#fbbf24",
+        subLabel: day.disengagements > 0 ? `${day.disengagements}` : undefined,
+      }
+    })
+  } else {
+    // Day / Week / All with only 1 month
+    chartTitle = "Daily FSD Usage"
+    barData = daily.map((day) => ({
+      label: day.dayName,
       value: Math.round(day.fsdPercent),
       color: day.fsdPercent >= 90 ? "#34d399" : day.fsdPercent >= 60 ? "#60a5fa" : "#fbbf24",
       subLabel: day.disengagements > 0 ? `${day.disengagements}` : undefined,
-    }
-  })
+    }))
+  }
 
   const fsdDist = metric ? data.fsd_distance_km : data.fsd_distance_mi
   const totalDist = metric ? data.total_distance_km : data.total_distance_mi
@@ -109,7 +160,7 @@ export default function FSDAnalytics() {
           {(["day", "week", "all"] as Period[]).map((p) => (
             <button
               key={p}
-              onClick={() => setPeriod(p)}
+              onClick={() => { setPeriod(p); setSelectedMonth(null) }}
               className={cn(
                 "rounded-full px-3 py-1 text-xs font-medium transition-colors",
                 period === p ? "bg-white/10 text-slate-100" : "text-slate-500 hover:text-slate-300"
@@ -182,15 +233,29 @@ export default function FSDAnalytics() {
         />
       </div>
 
-      {/* Daily Chart */}
+      {/* Chart */}
       {barData.length > 0 && (
         <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 backdrop-blur-sm">
-          <h2 className="mb-3 text-sm font-semibold text-slate-200">Daily FSD Usage</h2>
+          <div className="mb-3 flex items-center gap-2">
+            {isMonthDrillDown && (
+              <button
+                onClick={() => setSelectedMonth(null)}
+                className="rounded-md p-1 text-slate-400 transition-colors hover:bg-white/10 hover:text-slate-200"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+            )}
+            <h2 className="text-sm font-semibold text-slate-200">{chartTitle}</h2>
+            {showMonthly && (
+              <span className="text-[10px] text-slate-500">tap a month to see days</span>
+            )}
+          </div>
           <BarChart
             data={barData}
             maxValue={100}
             height={160}
             formatValue={(v) => `${v}%`}
+            onBarClick={onBarClick}
           />
           <div className="mt-2 flex items-center gap-4 text-[10px] text-slate-500">
             <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-sm bg-emerald-400" /> 90%+</span>

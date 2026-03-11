@@ -69,3 +69,80 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.25);
 }
+
+/* ── Leaflet dark-theme overrides ─────────────────────────────────── */
+
+/* Prevent white flash on map tiles that haven't loaded yet */
+.leaflet-container {
+  background: #1a1a2e;
+}
+
+/* Remove default white background from div-icon wrappers */
+.leaflet-div-icon {
+  background: transparent;
+  border: none;
+}
+
+/* Dark tooltip styling */
+.leaflet-tooltip {
+  background-color: rgba(15, 23, 42, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #e2e8f0;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.leaflet-tooltip-top:before {
+  border-top-color: rgba(15, 23, 42, 0.95);
+}
+.leaflet-tooltip-bottom:before {
+  border-bottom-color: rgba(15, 23, 42, 0.95);
+}
+.leaflet-tooltip-left:before {
+  border-left-color: rgba(15, 23, 42, 0.95);
+}
+.leaflet-tooltip-right:before {
+  border-right-color: rgba(15, 23, 42, 0.95);
+}
+
+/* Dark popup styling */
+.leaflet-popup-content-wrapper {
+  background: rgba(15, 23, 42, 0.95);
+  color: #e2e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.leaflet-popup-tip {
+  background: rgba(15, 23, 42, 0.95);
+}
+
+/* Dark zoom controls */
+.leaflet-control-zoom a {
+  background-color: rgba(15, 23, 42, 0.9) !important;
+  color: #e2e8f0 !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+.leaflet-control-zoom a:hover {
+  background-color: rgba(30, 41, 59, 0.95) !important;
+}
+
+/* Dark attribution */
+.leaflet-control-attribution {
+  background: rgba(15, 23, 42, 0.7) !important;
+  color: rgba(148, 163, 184, 0.6) !important;
+}
+
+.leaflet-control-attribution a {
+  color: rgba(148, 163, 184, 0.6) !important;
+}
+
+/* Prevent white tile placeholders during loading */
+.leaflet-tile {
+  background: transparent;
+}
+
+/* Prevent white pane backgrounds */
+.leaflet-pane {
+  background: transparent;
+}

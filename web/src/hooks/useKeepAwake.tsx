@@ -126,6 +126,7 @@ export function KeepAwakeProvider({ children }: { children: React.ReactNode }) {
 
     const updateMode = useCallback(async (newMode: string) => {
         setMode(newMode)
+        // Save preference to server
         try {
             await fetch("/api/config/preference", {
                 method: "PUT",
@@ -133,6 +134,24 @@ export function KeepAwakeProvider({ children }: { children: React.ReactNode }) {
                 body: JSON.stringify({ key: "keep_awake_webui_mode", value: newMode }),
             })
         } catch { /* ignore */ }
+        // When switching to auto, send an immediate heartbeat so the sidebar
+        // updates right away instead of waiting for the effect + user activity.
+        if (newMode === "auto") {
+            lastHeartbeat.current = 0
+            try {
+                const res = await fetch("/api/keep-awake/heartbeat", { method: "POST" })
+                const data = await res.json()
+                setStatus((prev) => ({ ...prev, state: data.state }))
+            } catch { /* ignore */ }
+        }
+        // When switching to off, stop any active keep-awake
+        if (newMode === "") {
+            lastMutation.current = Date.now()
+            setStatus({ state: "idle", mode: "" })
+            try {
+                await fetch("/api/keep-awake", { method: "DELETE" })
+            } catch { /* ignore */ }
+        }
     }, [])
 
     return (
