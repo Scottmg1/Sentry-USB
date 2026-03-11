@@ -779,7 +779,7 @@ function archive_teslacam_clips () {
       message+="$trackmode_count track mode file(s)"
     fi
     message+=" starting at $(date)"
-    ARCHIVE_TOTAL_COUNT=$total_count /root/bin/send-push-message "$NOTIFICATION_TITLE:" "$message" start archive || log "failed to send push message"
+    ARCHIVE_TOTAL_COUNT=$total_count /root/bin/send-push-message "$NOTIFICATION_TITLE:" "$message" start archive || log "failed to send mobile app notification"
     /root/bin/send-live-activity start "$total_count" || true
 
     # setup trigger files

@@ -116,7 +116,12 @@ function send_ntfy () {
 }
 
 function send_mobile_push () {
-  log "Sending mobile push notification."
+  log "Sending mobile app notification."
+
+  if [ -z "${MOBILE_PUSH_DEVICE_ID:-}" ] || [ -z "${MOBILE_PUSH_SECRET:-}" ]; then
+    log "ERROR: Mobile App Notification — credentials not found. Re-pair your device in Settings."
+    return 1
+  fi
 
   local payload="{\"title\":\"${title}\",\"message\":\"${message}\",\"device_id\":\"${MOBILE_PUSH_DEVICE_ID}\""
   if [ -n "$notification_type" ]; then
@@ -131,11 +136,44 @@ function send_mobile_push () {
   fi
   payload+="}"
 
-  checked_curl "Mobile Push" -X POST \
+  local response http_code body
+  response=$(curl -s -w "\n%{http_code}" -X POST \
     -H "Content-Type: application/json" \
     -H "X-Device-Secret: $MOBILE_PUSH_SECRET" \
     -d "$payload" \
-    "https://notifications.sentry-six.com/send"
+    "https://notifications.sentry-six.com/send") || {
+    log "ERROR: Mobile App Notification — failed to connect to notification server (exit code $?)"
+    return 1
+  }
+  http_code=$(echo "$response" | tail -1)
+  body=$(echo "$response" | sed '$d')
+
+  if [ "$http_code" -ge 200 ] 2>/dev/null && [ "$http_code" -lt 300 ] 2>/dev/null; then
+    local sent failed msg
+    sent=$(echo "$body" | sed -n 's/.*"sent" *: *\([0-9]*\).*/\1/p')
+    failed=$(echo "$body" | sed -n 's/.*"failed" *: *\([0-9]*\).*/\1/p')
+    msg=$(echo "$body" | sed -n 's/.*"message" *: *"\([^"]*\)".*/\1/p')
+    if [ -n "$msg" ]; then
+      log "Mobile App Notification — $msg"
+    elif [ -n "$sent" ]; then
+      local device_word="device"
+      [ "$sent" -ne 1 ] && device_word="devices"
+      if [ "${failed:-0}" -gt 0 ]; then
+        log "Mobile App Notification — sent to $sent $device_word ($failed failed)"
+      else
+        log "Mobile App Notification — sent to $sent $device_word"
+      fi
+    fi
+  else
+    local error_msg
+    error_msg=$(echo "$body" | sed -n 's/.*"error" *: *"\([^"]*\)".*/\1/p')
+    if [ -n "$error_msg" ]; then
+      log "ERROR: Mobile App Notification — HTTP $http_code — $error_msg"
+    else
+      log "ERROR: Mobile App Notification — HTTP $http_code — $body"
+    fi
+    return 1
+  fi
 }
 
 function send_shell () {

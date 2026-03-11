@@ -81,41 +81,15 @@ func getOrCreateCredentials() *NotificationCredentials {
 			log.Printf("[notifications] Generated new device credentials: %s", notifCreds.DeviceID[:8])
 		}
 
-		// Also write to sentryusb.conf if not present
-		writeCredentialsToConfig(notifCreds)
+		// MOBILE_PUSH_DEVICE_ID and MOBILE_PUSH_SECRET are read from this JSON
+		// file by envsetup.sh at runtime — no need to duplicate in sentryusb.conf.
 	})
 	return notifCreds
 }
 
-// writeCredentialsToConfig adds MOBILE_PUSH_DEVICE_ID and MOBILE_PUSH_SECRET to the config file
-func writeCredentialsToConfig(creds *NotificationCredentials) {
-	configPath := findConfigFilePath()
-	if configPath == "" {
-		return
-	}
-
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		return
-	}
-
-	content := string(data)
-
-	// Check if already present
-	if strings.Contains(content, "MOBILE_PUSH_DEVICE_ID") {
-		return
-	}
-
-	// Append notification credentials + enable mobile push
-	addition := fmt.Sprintf("\n# Mobile push notification credentials (auto-generated)\nexport MOBILE_PUSH_ENABLED='true'\nexport MOBILE_PUSH_DEVICE_ID='%s'\nexport MOBILE_PUSH_SECRET='%s'\n",
-		creds.DeviceID, creds.DeviceSecret)
-
-	if err := os.WriteFile(configPath, []byte(content+addition), 0600); err != nil {
-		log.Printf("[notifications] Failed to write credentials to config: %v", err)
-	}
-}
-
-// enableMobilePushInConfig ensures MOBILE_PUSH_ENABLED is set to true in the config file
+// enableMobilePushInConfig ensures MOBILE_PUSH_ENABLED is set to true in the config file.
+// Credentials (device_id, device_secret) are NOT stored in the config — they live in the
+// JSON file and are loaded by envsetup.sh at runtime.
 func enableMobilePushInConfig() {
 	configPath := config.FindConfigPath()
 
@@ -128,7 +102,6 @@ func enableMobilePushInConfig() {
 		return
 	}
 
-	// Use config.WriteFile to properly uncomment/add the variable
 	active["MOBILE_PUSH_ENABLED"] = "true"
 	shell.Run("bash", "-c", "/root/bin/remountfs_rw")
 	if err := config.WriteFile(configPath, active); err != nil {

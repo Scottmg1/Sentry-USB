@@ -220,10 +220,9 @@ export CAM_SIZE=40G
 # export NTFY_PRIORITY=3
 
 # Mobile App push notifications (auto-configured via pairing)
-# Do not edit these manually — they are generated during notification pairing.
+# Credentials (device_id, secret) are stored in /root/.sentryusb/notification-credentials.json
+# and loaded automatically by envsetup.sh — do not add them here.
 # export MOBILE_PUSH_ENABLED=true
-# export MOBILE_PUSH_DEVICE_ID=auto_generated_device_id
-# export MOBILE_PUSH_SECRET=auto_generated_secret
 
 # Uncomment if setting up shell notifications.
 # export NOTIFICATION_COMMAND_ENABLED=true

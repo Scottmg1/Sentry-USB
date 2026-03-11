@@ -137,6 +137,16 @@ function read_setup_variables {
 
 read_setup_variables
 
+# Load mobile push notification credentials from the JSON file managed by the
+# Go server.  These are NOT stored in sentryusb.conf — the JSON file is the
+# single source of truth so we avoid conf-write race conditions.
+NOTIFICATION_CREDENTIALS_JSON="/root/.sentryusb/notification-credentials.json"
+if [ "${MOBILE_PUSH_ENABLED:-false}" = "true" ] && [ -f "$NOTIFICATION_CREDENTIALS_JSON" ]; then
+  MOBILE_PUSH_DEVICE_ID=$(sed -n 's/.*"device_id" *: *"\([^"]*\)".*/\1/p' "$NOTIFICATION_CREDENTIALS_JSON")
+  MOBILE_PUSH_SECRET=$(sed -n 's/.*"device_secret" *: *"\([^"]*\)".*/\1/p' "$NOTIFICATION_CREDENTIALS_JSON")
+  export MOBILE_PUSH_DEVICE_ID MOBILE_PUSH_SECRET
+fi
+
 if [ -t 0 ]
 then
   if ! declare -F log > /dev/null 
