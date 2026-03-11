@@ -187,7 +187,7 @@ export default function Drives() {
   // ── Init map ──
   useEffect(() => {
     if (!mapRef.current || mapInstance.current) return
-    const map = L.map(mapRef.current, { zoomControl: false }).setView([39.8, -98.6], 5)
+    const map = L.map(mapRef.current, { zoomControl: false, preferCanvas: true }).setView([39.8, -98.6], 5)
     L.control.zoom({ position: "bottomright" }).addTo(map)
     const initCfg = TILE_LAYERS.dark
     tileLayerRef.current = L.tileLayer(initCfg.url, {
@@ -341,14 +341,14 @@ export default function Drives() {
             const segPts = latlngs.slice(segStart, i)
             if (segPts.length >= 2) {
               const color = prevEngaged ? "#22c55e" : "#3b82f6" // green for FSD, blue for manual
-              const line = L.polyline(segPts, { color, weight: 4, opacity: 1, smoothFactor: 0, noClip: true }).addTo(map)
+              const line = L.polyline(segPts, { color, weight: 4, opacity: 1, smoothFactor: 1 }).addTo(map)
               selectionLayers.current.push(line)
             }
             segStart = Math.max(i - 1, 0) // overlap by 1 point for continuity
           }
         }
       } else {
-        const route = L.polyline(latlngs, { color: "#3b82f6", weight: 4, opacity: 1, smoothFactor: 0, noClip: true }).addTo(map)
+        const route = L.polyline(latlngs, { color: "#3b82f6", weight: 4, opacity: 1, smoothFactor: 1 }).addTo(map)
         selectionLayers.current.push(route)
       }
 
@@ -396,6 +396,9 @@ export default function Drives() {
       if (allSelLines.length > 0) {
         map.fitBounds(L.featureGroup(allSelLines).getBounds(), { padding: [60, 60] as L.PointExpression })
       }
+
+      // Re-validate map size after the detail panel renders and changes available height
+      requestAnimationFrame(() => map.invalidateSize())
     } catch {
       // ignore
     }
@@ -424,6 +427,7 @@ export default function Drives() {
     if (overviewLayers.current.length > 0) {
       map.fitBounds(L.featureGroup(overviewLayers.current).getBounds(), { padding: [40, 40] })
     }
+    requestAnimationFrame(() => map.invalidateSize())
   }
 
   function handleSlider(idx: number) {
@@ -956,7 +960,7 @@ export default function Drives() {
         </div>
 
         {/* Map */}
-        <div className="relative isolate flex-1">
+        <div className="relative isolate flex-1 overflow-hidden">
           <div ref={mapRef} className="h-full w-full" />
 
           {/* Map style picker */}
