@@ -545,12 +545,12 @@ function HealthCheckButton() {
 
 function SpeedTestButton() {
   const [running, setRunning] = useState(false)
-  const [results, setResults] = useState<string[]>([])
-  const [liveMbps, setLiveMbps] = useState<string | null>(null)
+  const [mbps, setMbps] = useState<string | null>(null)
+  const [error, setError] = useState(false)
   const cancelRef = useRef(false)
   const readerRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null)
 
-  async function runOnce(): Promise<string> {
+  async function runOnce() {
     const res = await fetch("/api/system/speedtest")
     if (!res.ok || !res.body) throw new Error("Speed test failed")
 
@@ -569,8 +569,7 @@ function SpeedTestButton() {
         const now = Date.now()
         if (now - lastUpdate >= 250) {
           const elapsedSec = (now - start) / 1000
-          const mbps = ((totalBytes * 8) / elapsedSec / 1_000_000).toFixed(1)
-          setLiveMbps(mbps)
+          setMbps(((totalBytes * 8) / elapsedSec / 1_000_000).toFixed(1))
           lastUpdate = now
         }
       }
@@ -579,30 +578,24 @@ function SpeedTestButton() {
     }
 
     const elapsed = (Date.now() - start) / 1000
-    const mbps = ((totalBytes * 8) / elapsed / 1_000_000).toFixed(1)
-    setLiveMbps(null)
-    return `${mbps} Mbps (${(totalBytes / 1_000_000).toFixed(1)} MB in ${elapsed.toFixed(1)}s)`
+    setMbps(((totalBytes * 8) / elapsed / 1_000_000).toFixed(1))
   }
 
   async function startTest() {
     setRunning(true)
     cancelRef.current = false
-    setResults([])
-    setLiveMbps(null)
-    let round = 0
+    setMbps(null)
+    setError(false)
     while (!cancelRef.current) {
-      round++
       try {
-        const result = await runOnce()
+        await runOnce()
         if (cancelRef.current) break
-        setResults(prev => [...prev.slice(-4), `#${round}: ${result}`])
       } catch {
         if (cancelRef.current) break
-        setResults(prev => [...prev.slice(-4), `#${round}: Error`])
+        setError(true)
         break
       }
     }
-    setLiveMbps(null)
     setRunning(false)
   }
 
@@ -629,20 +622,13 @@ function SpeedTestButton() {
         <p className="text-sm font-medium text-slate-200">
           {running ? "Stop Speed Test" : "Network Speed Test"}
         </p>
-        {liveMbps && (
-          <p className="mt-1 text-lg font-bold text-blue-400">{liveMbps} Mbps</p>
-        )}
-        {results.length > 0 ? (
-          <div className="mt-0.5 space-y-0.5">
-            {results.map((r, i) => (
-              <p key={i} className={cn("text-xs", i === results.length - 1 ? "text-blue-400 font-medium" : "text-slate-600")}>{r}</p>
-            ))}
-          </div>
-        ) : !liveMbps ? (
+        {mbps ? (
+          <p className="mt-1 text-lg font-bold text-blue-400">{mbps} Mbps</p>
+        ) : (
           <p className="mt-0.5 text-xs text-slate-500">
-            {running ? "Starting..." : "Runs continuously until stopped"}
+            {error ? "Speed test failed" : running ? "Starting..." : "Runs continuously until stopped"}
           </p>
-        ) : null}
+        )}
       </div>
     </button>
   )

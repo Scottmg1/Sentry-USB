@@ -61,6 +61,7 @@ export default function TerminalPage() {
                 case "auth_failed":
                     setState("error")
                     setErrorMsg(msg.data || "Invalid username or password")
+                    wsRef.current = null
                     ws.close()
                     break
                 case "output":
@@ -79,6 +80,7 @@ export default function TerminalPage() {
                 case "error":
                     setState("error")
                     setErrorMsg(msg.data || "Terminal error")
+                    wsRef.current = null
                     ws.close()
                     break
             }

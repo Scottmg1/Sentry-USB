@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/user"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -157,37 +159,25 @@ func (h *handlers) handleTerminal(w http.ResponseWriter, r *http.Request) {
 	s.ServeHTTP(w, r)
 }
 
-// validateCredentials checks if the username/password is valid by running
-// su -c true <username> inside a PTY (so su gets a real terminal for password
-// input) and writing the password when prompted. A 5-second timeout prevents
-// hangs if su blocks unexpectedly.
+// validateCredentials checks if the username/password is valid using
+// unix_chkpwd, the PAM helper that verifies passwords against /etc/shadow.
+// This works correctly even when the server runs as root (unlike su, which
+// skips password prompts for root).
 func validateCredentials(username, password string) bool {
+	// Check that the user exists on the system
+	if _, err := user.Lookup(username); err != nil {
+		log.Printf("[terminal] validateCredentials: user %q not found: %v", username, err)
+		return false
+	}
+
+	// unix_chkpwd reads the password from stdin (null-terminated) and
+	// checks it against /etc/shadow. Exit code 0 = valid.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "su", "-c", "true", username)
-	ptmx, err := pty.Start(cmd)
-	if err != nil {
-		log.Printf("[terminal] validateCredentials: pty.Start failed: %v", err)
-		return false
-	}
-	defer ptmx.Close()
-
-	// Read until we get a prompt (or timeout via context)
-	go func() {
-		buf := make([]byte, 512)
-		// Read the "Password:" prompt — we don't need the content, just wait for it
-		ptmx.Read(buf)
-		// Write the password
-		ptmx.Write([]byte(password + "\n"))
-	}()
-
-	err = cmd.Wait()
-	if ctx.Err() != nil {
-		log.Printf("[terminal] validateCredentials: timed out for user %q", username)
-		return false
-	}
-	if err != nil {
+	cmd := exec.CommandContext(ctx, "unix_chkpwd", username)
+	cmd.Stdin = strings.NewReader(password + "\x00")
+	if err := cmd.Run(); err != nil {
 		log.Printf("[terminal] validateCredentials: failed for user %q: %v", username, err)
 		return false
 	}

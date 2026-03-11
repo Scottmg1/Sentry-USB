@@ -139,16 +139,9 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       {/* Collapse toggle */}
       <button
         onClick={onToggle}
-        className="mx-2 mb-4 flex items-center gap-2 rounded-lg border border-white/5 bg-white/[0.02] p-2 text-slate-500 transition-colors hover:bg-white/5 hover:text-slate-300"
+        className="mx-2 mb-4 flex items-center justify-center rounded-lg p-2 text-slate-600 transition-colors hover:bg-white/5 hover:text-slate-400"
       >
-        {collapsed ? (
-          <ChevronRight className="mx-auto h-4 w-4" />
-        ) : (
-          <>
-            <ChevronLeft className="h-4 w-4" />
-            <span className="text-xs">Collapse</span>
-          </>
-        )}
+        {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
       </button>
     </aside>
   )
