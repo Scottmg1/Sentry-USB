@@ -12,6 +12,7 @@ interface KeepAwakeContextValue {
     mode: string | null // user preference: "manual" | "auto" | null (not set)
     start: (durationMin: number) => Promise<void>
     stop: () => Promise<void>
+    updateMode: (newMode: string) => Promise<void>
 }
 
 const KeepAwakeContext = createContext<KeepAwakeContextValue>({
@@ -19,6 +20,7 @@ const KeepAwakeContext = createContext<KeepAwakeContextValue>({
     mode: null,
     start: async () => { },
     stop: async () => { },
+    updateMode: async () => { },
 })
 
 export function useKeepAwake() {
@@ -122,8 +124,19 @@ export function KeepAwakeProvider({ children }: { children: React.ReactNode }) {
         } catch { /* ignore */ }
     }, [])
 
+    const updateMode = useCallback(async (newMode: string) => {
+        setMode(newMode)
+        try {
+            await fetch("/api/config/preference", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ key: "keep_awake_webui_mode", value: newMode }),
+            })
+        } catch { /* ignore */ }
+    }, [])
+
     return (
-        <KeepAwakeContext.Provider value={{ status, mode, start, stop }}>
+        <KeepAwakeContext.Provider value={{ status, mode, start, stop, updateMode }}>
             {children}
         </KeepAwakeContext.Provider>
     )

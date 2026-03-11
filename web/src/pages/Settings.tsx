@@ -21,6 +21,7 @@ import {
 import { cn } from "@/lib/utils"
 import { SetupWizard } from "@/components/setup/SetupWizard"
 import { wsClient } from "@/lib/ws"
+import { useKeepAwake } from "@/hooks/useKeepAwake"
 
 type ActionState = "idle" | "loading" | "success" | "error"
 
@@ -740,23 +741,7 @@ const KEEP_AWAKE_MODES = [
 ]
 
 function KeepAwakePreference() {
-  const [mode, setMode] = useState("")
-
-  useEffect(() => {
-    fetch("/api/config/preference?key=keep_awake_webui_mode")
-      .then((r) => r.json())
-      .then((data) => { if ("value" in data) setMode(data.value || "") })
-      .catch(() => { })
-  }, [])
-
-  async function saveMode(newMode: string) {
-    setMode(newMode)
-    await fetch("/api/config/preference", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ key: "keep_awake_webui_mode", value: newMode }),
-    }).catch(() => { })
-  }
+  const { mode, updateMode } = useKeepAwake()
 
   return (
     <div className="glass-card p-4">
@@ -771,10 +756,10 @@ function KeepAwakePreference() {
         {KEEP_AWAKE_MODES.map((m) => (
           <button
             key={m.value}
-            onClick={() => saveMode(m.value)}
+            onClick={() => updateMode(m.value)}
             className={cn(
               "rounded-lg border px-3 py-2 text-left text-xs transition-colors",
-              mode === m.value
+              (mode ?? "") === m.value
                 ? "border-blue-500/40 bg-blue-500/10 text-blue-400"
                 : "border-white/5 bg-white/[0.02] text-slate-400 hover:bg-white/[0.05]"
             )}

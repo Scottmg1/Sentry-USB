@@ -122,6 +122,7 @@ export interface FSDAnalytics {
   streak_days: number
   fsd_time_formatted: string
   avg_disengagements_per_drive: number
+  avg_accel_pushes_per_drive: number
 }
 
 export interface TelemetryFrame {

@@ -141,7 +141,9 @@ func (dh *DriveHandlers) singleDrive(w http.ResponseWriter, r *http.Request) {
 }
 
 // PUT /api/drives/{id}/tags — set tags for a drive
-// Body: { "tags": ["Work", "Commute"] }
+// Body: { "tags": ["Work", "Commute"], "start_time": "2025-03-10T08:30:00" }
+// If start_time is provided, it is used directly as the drive key (fast path).
+// Otherwise falls back to looking up the drive by index (slow — calls GroupIntoDrives).
 func (dh *DriveHandlers) setDriveTags(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
 	id, err := strconv.Atoi(idStr)
@@ -150,23 +152,27 @@ func (dh *DriveHandlers) setDriveTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	routes := dh.store.GetRoutes()
-	allDrives := drives.GroupIntoDrives(routes)
-
-	if id < 0 || id >= len(allDrives) {
-		writeError(w, http.StatusNotFound, "drive not found")
-		return
-	}
-
 	var body struct {
-		Tags []string `json:"tags"`
+		Tags      []string `json:"tags"`
+		StartTime string   `json:"start_time"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
-	driveKey := allDrives[id].StartTime
+	driveKey := body.StartTime
+	if driveKey == "" {
+		// Slow fallback: look up drive by index
+		routes := dh.store.GetRoutes()
+		allDrives := drives.GroupIntoDrives(routes)
+		if id < 0 || id >= len(allDrives) {
+			writeError(w, http.StatusNotFound, "drive not found")
+			return
+		}
+		driveKey = allDrives[id].StartTime
+	}
+
 	dh.store.SetDriveTags(driveKey, body.Tags)
 	if err := dh.store.Save(); err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to save: %v", err))
@@ -707,6 +713,12 @@ func (dh *DriveHandlers) fsdAnalytics(w http.ResponseWriter, r *http.Request) {
 		avgDisengagements = math.Round(float64(disengagements)/float64(fsdSessions)*100) / 100
 	}
 
+	// Avg accel pushes per drive
+	var avgAccelPushes float64
+	if fsdSessions > 0 {
+		avgAccelPushes = math.Round(float64(accelPushes)/float64(fsdSessions)*100) / 100
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"period":                       period,
 		"period_start":                 periodStart.Format("2006-01-02"),
@@ -728,5 +740,6 @@ func (dh *DriveHandlers) fsdAnalytics(w http.ResponseWriter, r *http.Request) {
 		"streak_days":                  streakDays,
 		"fsd_time_formatted":           fsdTimeFormatted,
 		"avg_disengagements_per_drive":  avgDisengagements,
+		"avg_accel_pushes_per_drive":    avgAccelPushes,
 	})
 }

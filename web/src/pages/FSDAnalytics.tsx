@@ -71,12 +71,19 @@ export default function FSDAnalytics() {
 
   const grade = gradeConfig[data.fsd_grade] || gradeConfig["Needs Improvement"]
 
-  const barData = (data.daily || []).map((day) => ({
-    label: day.dayName,
-    value: Math.round(day.fsdPercent),
-    color: day.fsdPercent >= 90 ? "#34d399" : day.fsdPercent >= 60 ? "#60a5fa" : "#fbbf24",
-    subLabel: day.disengagements > 0 ? `${day.disengagements}` : undefined,
-  }))
+  const barData = (data.daily || []).map((day) => {
+    let label = day.dayName
+    if (period === "all" && day.date) {
+      const [, m, d] = day.date.split("-")
+      label = `${parseInt(m)}/${parseInt(d)}`
+    }
+    return {
+      label,
+      value: Math.round(day.fsdPercent),
+      color: day.fsdPercent >= 90 ? "#34d399" : day.fsdPercent >= 60 ? "#60a5fa" : "#fbbf24",
+      subLabel: day.disengagements > 0 ? `${day.disengagements}` : undefined,
+    }
+  })
 
   const fsdDist = metric ? data.fsd_distance_km : data.fsd_distance_mi
   const totalDist = metric ? data.total_distance_km : data.total_distance_mi
@@ -168,7 +175,7 @@ export default function FSDAnalytics() {
         />
         <StatCard
           icon={AlertTriangle}
-          label="Avg Disengages"
+          label="Avg. Disengagements"
           value={data.avg_disengagements_per_drive.toFixed(1)}
           sub="per drive"
           color={data.avg_disengagements_per_drive <= 1 ? "emerald" : data.avg_disengagements_per_drive <= 3 ? "amber" : "red"}
@@ -222,12 +229,16 @@ export default function FSDAnalytics() {
               <span className="text-sm font-semibold text-red-400">{data.disengagements}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-xs text-slate-400">Accel Pushes</span>
+              <span className="text-xs text-slate-400">Accelerator Pushes</span>
               <span className="text-sm font-semibold text-amber-400">{data.accel_pushes}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-xs text-slate-400">Avg per Drive</span>
+              <span className="text-xs text-slate-400">Average per Drive</span>
               <span className="text-sm font-semibold text-slate-300">{data.avg_disengagements_per_drive.toFixed(1)}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-slate-400">Average Accelerator Pushes per Drive</span>
+              <span className="text-sm font-semibold text-slate-300">{data.avg_accel_pushes_per_drive.toFixed(1)}</span>
             </div>
           </div>
         </div>

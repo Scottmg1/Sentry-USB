@@ -28,6 +28,8 @@ export default function TerminalPage() {
             xtermRef.current = null
         }
         fitRef.current = null
+        setUsername("")
+        setPassword("")
         setState("disconnected")
     }, [])
 

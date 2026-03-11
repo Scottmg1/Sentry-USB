@@ -609,6 +609,7 @@ func buildDriveStats(clips []timedRoute, idx int) Drive {
 		// reading > 0% while autopilot is active is always the human driver.
 		var inAccelPress bool
 		var accelPressLat, accelPressLng float64
+		var fsdEngageTimeMs float64 // timestamp when FSD was last engaged (for grace period)
 
 		var pendingDisengage bool    // a disengagement is waiting for the 2-second Park check
 		var pendingDisengageTimeMs float64
@@ -640,6 +641,7 @@ func buildDriveStats(clips []timedRoute, idx int) Drive {
 			// Track FSD engagement
 			if !prevEngaged && curEngaged {
 				inAccelPress = false
+				fsdEngageTimeMs = cur.timeMs
 			}
 
 			// Count engaged time and distance
@@ -664,8 +666,10 @@ func buildDriveStats(clips []timedRoute, idx int) Drive {
 				accelPct *= 100.0
 			}
 
-			// Detect start of a human accelerator press while FSD is active
-			if curEngaged && !inAccelPress && accelPct > 1.0 {
+			// Detect start of a human accelerator press while FSD is active.
+			// Skip presses within 3 seconds of FSD engagement — the driver's
+			// foot is often still on the pedal when they activate autopilot.
+			if curEngaged && !inAccelPress && accelPct > 1.0 && (cur.timeMs-fsdEngageTimeMs) >= 3000.0 {
 				inAccelPress = true
 				accelPressLat = cur.lat
 				accelPressLng = cur.lng

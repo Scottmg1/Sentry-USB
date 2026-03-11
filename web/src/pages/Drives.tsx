@@ -278,33 +278,35 @@ export default function Drives() {
     if (arrowMarker.current) { map.removeLayer(arrowMarker.current); arrowMarker.current = null }
   }
 
-  async function saveTags(driveId: number, tags: string[]) {
+  async function saveTags(driveId: number, startTime: string, tags: string[]) {
     try {
-      await fetch(`/api/drives/${driveId}/tags`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tags }),
-      })
-      // Update local state
+      // Update local state optimistically
       setDrives((prev) => prev.map((d) => d.id === driveId ? { ...d, tags } : d))
       if (selectedDrive && selectedId === driveId) {
         setSelectedDrive({ ...selectedDrive, tags })
       }
-      // Refresh tag list
-      const res = await fetch("/api/drives/tags")
-      const data: string[] = await res.json()
-      setAllTags(data ?? [])
+      // Update tag list locally (add any new tags)
+      setAllTags((prev) => {
+        const s = new Set(prev)
+        for (const t of tags) if (!s.has(t)) s.add(t)
+        return s.size !== prev.length ? Array.from(s) : prev
+      })
+      await fetch(`/api/drives/${driveId}/tags`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tags, start_time: startTime }),
+      })
     } catch { /* ignore */ }
   }
 
-  function addTagToDrive(driveId: number, currentTags: string[], tag: string) {
+  function addTagToDrive(driveId: number, startTime: string, currentTags: string[], tag: string) {
     const trimmed = tag.trim()
     if (!trimmed || currentTags.includes(trimmed)) return
-    saveTags(driveId, [...currentTags, trimmed])
+    saveTags(driveId, startTime, [...currentTags, trimmed])
   }
 
-  function removeTagFromDrive(driveId: number, currentTags: string[], tag: string) {
-    saveTags(driveId, currentTags.filter((t) => t !== tag))
+  function removeTagFromDrive(driveId: number, startTime: string, currentTags: string[], tag: string) {
+    saveTags(driveId, startTime, currentTags.filter((t) => t !== tag))
   }
 
   async function selectDrive(id: number) {
@@ -744,8 +746,12 @@ export default function Drives() {
                         </div>
                         <div className="mt-1.5 flex flex-wrap items-center gap-1">
                           {(d.tags ?? []).map((t) => (
-                            <span key={t} className="inline-flex items-center rounded-full bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-400">
+                            <span key={t} className="group/tag inline-flex items-center rounded-full bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-400">
                               <Tag className="mr-0.5 h-2 w-2" />{t}
+                              <button
+                                onClick={(e) => { e.stopPropagation(); removeTagFromDrive(d.id, d.startTime, d.tags ?? [], t) }}
+                                className="ml-0.5 hidden rounded-full p-0.5 text-blue-400/60 hover:bg-blue-500/20 hover:text-blue-300 group-hover/tag:inline-flex"
+                              ><X className="h-2 w-2" /></button>
                             </span>
                           ))}
                           {listTagInputId === d.id ? (
@@ -758,7 +764,7 @@ export default function Drives() {
                                     onMouseDown={(e) => {
                                       e.preventDefault()
                                       e.stopPropagation()
-                                      addTagToDrive(d.id, d.tags ?? [], t)
+                                      addTagToDrive(d.id, d.startTime, d.tags ?? [], t)
                                       setListTagValue(""); setListTagInputId(null)
                                     }}
                                     onClick={(e) => e.stopPropagation()}
@@ -775,7 +781,7 @@ export default function Drives() {
                                 onKeyDown={(e) => {
                                   e.stopPropagation()
                                   if (e.key === "Enter" && listTagValue.trim()) {
-                                    addTagToDrive(d.id, d.tags ?? [], listTagValue)
+                                    addTagToDrive(d.id, d.startTime, d.tags ?? [], listTagValue)
                                     setListTagValue(""); setListTagInputId(null)
                                   }
                                   if (e.key === "Escape") { setListTagInputId(null); setListTagValue("") }
@@ -886,8 +892,12 @@ export default function Drives() {
                       </div>
                       <div className="mt-1.5 flex flex-wrap items-center gap-1">
                         {(d.tags ?? []).map((t) => (
-                          <span key={t} className="inline-flex items-center rounded-full bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-400">
+                          <span key={t} className="group/tag inline-flex items-center rounded-full bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-400">
                             <Tag className="mr-0.5 h-2 w-2" />{t}
+                            <button
+                              onClick={(e) => { e.stopPropagation(); removeTagFromDrive(d.id, d.startTime, d.tags ?? [], t) }}
+                              className="ml-0.5 hidden rounded-full p-0.5 text-blue-400/60 hover:bg-blue-500/20 hover:text-blue-300 group-hover/tag:inline-flex"
+                            ><X className="h-2 w-2" /></button>
                           </span>
                         ))}
                         {listTagInputId === d.id ? (
@@ -900,7 +910,7 @@ export default function Drives() {
                                   onMouseDown={(e) => {
                                     e.preventDefault()
                                     e.stopPropagation()
-                                    addTagToDrive(d.id, d.tags ?? [], t)
+                                    addTagToDrive(d.id, d.startTime, d.tags ?? [], t)
                                     setListTagValue(""); setListTagInputId(null)
                                   }}
                                   onClick={(e) => e.stopPropagation()}
@@ -917,7 +927,7 @@ export default function Drives() {
                               onKeyDown={(e) => {
                                 e.stopPropagation()
                                 if (e.key === "Enter" && listTagValue.trim()) {
-                                  addTagToDrive(d.id, d.tags ?? [], listTagValue)
+                                  addTagToDrive(d.id, d.startTime, d.tags ?? [], listTagValue)
                                   setListTagValue(""); setListTagInputId(null)
                                 }
                                 if (e.key === "Escape") { setListTagInputId(null); setListTagValue("") }
@@ -1004,7 +1014,7 @@ export default function Drives() {
                 {(selectedDrive.tags ?? []).map((t) => (
                   <span key={t} className="inline-flex items-center gap-1 rounded-full bg-blue-500/15 px-2.5 py-1 text-xs font-medium text-blue-400">
                     {t}
-                    <button onClick={() => removeTagFromDrive(selectedId!, selectedDrive.tags ?? [], t)} className="ml-0.5 rounded-full p-0.5 text-blue-400/60 hover:bg-blue-500/20 hover:text-blue-300"><X className="h-3 w-3" /></button>
+                    <button onClick={() => removeTagFromDrive(selectedId!, selectedDrive.startTime, selectedDrive.tags ?? [], t)} className="ml-0.5 rounded-full p-0.5 text-blue-400/60 hover:bg-blue-500/20 hover:text-blue-300"><X className="h-3 w-3" /></button>
                   </span>
                 ))}
                 {showTagInput ? (
@@ -1016,7 +1026,7 @@ export default function Drives() {
                           key={t}
                           onMouseDown={(e) => {
                             e.preventDefault()
-                            addTagToDrive(selectedId!, selectedDrive.tags ?? [], t)
+                            addTagToDrive(selectedId!, selectedDrive.startTime, selectedDrive.tags ?? [], t)
                             setTagInput("")
                             setShowTagInput(false)
                           }}
@@ -1031,7 +1041,7 @@ export default function Drives() {
                       onChange={(e) => setTagInput(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && tagInput.trim()) {
-                          addTagToDrive(selectedId!, selectedDrive.tags ?? [], tagInput)
+                          addTagToDrive(selectedId!, selectedDrive.startTime, selectedDrive.tags ?? [], tagInput)
                           setTagInput("")
                           setShowTagInput(false)
                         }

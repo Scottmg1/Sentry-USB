@@ -32,85 +32,110 @@ export default function BarChart({
 
   if (!data.length) return null
 
-  const vbWidth = 600
+  // For large datasets, scale viewBox width so bars stay a reasonable size
+  const minSlotWidth = 40
+  const baseWidth = 600
+  const needsScroll = data.length > 14
+  const vbWidth = needsScroll ? Math.max(baseWidth, data.length * minSlotWidth) : baseWidth
   const barSlot = vbWidth / data.length
   const scaledPad = Math.min(barSlot * 0.1, 8)
 
-  return (
-    <div className={className}>
-      <svg width="100%" height={height} viewBox={`0 0 ${vbWidth} ${height}`}>
-        {data.map((item, i) => {
-          const barH = maxValue > 0 ? (item.value / maxValue) * chartHeight : 0
-          const x = i * barSlot + scaledPad
-          const w = barSlot - scaledPad * 2
-          const y = valueHeight + chartHeight - barH
-          const color = item.color || "#3b82f6"
-          const isHovered = hovered === i
+  // Show labels every Nth bar to avoid crowding
+  const labelEvery = needsScroll ? Math.max(1, Math.ceil(data.length / 20)) : 1
 
-          return (
-            <g
-              key={i}
-              onMouseEnter={() => setHovered(i)}
-              onMouseLeave={() => setHovered(null)}
-              className="cursor-pointer"
-            >
-              {/* Bar */}
-              <rect
-                x={x}
-                y={y}
-                width={w}
-                height={Math.max(barH, item.value > 0 ? 2 : 0)}
-                rx={4}
-                fill={color}
-                opacity={isHovered ? 1 : 0.85}
-                className="transition-opacity duration-200"
-              />
+  const svg = (
+    <svg
+      width={needsScroll ? vbWidth : "100%"}
+      height={height}
+      viewBox={`0 0 ${vbWidth} ${height}`}
+      {...(needsScroll ? { style: { minWidth: vbWidth } } : {})}
+    >
+      {data.map((item, i) => {
+        const barH = maxValue > 0 ? (item.value / maxValue) * chartHeight : 0
+        const x = i * barSlot + scaledPad
+        const w = barSlot - scaledPad * 2
+        const y = valueHeight + chartHeight - barH
+        const color = item.color || "#3b82f6"
+        const isHovered = hovered === i
+        const showLabel = i % labelEvery === 0 || isHovered
 
-              {/* Value on top */}
-              {showValues && item.value > 0 && (
-                <text
-                  x={x + w / 2}
-                  y={y - 4}
-                  textAnchor="middle"
-                  fill={isHovered ? "#e2e8f0" : "#94a3b8"}
-                  fontSize="10"
-                  fontWeight="600"
-                  fontFamily="Inter, system-ui, sans-serif"
-                >
-                  {formatValue(item.value)}
-                </text>
-              )}
+        return (
+          <g
+            key={i}
+            onMouseEnter={() => setHovered(i)}
+            onMouseLeave={() => setHovered(null)}
+            className="cursor-pointer"
+          >
+            {/* Bar */}
+            <rect
+              x={x}
+              y={y}
+              width={w}
+              height={Math.max(barH, item.value > 0 ? 2 : 0)}
+              rx={4}
+              fill={color}
+              opacity={isHovered ? 1 : 0.85}
+              className="transition-opacity duration-200"
+            />
 
-              {/* X-axis label */}
+            {/* Value on top */}
+            {showValues && item.value > 0 && (isHovered || !needsScroll) && (
+              <text
+                x={x + w / 2}
+                y={y - 4}
+                textAnchor="middle"
+                fill={isHovered ? "#e2e8f0" : "#94a3b8"}
+                fontSize="10"
+                fontWeight="600"
+                fontFamily="Inter, system-ui, sans-serif"
+              >
+                {formatValue(item.value)}
+              </text>
+            )}
+
+            {/* X-axis label */}
+            {showLabel && (
               <text
                 x={x + w / 2}
                 y={height - 4}
                 textAnchor="middle"
-                fill="#64748b"
+                fill={isHovered ? "#e2e8f0" : "#64748b"}
                 fontSize="10"
                 fontFamily="Inter, system-ui, sans-serif"
               >
                 {item.label}
               </text>
+            )}
 
-              {/* Sub label (e.g., disengagement count) */}
-              {item.subLabel && (
-                <text
-                  x={x + w / 2}
-                  y={height - 14}
-                  textAnchor="middle"
-                  fill="#ef4444"
-                  fontSize="9"
-                  fontWeight="600"
-                  fontFamily="Inter, system-ui, sans-serif"
-                >
-                  {item.subLabel}
-                </text>
-              )}
-            </g>
-          )
-        })}
-      </svg>
-    </div>
+            {/* Sub label (e.g., disengagement count) */}
+            {item.subLabel && (
+              <text
+                x={x + w / 2}
+                y={height - 14}
+                textAnchor="middle"
+                fill="#ef4444"
+                fontSize="9"
+                fontWeight="600"
+                fontFamily="Inter, system-ui, sans-serif"
+              >
+                {item.subLabel}
+              </text>
+            )}
+          </g>
+        )
+      })}
+    </svg>
   )
+
+  if (needsScroll) {
+    return (
+      <div className={className}>
+        <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
+          {svg}
+        </div>
+      </div>
+    )
+  }
+
+  return <div className={className}>{svg}</div>
 }
