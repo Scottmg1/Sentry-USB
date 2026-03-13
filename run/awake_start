@@ -265,6 +265,7 @@ else
               result=$(jq -r '.result' <<<"$response_body")
               if [[ "$result" == "true" ]]; then
                 log "Tessie: Sentry Mode Enabled."
+                # shellcheck disable=SC2034
                 tessie_success=true
               else
                 tessie_error=$(jq -r '.error // "unknown reason"' <<<"$response_body" 2>/dev/null)
