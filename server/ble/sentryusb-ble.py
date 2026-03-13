@@ -585,7 +585,12 @@ class WifiScanCharacteristic(Characteristic):
     ReadValue triggers an async scan and returns {"scanning": true}.
     When scan completes, a small {"ready": true, "count": N} notification
     is sent (fits within BLE MTU).  The client then does a second read
-    to fetch the full cached results via ATT long-read (no MTU limit).
+    to fetch the full cached results.
+
+    BlueZ uses the 'offset' option in ReadValue for the ATT Read Blob
+    procedure, which allows reading data larger than the BLE MTU.  We
+    keep the serialized bytes in _read_blob_data so subsequent calls
+    with offset > 0 return the correct slice.
     """
 
     def __init__(self, bus, index, service):
@@ -593,8 +598,18 @@ class WifiScanCharacteristic(Characteristic):
                                 ['read', 'notify'], service)
         self._cached_networks = None
         self._scanning = False
+        self._read_blob_data = None  # bytes kept for Read Blob continuation
 
     def ReadValue(self, options):
+        offset = int(options.get('offset', 0))
+
+        # Read Blob continuation — return remaining bytes from previous read
+        if offset > 0 and self._read_blob_data is not None:
+            log.debug(f'WiFi scan Read Blob offset={offset}/{len(self._read_blob_data)}')
+            return dbus.Array(
+                [dbus.Byte(b) for b in self._read_blob_data[offset:]],
+                signature='y')
+
         if not is_authenticated(options):
             data = json.dumps({'error': 'not_authenticated'}).encode()
             return dbus.Array([dbus.Byte(b) for b in data], signature='y')
@@ -604,6 +619,8 @@ class WifiScanCharacteristic(Characteristic):
             networks = self._cached_networks
             self._cached_networks = None
             data = json.dumps(networks).encode()
+            # Keep serialized bytes for Read Blob continuation
+            self._read_blob_data = data
             log.info(f'WiFi scan: returning {len(networks)} cached networks ({len(data)} bytes)')
             return dbus.Array([dbus.Byte(b) for b in data], signature='y')
 
@@ -614,6 +631,7 @@ class WifiScanCharacteristic(Characteristic):
             GLib.idle_add(lambda: (GLib.timeout_add(100, self._do_scan), False)[-1])
 
         data = json.dumps({'scanning': True}).encode()
+        self._read_blob_data = None  # No blob data for short responses
         return dbus.Array([dbus.Byte(b) for b in data], signature='y')
 
     def _do_scan(self):
