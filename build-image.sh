@@ -17,7 +17,7 @@
 #
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-WORK_DIR="/tmp/sentryusb-pi-gen"
+WORK_DIR="/tmp/sentryusb/pi-gen"
 REPO="Scottmg1/Sentry-USB"
 
 RED='\033[0;31m'

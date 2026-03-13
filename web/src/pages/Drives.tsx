@@ -740,14 +740,14 @@ export default function Drives() {
                             </span>
                           )}
                         </div>
-                        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-500">
+                        <div className="mt-1 flex gap-x-3 text-[11px] text-slate-500">
                           <span>{dist(d)}</span>
                           <span>{formatDuration(d.durationMs)}</span>
                           <span>{avgSpd(d)}</span>
-                          {d.fsdDisengagements > 0 && (
-                            <span className="text-red-400/70">{d.fsdDisengagements} disengagement{d.fsdDisengagements !== 1 ? "s" : ""}</span>
-                          )}
                         </div>
+                        {d.fsdDisengagements > 0 && (
+                          <div className="mt-0.5 text-[11px] text-red-400/70">{d.fsdDisengagements} disengagement{d.fsdDisengagements !== 1 ? "s" : ""}</div>
+                        )}
                         <div className="mt-1.5 flex flex-wrap items-center gap-1">
                           {(d.tags ?? []).map((t) => (
                             <span key={t} className="group/tag inline-flex items-center rounded-full bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-400">
@@ -886,14 +886,14 @@ export default function Drives() {
                           </span>
                         )}
                       </div>
-                      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-500">
+                      <div className="mt-1 flex gap-x-3 text-[11px] text-slate-500">
                         <span>{dist(d)}</span>
                         <span>{formatDuration(d.durationMs)}</span>
                         <span>{avgSpd(d)}</span>
-                        {d.fsdDisengagements > 0 && (
-                          <span className="text-red-400/70">{d.fsdDisengagements} disengagement{d.fsdDisengagements !== 1 ? "s" : ""}</span>
-                        )}
                       </div>
+                      {d.fsdDisengagements > 0 && (
+                        <div className="mt-0.5 text-[11px] text-red-400/70">{d.fsdDisengagements} disengagement{d.fsdDisengagements !== 1 ? "s" : ""}</div>
+                      )}
                       <div className="mt-1.5 flex flex-wrap items-center gap-1">
                         {(d.tags ?? []).map((t) => (
                           <span key={t} className="group/tag inline-flex items-center rounded-full bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-400">
@@ -1081,10 +1081,12 @@ export default function Drives() {
                     <span className="font-bold text-emerald-400">{selectedDrive.fsdPercent}%</span>
                     <span className="text-slate-500">FSD</span>
                   </div>
-                  <div className="flex items-center gap-1.5 text-[11px]">
-                    <span className="font-bold text-red-400">{selectedDrive.fsdDisengagements}</span>
-                    <span className="text-slate-500">Disengagement{selectedDrive.fsdDisengagements !== 1 ? "s" : ""}</span>
-                  </div>
+                  {selectedDrive.fsdDisengagements > 0 && (
+                    <div className="flex items-center gap-1.5 text-[11px]">
+                      <span className="font-bold text-red-400">{selectedDrive.fsdDisengagements}</span>
+                      <span className="text-slate-500">Disengagement{selectedDrive.fsdDisengagements !== 1 ? "s" : ""}</span>
+                    </div>
+                  )}
                   {selectedDrive.fsdAccelPushes > 0 && (
                     <div className="flex items-center gap-1.5 text-[11px]">
                       <span className="font-bold text-amber-400">{selectedDrive.fsdAccelPushes}</span>

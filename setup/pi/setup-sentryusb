@@ -144,6 +144,129 @@ ROOT_PARTITION_DEVICE=$(lsblk -dpno name "$(findmnt -D -no SOURCE --target /)")
 declare -rx ROOT_PARTITION_DEVICE
 ROOT_PART_NUM=$(echo "$ROOT_PARTITION_DEVICE" | grep -o '[0-9]*$')
 readonly ROOT_PART_NUM
+
+# --- Root partition shrink recovery ---
+# If the image was flashed with a tool that auto-expanded the root partition
+# (e.g. Raspberry Pi Imager), there may be no free space left for backingfiles
+# and mutable partitions. Detect this and shrink root via initramfs.
+RESIZE_RESULT_FILE="/root/RESIZE_RESULT"
+RESIZE_MARKER="/root/RESIZE_ATTEMPTED"
+
+# Phase 2: Check if a previous initramfs resize left a result marker
+if [ -f "$RESIZE_RESULT_FILE" ]
+then
+  result_content=$(cat "$RESIZE_RESULT_FILE")
+  rm -f "$RESIZE_RESULT_FILE"
+  case "$result_content" in
+    success)
+      setup_progress "Root filesystem resize completed successfully during boot."
+      rm -f "$RESIZE_MARKER"
+      # Now shrink the partition table to match the smaller filesystem
+      devsectorsize=$(cat "/sys/block/$(lsblk -no pkname "${ROOT_PARTITION_DEVICE}")/queue/hw_sector_size")
+      read -r fsblockcount fsblocksize < <(tune2fs -l "${ROOT_PARTITION_DEVICE}" | grep "Block count:\|Block size:" | awk '{print $2}' FS=: | tr -d ' ' | tr '\n' ' ' | (cat; echo))
+      fsnumsectors=$((fsblockcount * fsblocksize / devsectorsize))
+      rootpartstartsector=$(partx --show -g -o START "${ROOT_PARTITION_DEVICE}")
+      setup_progress "Shrinking root partition to match filesystem: ${fsnumsectors} sectors"
+      echo "${rootpartstartsector},${fsnumsectors}" | sfdisk --force --no-reread "${BOOT_DISK}" -N "${ROOT_PART_NUM}"
+      # Clean up initramfs config.txt entries
+      if [ -e /sentryusb/config.txt ] && grep -q SENTRYUSB-REMOVE /sentryusb/config.txt
+      then
+        sed -i '/SENTRYUSB-REMOVE/d' /sentryusb/config.txt
+        rm -f "/boot/initrd.img-$(uname -r)"
+      else
+        update-initramfs -u 2>/dev/null || true
+      fi
+      setup_progress "Root partition shrink complete, rebooting..."
+      reboot
+      exit 0
+      ;;
+    fail:e2fsck:*)
+      exit_code="${result_content##*:}"
+      rm -f "$RESIZE_MARKER"
+      setup_progress "STOP: Root filesystem check (e2fsck) failed with exit code $exit_code. The filesystem may need manual repair: e2fsck -f $ROOT_PARTITION_DEVICE"
+      exit 1
+      ;;
+    fail:resize2fs:*)
+      exit_code="${result_content##*:}"
+      rm -f "$RESIZE_MARKER"
+      setup_progress "STOP: Root filesystem resize failed with exit code $exit_code. Try reflashing with Balena Etcher instead of Raspberry Pi Imager."
+      exit 1
+      ;;
+    *)
+      setup_progress "WARNING: Unrecognized resize result: $result_content"
+      rm -f "$RESIZE_MARKER"
+      ;;
+  esac
+fi
+
+# Phase 1: Check if root partition needs shrinking
+# Only if no backingfiles/mutable partitions exist yet (first setup run)
+if [ ! -e /dev/disk/by-label/backingfiles ] && [ ! -e /dev/disk/by-label/mutable ]
+then
+  unpart_bytes=$(sfdisk -F "$BOOT_DISK" 2>/dev/null | grep -o '[0-9]* bytes' | head -1 | awk '{print $1}')
+  unpart_bytes=${unpart_bytes:-0}
+  min_space=$(( (1<<30) * 8 ))  # 8 GiB minimum
+
+  if [ "$unpart_bytes" -lt "$min_space" ]
+  then
+    # Root partition was auto-expanded — need to shrink it
+    # Verify root is the last partition so shrinking it frees space at the end
+    lastpart=$(sfdisk -q -l "$BOOT_DISK" | tail +2 | sort -n -k 2 | tail -1 | awk '{print $1}')
+    if [ "$ROOT_PARTITION_DEVICE" != "$lastpart" ]
+    then
+      setup_progress "STOP: Insufficient unpartitioned space ($(( unpart_bytes / 1024 / 1024 ))MB), and root is not the last partition. Reflash with Balena Etcher."
+      exit 1
+    fi
+
+    # Check if we already attempted and it failed
+    if [ -f "$RESIZE_MARKER" ]
+    then
+      setup_progress "STOP: Previous root shrink attempt failed. Delete $RESIZE_MARKER and try again, or reflash with Balena Etcher."
+      exit 1
+    fi
+
+    # Calculate shrink target: current usage + 2G headroom, minimum 6G
+    used_kb=$(df --output=used -k / | tail -1 | tr -d ' ')
+    target_gb=$(( (used_kb / 1024 / 1024) + 2 ))
+    if [ "$target_gb" -lt 6 ]; then target_gb=6; fi
+
+    setup_progress "Root partition auto-expanded to fill disk (only $(( unpart_bytes / 1024 / 1024 ))MB free)."
+    setup_progress "This usually happens when Raspberry Pi Imager is used to flash the image."
+    setup_progress "Shrinking root filesystem from $(( $(blockdev --getsize64 "$ROOT_PARTITION_DEVICE") / 1024 / 1024 / 1024 ))GB to ${target_gb}GB to free space for setup..."
+
+    touch "$RESIZE_MARKER"
+
+    # Ensure initramfs is available for the resize
+    INITRD_NAME="initrd.img-$(uname -r)"
+    BOOT_PART="$(readlink -f /sentryusb)"
+    if [ ! -e "${BOOT_PART}/${INITRD_NAME}" ] && [ ! -e "/boot/${INITRD_NAME}" ]
+    then
+      if [ -f /etc/os-release ] && grep -q Raspbian /etc/os-release && [ -e /sentryusb/config.txt ]
+      then
+        setup_progress "Temporarily enabling initramfs for root resize"
+        update-initramfs -c -k "$(uname -r)"
+        echo "initramfs ${INITRD_NAME} followkernel # SENTRYUSB-REMOVE" >> /sentryusb/config.txt
+      else
+        rm -f "$RESIZE_MARKER"
+        setup_progress "STOP: Cannot shrink root on this OS automatically. Reflash with Balena Etcher."
+        exit 1
+      fi
+    fi
+    # Copy initramfs to boot partition if needed
+    if [ "/boot" != "${BOOT_PART}" ] && [ -e "/boot/${INITRD_NAME}" ]
+    then
+      cp "/boot/${INITRD_NAME}" "${BOOT_PART}/${INITRD_NAME}"
+    fi
+
+    # Download and run the initramfs resize tool
+    copy_script tools/debian-resizefs.sh /tmp
+    bash /tmp/debian-resizefs.sh "${target_gb}G"
+    # debian-resizefs.sh reboots at the end
+    exit 0
+  fi
+fi
+# --- End root partition shrink recovery ---
+
 INCREASE_ROOT_SIZE=$(($(dehumanize "$INCREASE_ROOT_SIZE") / 512))
 
 if [ "$INCREASE_ROOT_SIZE" != "0" ] && [ ! -e "${BOOT_DEVICE_PARTITION_PREFIX}$((ROOT_PART_NUM+1))" ]

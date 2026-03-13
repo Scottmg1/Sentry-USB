@@ -46,17 +46,26 @@ else
         # Check if HTTP status code is not 200 (OK)
         if [ "$http_status" != "200" ]
         then
-          # Log an error
-          log "Tessie: Failed to send command. Check your TESSIE_API_TOKEN and TESSIE_VIN are set correctly. If they are, your car may be offline or asleep."
+          # Build a descriptive error reason based on HTTP status
+          case "$http_status" in
+            401) nudge_reason="Invalid or expired API token." ;;
+            403) nudge_reason="API token lacks permission for this vehicle." ;;
+            404) nudge_reason="Vehicle not found. Check VIN." ;;
+            408) nudge_reason="Command timed out (Tesla Fleet API). Vehicle may be asleep or out of range." ;;
+            429) nudge_reason="Too many requests. Rate limited." ;;
+            500|502|503) nudge_reason="Tessie server error." ;;
+            *)   nudge_reason="Check API token and VIN. Car may be offline or asleep." ;;
+          esac
+          log "Tessie: Failed to send nudge (HTTP $http_status). $nudge_reason"
           if [ "$retry" -lt "3" ]
           then
-            log "Tessie: Retrying after 30s in case the connection was poor."
+            log "Tessie: Retrying after 30s (attempt $((retry+1))/3)..."
             retry=$((retry+1))
             sleep 30
             continue
           else
-            log "Tessie: Connection to the internet likely broken."
-            notify_nudge_failure "Tessie" "Connection likely broken. Check API token and VIN."
+            log "Tessie: Giving up after 3 attempts."
+            notify_nudge_failure "Tessie" "HTTP $http_status — $nudge_reason"
             break
           fi
         else
@@ -182,46 +191,98 @@ else
           fi
         fi
       elif [[ -n "${TESSIE_API_TOKEN:+x}" ]]
-      # Use Tessie API to enable Sentry Mode
+      # Use Tessie API to enable Sentry Mode (up to 3 attempts)
       then
-        http_response=$(curl -s -w "%{http_code}" \
-          -H "Authorization: Bearer $TESSIE_API_TOKEN" \
-          -H "Accept: application/json" \
-          -H "User-Agent: github.com/Scottmg1/Sentry-USB" \
-          "https://api.tessie.com/$TESSIE_VIN/command/enable_sentry")
+        tessie_attempt=1
+        tessie_success=false
+        while [ "$tessie_attempt" -le 3 ]
+        do
+          http_response=$(curl -s -w "%{http_code}" \
+            -H "Authorization: Bearer $TESSIE_API_TOKEN" \
+            -H "Accept: application/json" \
+            -H "User-Agent: github.com/Scottmg1/Sentry-USB" \
+            "https://api.tessie.com/$TESSIE_VIN/command/enable_sentry")
 
-        log "Tessie: Command sent to enable Sentry Mode."
-        # Extract HTTP status code
-        http_status="${http_response: -3}"
-        
-        # Extract response body (excluding status code)
-        response_body="${http_response:0:${#http_response}-3}"
-        
-        # Check if HTTP status code is not 200 (OK)
-        if [ "$http_status" != "200" ]
-        then
-          # Log an error
-          log "Tessie: Failed to set Sentry Mode. Check your TESSIE_API_TOKEN and TESSIE_VIN are set correctly. If they are, your car may not have a good connection."
-          /root/bin/send-push-message "${NOTIFICATION_TITLE:-SentryUSB}:" \
-            "Tessie: Failed to enable Sentry Mode (HTTP $http_status). Check API token and VIN." "" "keep_awake_failure" || true
-        else
-          # Check if the response is in JSON format
-          if ! jq -e . >/dev/null 2>&1 <<<"$response_body"
+          log "Tessie: Command sent to enable Sentry Mode (attempt $tessie_attempt/3)."
+          # Extract HTTP status code
+          http_status="${http_response: -3}"
+
+          # Extract response body (excluding status code)
+          response_body="${http_response:0:${#http_response}-3}"
+
+          # Try to extract error details from the response body
+          tessie_error=""
+          if jq -e . >/dev/null 2>&1 <<<"$response_body"; then
+            tessie_error=$(jq -r '.error // empty' <<<"$response_body" 2>/dev/null)
+          fi
+
+          # Check if HTTP status code is not 200 (OK)
+          if [ "$http_status" != "200" ]
           then
-            log "Tessie: Failed to set Sentry Mode. Response data: $response_body"
-            /root/bin/send-push-message "${NOTIFICATION_TITLE:-SentryUSB}:" \
-              "Tessie: Failed to enable Sentry Mode. Invalid response from API." "" "keep_awake_failure" || true
-          else
-            # Parse JSON and check if "result" is true
-            result=$(jq -r '.result' <<<"$response_body")
-            if [[ "$result" != "true" ]]
-            then
-              log "Tessie: Failed to set Sentry Mode. Response data: $response_body"
+            # Build a descriptive error reason based on HTTP status
+            case "$http_status" in
+              401) tessie_reason="Invalid or expired API token." ;;
+              403) tessie_reason="API token lacks permission for this vehicle." ;;
+              404) tessie_reason="Vehicle not found. Check VIN." ;;
+              408) tessie_reason="Command timed out (Tesla Fleet API). Vehicle may be asleep or out of range." ;;
+              429) tessie_reason="Too many requests. Rate limited." ;;
+              500|502|503) tessie_reason="Tessie server error." ;;
+              *)   tessie_reason="Unexpected error." ;;
+            esac
+            # Append Tessie error detail if available
+            if [ -n "$tessie_error" ]; then
+              tessie_reason="$tessie_reason $tessie_error"
+            fi
+            log "Tessie: Failed to enable Sentry Mode (HTTP $http_status). $tessie_reason"
+            if [ "$tessie_attempt" -lt 3 ]; then
+              log "Tessie: Retrying after 30s (attempt $((tessie_attempt+1))/3)..."
+              tessie_attempt=$((tessie_attempt+1))
+              sleep 30
+              continue
+            else
+              log "Tessie: Giving up after 3 attempts."
               /root/bin/send-push-message "${NOTIFICATION_TITLE:-SentryUSB}:" \
-                "Tessie: Failed to enable Sentry Mode. API returned failure." "" "keep_awake_failure" || true
+                "Tessie: Failed to enable Sentry Mode after 3 attempts (HTTP $http_status). $tessie_reason" "" "keep_awake_failure" || true
+            fi
+          else
+            # Check if the response is in JSON format
+            if ! jq -e . >/dev/null 2>&1 <<<"$response_body"
+            then
+              log "Tessie: Failed to enable Sentry Mode. Invalid response: $response_body"
+              if [ "$tessie_attempt" -lt 3 ]; then
+                log "Tessie: Retrying after 30s (attempt $((tessie_attempt+1))/3)..."
+                tessie_attempt=$((tessie_attempt+1))
+                sleep 30
+                continue
+              else
+                log "Tessie: Giving up after 3 attempts."
+                /root/bin/send-push-message "${NOTIFICATION_TITLE:-SentryUSB}:" \
+                  "Tessie: Failed to enable Sentry Mode after 3 attempts. Invalid API response." "" "keep_awake_failure" || true
+              fi
+            else
+              # Parse JSON and check if "result" is true
+              result=$(jq -r '.result' <<<"$response_body")
+              if [[ "$result" == "true" ]]; then
+                log "Tessie: Sentry Mode Enabled."
+                tessie_success=true
+              else
+                tessie_error=$(jq -r '.error // "unknown reason"' <<<"$response_body" 2>/dev/null)
+                log "Tessie: API returned failure. $tessie_error"
+                if [ "$tessie_attempt" -lt 3 ]; then
+                  log "Tessie: Retrying after 30s (attempt $((tessie_attempt+1))/3)..."
+                  tessie_attempt=$((tessie_attempt+1))
+                  sleep 30
+                  continue
+                else
+                  log "Tessie: Giving up after 3 attempts."
+                  /root/bin/send-push-message "${NOTIFICATION_TITLE:-SentryUSB}:" \
+                    "Tessie: Failed to enable Sentry Mode after 3 attempts. $tessie_error" "" "keep_awake_failure" || true
+                fi
+              fi
             fi
           fi
-        fi
+          break
+        done
       elif [[ -n "${TESLA_BLE_VIN:+x}" ]]
       # Use Tesla BLE API to enable Sentry Mode
       then
