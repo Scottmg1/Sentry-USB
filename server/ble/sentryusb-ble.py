@@ -643,16 +643,56 @@ class WifiScanCharacteristic(Characteristic):
         return dbus.Array([dbus.Byte(b) for b in data], signature='y')
 
     def _do_scan(self):
-        """Run WiFi scan off the BLE read path, cache results, notify client."""
+        """Run WiFi scan off the BLE read path, send results as chunked notifications."""
         networks = scan_wifi_networks()
         self._scanning = False
-        self._cached_networks = networks
-        # Send a small notification that fits within BLE MTU — client
-        # will do a second ReadValue to fetch the full cached results.
-        log.info(f'WiFi scan complete: {len(networks)} networks, notifying client to read')
-        data = json.dumps({'ready': True, 'count': len(networks)}).encode()
-        self.send_notification(
-            dbus.Array([dbus.Byte(b) for b in data], signature='y'))
+        self._cached_networks = None
+        self._read_blob_data = None
+
+        data_str = json.dumps(networks)
+        log.info(f'WiFi scan complete: {len(networks)} networks ({len(data_str)} bytes)')
+
+        # Split data into chunks that fit within 512-byte BLE MTU after
+        # JSON wrapping + quote escaping.  We build each message and verify
+        # it fits; if not, we binary-search for the right split point.
+        max_msg = 509  # stay a few bytes under 512 for safety
+        chunks = []
+        remaining = data_str
+        while remaining:
+            # Start optimistic, shrink until the encoded message fits
+            hi = len(remaining)
+            lo = min(hi, 200)
+            # Try full remaining first
+            test_msg = json.dumps({'wifi_results': True, 'chunks': 0, 'chunk': 0, 'data': remaining})
+            if len(test_msg.encode()) <= max_msg:
+                chunks.append(remaining)
+                break
+            # Binary search for largest slice that fits
+            while lo < hi:
+                mid = (lo + hi + 1) // 2
+                test_msg = json.dumps({'wifi_results': True, 'chunks': 0, 'chunk': 0, 'data': remaining[:mid]})
+                if len(test_msg.encode()) <= max_msg:
+                    lo = mid
+                else:
+                    hi = mid - 1
+            chunks.append(remaining[:lo])
+            remaining = remaining[lo:]
+
+        total = len(chunks)
+        log.info(f'WiFi scan: sending {total} chunks')
+        for idx, chunk_data in enumerate(chunks):
+            chunk_msg = json.dumps({
+                'wifi_results': True,
+                'chunks': total,
+                'chunk': idx,
+                'data': chunk_data,
+            }).encode()
+            def send_chunk(msg=chunk_msg):
+                self.send_notification(
+                    dbus.Array([dbus.Byte(b) for b in msg], signature='y'))
+                return False
+            # Stagger by 50ms to prevent BlueZ notification drops
+            GLib.timeout_add(50 * idx, send_chunk)
         return False  # Don't repeat the timeout
 
 

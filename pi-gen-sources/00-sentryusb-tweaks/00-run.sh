@@ -6,17 +6,12 @@
 
 touch "${ROOTFS_DIR}/boot/ssh"
 
-# Remove firstrun.sh so Raspberry Pi Imager can inject WiFi and other
-# customization. pi-gen writes this file (and a cmdline.txt boot hook) when
-# FIRST_USER_PASS is set, which causes Imager to treat the image as already
-# customized and lock its settings panel. The sentryusb user is created at
-# build time, resize2fs_once is disabled below, and WiFi is handled by
-# rc.local via sentryusb.conf — so firstrun.sh is not needed.
-#
-# IMPORTANT: We keep init=/usr/lib/raspberrypi-sys-mods/firstboot in
-# cmdline.txt. This is the Bookworm+ mechanism that Raspberry Pi Imager
-# uses to apply custom.toml (WiFi, SSH, hostname). Without it, Imager
-# grays out the OS Customization panel.
+# Remove firstrun.sh and the firstboot init hook. WiFi/hostname setup is
+# handled by the SentryUSB iOS app via BLE, so Raspberry Pi Imager
+# customization is not needed. Stripping the firstboot init= parameter
+# prevents the Bookworm initramfs from auto-expanding the root partition
+# to fill the entire disk — the setup script needs that free space for
+# backingfiles and mutable partitions.
 rm -f "${ROOTFS_DIR}/boot/firmware/firstrun.sh"
 rm -f "${ROOTFS_DIR}/boot/firmware/userconf.txt"
 rm -f "${ROOTFS_DIR}/boot/firmware/custom.toml"
@@ -26,6 +21,7 @@ if [ -f "${ROOTFS_DIR}/boot/firmware/cmdline.txt" ]; then
         -e 's| systemd\.run=/boot/firstrun\.sh||g' \
         -e 's| systemd\.run_success_action=reboot||g' \
         -e 's| systemd\.unit=kernel-command-line\.target||g' \
+        -e 's| init=/usr/lib/raspberrypi-sys-mods/firstboot||g' \
         "${ROOTFS_DIR}/boot/firmware/cmdline.txt"
 fi
 
@@ -86,6 +82,16 @@ else
 fi
 chmod +x "${BLE_SCRIPT}" 2>/dev/null || true
 
+# ── Install D-Bus policy for BLE daemon (required on Pi 5 / Bookworm) ──
+DBUS_CONF="${ROOTFS_DIR}/etc/dbus-1/system.d/com.sentryusb.ble.conf"
+if [ -f "files/com.sentryusb.ble.conf" ]; then
+    install -m 644 "files/com.sentryusb.ble.conf" "${DBUS_CONF}"
+elif [ -f "../../server/ble/com.sentryusb.ble.conf" ]; then
+    install -m 644 "../../server/ble/com.sentryusb.ble.conf" "${DBUS_CONF}"
+else
+    echo "WARNING: D-Bus policy file not found — BLE may fail on Pi 5"
+fi
+
 # ── Install remountfs_rw helper (needed by BLE daemon to save PIN on read-only rootfs) ──
 if [ -f "../../run/remountfs_rw" ]; then
     install -m 755 "../../run/remountfs_rw" "${ROOTFS_DIR}/root/bin/remountfs_rw"
@@ -144,6 +150,8 @@ apt-get update -qq
 apt-get install -y dos2unix parted fdisk sudo curl python3-dbus python3-gi
 
 # Remove unwanted packages, disable unwanted services, and disable swap
+# nginx conflicts with SentryUSB on port 80 — remove it to prevent fallback splash page
+apt-get remove -y --purge nginx nginx-common nginx-full 2>/dev/null || true
 apt-get remove -y --purge triggerhappy userconf-pi dphys-swapfile firmware-libertas firmware-realtek firmware-atheros mkvtoolnix 2>/dev/null || true
 apt-get -y autoremove
 systemctl disable keyboard-setup || true
