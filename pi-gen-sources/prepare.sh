@@ -1,7 +1,20 @@
 #!/bin/bash -eu
 
-SRC=$(dirname $(readlink -f $0))
-DEST=$(readlink -f .)
+# macOS-compatible readlink -f replacement
+resolve_path() {
+  local target="$1"
+  cd "$(dirname "$target")" 2>/dev/null
+  target="$(basename "$target")"
+  while [ -L "$target" ]; do
+    target="$(readlink "$target")"
+    cd "$(dirname "$target")" 2>/dev/null
+    target="$(basename "$target")"
+  done
+  echo "$(pwd -P)/$target"
+}
+
+SRC=$(dirname "$(resolve_path "$0")")
+DEST=$(cd . && pwd -P)
 
 if [[ "$DEST" != */pi-gen ]]
 then
