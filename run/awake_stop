@@ -53,6 +53,7 @@ case "${SENTRY_CASE}" in
     # Use Tessie API to disable Sentry Mode (up to 3 attempts)
     then
       tessie_attempt=1
+      # shellcheck disable=SC2034
       tessie_success=false
       while [ "$tessie_attempt" -le 3 ]
       do

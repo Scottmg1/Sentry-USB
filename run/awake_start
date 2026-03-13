@@ -194,6 +194,7 @@ else
       # Use Tessie API to enable Sentry Mode (up to 3 attempts)
       then
         tessie_attempt=1
+        # shellcheck disable=SC2034
         tessie_success=false
         while [ "$tessie_attempt" -le 3 ]
         do
