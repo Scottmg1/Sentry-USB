@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react"
-import { ChevronLeft, ChevronRight, Check, Loader2, AlertCircle, CheckCircle } from "lucide-react"
+import { ChevronLeft, ChevronRight, Check, Loader2, AlertCircle, AlertTriangle, CheckCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { SetupProgress } from "./SetupProgress"
 import { WelcomeStep } from "./steps/WelcomeStep"
@@ -115,6 +115,67 @@ function getStepError(stepIdx: number, data: SetupFormData): string | null {
   }
 }
 
+// ── Destructive change detection ──
+// These settings cause data loss when changed because the underlying disk
+// images must be deleted and recreated with the new size/filesystem.
+const DESTRUCTIVE_SIZE_KEYS: Record<string, string> = {
+  CAM_SIZE: "Dashcam drive (clips & snapshots)",
+  MUSIC_SIZE: "Music drive",
+  LIGHTSHOW_SIZE: "Lightshow drive",
+  BOOMBOX_SIZE: "Boombox drive",
+  WRAPS_SIZE: "Wraps drive",
+}
+
+interface DestructiveChange {
+  key: string
+  label: string
+  reason: string
+}
+
+function normalizeSizeValue(val: string | undefined): string {
+  if (!val) return "0"
+  return val.replace(/G$/i, "").trim() || "0"
+}
+
+function detectDestructiveChanges(
+  current: SetupFormData,
+  original: SetupFormData | undefined,
+): DestructiveChange[] {
+  // No original config = first-time setup, nothing to lose
+  if (!original) return []
+
+  const changes: DestructiveChange[] = []
+
+  // Check if filesystem type changed — this forces ALL drives to be recreated
+  const exfatChanged = (current.USE_EXFAT ?? "true") !== (original.USE_EXFAT ?? "true")
+  if (exfatChanged) {
+    const from = original.USE_EXFAT === "true" ? "exFAT" : "FAT32"
+    const to = current.USE_EXFAT === "true" ? "exFAT" : "FAT32"
+    changes.push({
+      key: "USE_EXFAT",
+      label: "All drives",
+      reason: `Filesystem type changed from ${from} to ${to} — all drive images will be recreated`,
+    })
+    // When exFAT changes, all drives are affected so we don't need to list individual size changes
+    return changes
+  }
+
+  // Check individual size changes
+  for (const [key, label] of Object.entries(DESTRUCTIVE_SIZE_KEYS)) {
+    const newVal = normalizeSizeValue(current[key])
+    const oldVal = normalizeSizeValue(original[key])
+    if (newVal !== oldVal) {
+      changes.push({
+        key,
+        label,
+        reason: `Size changed from ${oldVal || "0"}G to ${newVal}G — drive image will be recreated`,
+      })
+    }
+  }
+
+  return changes
+}
+
 const steps: StepDef[] = [
   { id: "welcome", title: "Welcome", component: WelcomeStep },
   { id: "network", title: "Network", component: NetworkStep },
@@ -158,6 +219,9 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
   const [phase, setPhase] = useState<SetupPhase>("wizard")
   const [setupMessage, setSetupMessage] = useState("")
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  // Snapshot of the config as it was when the wizard opened (for detecting destructive changes)
+  const originalDataRef = useRef<SetupFormData | undefined>(initialData)
+  const [destructiveWarning, setDestructiveWarning] = useState<DestructiveChange[] | null>(null)
 
   const handleChange = useCallback((key: string, value: string) => {
     setFormData((prev) => ({ ...prev, [key]: value }))
@@ -285,27 +349,19 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
   const StepComponent = steps[currentStep].component
   const currentStepError = getStepError(currentStep, formData)
 
-  async function handleApply() {
-    const firstInvalidIdx = steps.findIndex((_, i) => getStepError(i, formData) !== null)
-    if (firstInvalidIdx !== -1) {
-      setCurrentStep(firstInvalidIdx)
-      setSaveError(getStepError(firstInvalidIdx, formData))
-      return
-    }
+  // Core apply logic — sends the given data to the server and triggers setup.
+  async function doApply(dataToSave: SetupFormData) {
     setSaving(true)
     setSaveError(null)
     try {
-      // Strip internal UI-only fields (prefixed with _) before saving
       const sizeFields = new Set(["CAM_SIZE", "MUSIC_SIZE", "LIGHTSHOW_SIZE", "BOOMBOX_SIZE"])
       const configData = Object.fromEntries(
-        Object.entries(formData)
+        Object.entries(dataToSave)
           .filter(([k, v]) => !k.startsWith("_") && v !== "")
           .map(([k, v]) => {
-            // Append G suffix to size fields if it's a plain number
             if (sizeFields.has(k) && /^\d+$/.test(v)) {
               return [k, v + "G"]
             }
-            // Convert temperature fields from °C to milli-°C for the config
             if ((k === "TEMPERATURE_WARNING" || k === "TEMPERATURE_CAUTION") && v && !v.includes("000")) {
               const num = parseFloat(v)
               if (!isNaN(num)) return [k, String(Math.round(num * 1000))]
@@ -323,7 +379,6 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
       setPhase("applying")
       setSetupMessage("Configuration saved. Starting setup...")
 
-      // Trigger setup
       const runRes = await fetch("/api/setup/run", { method: "POST" })
       if (!runRes.ok) {
         const err = await runRes.json()
@@ -340,8 +395,104 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
     }
   }
 
+  // Called when user clicks "Apply & Run Setup" — checks for destructive changes first.
+  async function handleApply() {
+    const firstInvalidIdx = steps.findIndex((_, i) => getStepError(i, formData) !== null)
+    if (firstInvalidIdx !== -1) {
+      setCurrentStep(firstInvalidIdx)
+      setSaveError(getStepError(firstInvalidIdx, formData))
+      return
+    }
+
+    const changes = detectDestructiveChanges(formData, originalDataRef.current)
+    if (changes.length > 0) {
+      setDestructiveWarning(changes)
+      return
+    }
+
+    doApply(formData)
+  }
+
+  // User confirmed: apply everything including destructive changes.
+  function handleApplyAll() {
+    setDestructiveWarning(null)
+    doApply(formData)
+  }
+
+  // User chose to skip destructive changes: revert those fields to original values.
+  function handleSkipDestructive() {
+    if (!destructiveWarning || !originalDataRef.current) return
+    const safeData = { ...formData }
+    for (const change of destructiveWarning) {
+      if (change.key === "USE_EXFAT") {
+        // Revert filesystem type AND all size fields (since exFAT change affects all)
+        safeData.USE_EXFAT = originalDataRef.current.USE_EXFAT ?? "true"
+      } else {
+        safeData[change.key] = originalDataRef.current[change.key] ?? ""
+      }
+    }
+    setDestructiveWarning(null)
+    doApply(safeData)
+  }
+
   const isLast = currentStep === steps.length - 1
   const isFirst = currentStep === 0
+
+  // ── Destructive change warning dialog ──
+  if (destructiveWarning) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+        <div className="glass-card flex w-full max-w-lg flex-col gap-5 p-8">
+          <div className="flex items-start gap-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-amber-500/20">
+              <AlertTriangle className="h-6 w-6 text-amber-400" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-slate-100">
+                Data Will Be Deleted
+              </h2>
+              <p className="mt-1 text-sm text-slate-400">
+                The following changes require drive images to be recreated.
+                All data on the affected drives will be permanently lost.
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4">
+            <ul className="space-y-3">
+              {destructiveWarning.map((change) => (
+                <li key={change.key} className="flex flex-col gap-0.5">
+                  <span className="text-sm font-medium text-slate-200">{change.label}</span>
+                  <span className="text-xs text-slate-400">{change.reason}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+            <button
+              onClick={() => setDestructiveWarning(null)}
+              className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-slate-300 transition-colors hover:bg-white/10"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSkipDestructive}
+              className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-4 py-2 text-sm font-medium text-blue-400 transition-colors hover:bg-blue-500/20"
+            >
+              Skip Data-Affecting Changes
+            </button>
+            <button
+              onClick={handleApplyAll}
+              className="rounded-lg bg-red-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-600"
+            >
+              Delete Data & Apply All
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   // ── Progress screen (shown after Apply) ──
   if (phase !== "wizard") {
