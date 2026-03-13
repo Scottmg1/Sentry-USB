@@ -337,10 +337,18 @@ def configure_wifi(ssid, password, hostname=None):
             subprocess.run(['/root/bin/remountfs_rw'], capture_output=True, timeout=5)
             subprocess.run(['hostnamectl', 'set-hostname', hostname], capture_output=True, timeout=5)
 
+        # Delete any stale connection profile for this SSID — avoids
+        # "802-11-wireless-security.key-mgmt: property is missing" errors
+        # when a previous connection attempt left a broken profile.
+        subprocess.run(['nmcli', 'connection', 'delete', ssid],
+                       capture_output=True, timeout=5)
+
         # Connect via NetworkManager
+        cmd = ['nmcli', 'device', 'wifi', 'connect', ssid]
+        if password:
+            cmd += ['password', password]
         connect_result = subprocess.run(
-            ['nmcli', 'device', 'wifi', 'connect', ssid, 'password', password],
-            capture_output=True, text=True, timeout=30
+            cmd, capture_output=True, text=True, timeout=30
         )
         if connect_result.returncode != 0:
             err_msg = connect_result.stderr.strip() or connect_result.stdout.strip()
