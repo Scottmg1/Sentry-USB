@@ -289,9 +289,17 @@ def update_avahi_service_name(name):
 def scan_wifi_networks():
     """Scan for visible WiFi networks using nmcli."""
     try:
-        # Trigger a fresh scan (ignore errors — list still returns cached results)
+        # Ensure WiFi radio is unblocked
+        subprocess.run(['rfkill', 'unblock', 'wifi'],
+                       capture_output=True, timeout=3)
+        # Trigger a fresh scan
         subprocess.run(['nmcli', 'device', 'wifi', 'rescan'],
                        capture_output=True, timeout=10)
+        # Wait for the scan to complete before listing results —
+        # nmcli rescan returns immediately but the actual scan takes a few seconds.
+        # Without this delay, wifi list returns stale/empty cached results.
+        import time
+        time.sleep(3)
         output = subprocess.check_output(
             ['nmcli', '-t', '-f', 'SSID,SIGNAL,SECURITY', 'device', 'wifi', 'list'],
             text=True, timeout=10, stderr=subprocess.DEVNULL
@@ -572,7 +580,13 @@ class WifiSetupService(Service):
 
 
 class WifiScanCharacteristic(Characteristic):
-    """Returns JSON array of visible WiFi networks when read."""
+    """Returns JSON array of visible WiFi networks.
+
+    ReadValue returns {"scanning": true} immediately, then the actual
+    scan results are delivered asynchronously via BLE notification.
+    This prevents the synchronous nmcli subprocess from blocking the
+    GLib main loop and dropping the BLE connection.
+    """
 
     def __init__(self, bus, index, service):
         Characteristic.__init__(self, bus, index, WIFI_SCAN_UUID,
@@ -582,10 +596,25 @@ class WifiScanCharacteristic(Characteristic):
         if not is_authenticated(options):
             data = json.dumps({'error': 'not_authenticated'}).encode()
             return dbus.Array([dbus.Byte(b) for b in data], signature='y')
-        networks = scan_wifi_networks()
-        data = json.dumps(networks).encode()
-        log.info(f'WiFi scan: found {len(networks)} networks')
+
+        # Return immediately so the BLE connection stays alive
+        log.info('WiFi scan requested — will notify with results')
+
+        # Schedule the actual scan to run asynchronously (same pattern as
+        # WifiConfigCharacteristic at line 643)
+        GLib.idle_add(lambda: (GLib.timeout_add(100, self._do_scan), False)[-1])
+
+        data = json.dumps({'scanning': True}).encode()
         return dbus.Array([dbus.Byte(b) for b in data], signature='y')
+
+    def _do_scan(self):
+        """Run WiFi scan off the BLE read path and notify with results."""
+        networks = scan_wifi_networks()
+        log.info(f'WiFi scan complete: found {len(networks)} networks, notifying client')
+        data = json.dumps(networks).encode()
+        self.send_notification(
+            dbus.Array([dbus.Byte(b) for b in data], signature='y'))
+        return False  # Don't repeat the timeout
 
 
 class WifiConfigCharacteristic(Characteristic):
