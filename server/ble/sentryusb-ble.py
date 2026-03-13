@@ -582,36 +582,49 @@ class WifiSetupService(Service):
 class WifiScanCharacteristic(Characteristic):
     """Returns JSON array of visible WiFi networks.
 
-    ReadValue returns {"scanning": true} immediately, then the actual
-    scan results are delivered asynchronously via BLE notification.
-    This prevents the synchronous nmcli subprocess from blocking the
-    GLib main loop and dropping the BLE connection.
+    ReadValue triggers an async scan and returns {"scanning": true}.
+    When scan completes, a small {"ready": true, "count": N} notification
+    is sent (fits within BLE MTU).  The client then does a second read
+    to fetch the full cached results via ATT long-read (no MTU limit).
     """
 
     def __init__(self, bus, index, service):
         Characteristic.__init__(self, bus, index, WIFI_SCAN_UUID,
                                 ['read', 'notify'], service)
+        self._cached_networks = None
+        self._scanning = False
 
     def ReadValue(self, options):
         if not is_authenticated(options):
             data = json.dumps({'error': 'not_authenticated'}).encode()
             return dbus.Array([dbus.Byte(b) for b in data], signature='y')
 
-        # Return immediately so the BLE connection stays alive
-        log.info('WiFi scan requested — will notify with results')
+        # If cached results exist from a completed scan, return them
+        if self._cached_networks is not None:
+            networks = self._cached_networks
+            self._cached_networks = None
+            data = json.dumps(networks).encode()
+            log.info(f'WiFi scan: returning {len(networks)} cached networks ({len(data)} bytes)')
+            return dbus.Array([dbus.Byte(b) for b in data], signature='y')
 
-        # Schedule the actual scan to run asynchronously (same pattern as
-        # WifiConfigCharacteristic at line 643)
-        GLib.idle_add(lambda: (GLib.timeout_add(100, self._do_scan), False)[-1])
+        # No cached results — trigger async scan (if not already running)
+        if not self._scanning:
+            self._scanning = True
+            log.info('WiFi scan requested — scanning async, will notify when ready')
+            GLib.idle_add(lambda: (GLib.timeout_add(100, self._do_scan), False)[-1])
 
         data = json.dumps({'scanning': True}).encode()
         return dbus.Array([dbus.Byte(b) for b in data], signature='y')
 
     def _do_scan(self):
-        """Run WiFi scan off the BLE read path and notify with results."""
+        """Run WiFi scan off the BLE read path, cache results, notify client."""
         networks = scan_wifi_networks()
-        log.info(f'WiFi scan complete: found {len(networks)} networks, notifying client')
-        data = json.dumps(networks).encode()
+        self._scanning = False
+        self._cached_networks = networks
+        # Send a small notification that fits within BLE MTU — client
+        # will do a second ReadValue to fetch the full cached results.
+        log.info(f'WiFi scan complete: {len(networks)} networks, notifying client to read')
+        data = json.dumps({'ready': True, 'count': len(networks)}).encode()
         self.send_notification(
             dbus.Array([dbus.Byte(b) for b in data], signature='y'))
         return False  # Don't repeat the timeout
