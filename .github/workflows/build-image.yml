@@ -1,0 +1,83 @@
+name: Build SentryUSB Image
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build ARM64 Pi Image
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - name: Build frontend
+        working-directory: web
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+
+      - name: Build server binary
+        working-directory: server
+        run: |
+          make copy-static
+          make build-arm64
+
+      - name: Clone pi-gen
+        run: git clone --depth 1 --branch arm64 https://github.com/RPi-Distro/pi-gen.git /tmp/pi-gen
+
+      - name: Prepare pi-gen
+        working-directory: /tmp/pi-gen
+        run: |
+          bash "$GITHUB_WORKSPACE/pi-gen-sources/prepare.sh"
+          cp "$GITHUB_WORKSPACE/pi-gen-sources/pi-gen-config" config
+
+      - name: Inject binary and BLE files
+        working-directory: /tmp/pi-gen
+        run: |
+          cp "$GITHUB_WORKSPACE/server/bin/sentryusb-linux-arm64" stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-binary
+          chmod +x stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-binary
+          cp "$GITHUB_WORKSPACE/server/ble/sentryusb-ble.py" stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-ble.py
+          cp "$GITHUB_WORKSPACE/server/ble/sentryusb-ble.service" stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-ble.service
+          cp "$GITHUB_WORKSPACE/server/ble/com.sentryusb.ble.conf" stage_sentryusb/00-sentryusb-tweaks/files/com.sentryusb.ble.conf
+
+      - name: Fix Trixie apt image margin
+        working-directory: /tmp/pi-gen
+        run: sed -i 's/200 \* 1024 \* 1024/800 * 1024 * 1024/' export-image/prerun.sh
+
+      - name: Build image
+        working-directory: /tmp/pi-gen
+        run: |
+          docker rm -v pigen_work 2>/dev/null || true
+          ./build-docker.sh
+
+      - name: Compress and upload image
+        run: |
+          IMAGE=$(find /tmp/pi-gen/deploy -name '*.img' | head -1)
+          if [ -z "$IMAGE" ]; then
+            echo "::error::Build failed — no image found in deploy/"
+            exit 1
+          fi
+          BASENAME=$(basename "$IMAGE")
+          gzip -9 -c "$IMAGE" > "/tmp/${BASENAME}.gz"
+          echo "image_path=/tmp/${BASENAME}.gz" >> "$GITHUB_ENV"
+          echo "image_name=${BASENAME}.gz" >> "$GITHUB_ENV"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.image_name }}
+          path: ${{ env.image_path }}
+          retention-days: 30

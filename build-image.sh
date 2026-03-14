@@ -102,7 +102,11 @@ fi
 # ── Step 2: Clone pi-gen ──
 info "Setting up pi-gen..."
 rm -rf "$WORK_DIR"
-git clone --depth 1 https://github.com/RPi-Distro/pi-gen.git "$WORK_DIR"
+if $BUILD_32BIT; then
+    git clone --depth 1 https://github.com/RPi-Distro/pi-gen.git "$WORK_DIR"
+else
+    git clone --depth 1 --branch arm64 https://github.com/RPi-Distro/pi-gen.git "$WORK_DIR"
+fi
 
 # ── Step 3: Prepare pi-gen with SentryUSB config ──
 cd "$WORK_DIR"
@@ -119,6 +123,14 @@ chmod +x "$WORK_DIR/stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-binary"
 info "Injecting BLE daemon files..."
 cp "$SCRIPT_DIR/server/ble/sentryusb-ble.py" "$WORK_DIR/stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-ble.py"
 cp "$SCRIPT_DIR/server/ble/sentryusb-ble.service" "$WORK_DIR/stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-ble.service"
+cp "$SCRIPT_DIR/server/ble/com.sentryusb.ble.conf" "$WORK_DIR/stage_sentryusb/00-sentryusb-tweaks/files/com.sentryusb.ble.conf"
+
+# Trixie apt indices are much larger; increase export image margin
+if [[ "$OSTYPE" == darwin* ]]; then
+    sed -i '' 's/200 \* 1024 \* 1024/800 * 1024 * 1024/' "$WORK_DIR/export-image/prerun.sh"
+else
+    sed -i 's/200 \* 1024 \* 1024/800 * 1024 * 1024/' "$WORK_DIR/export-image/prerun.sh"
+fi
 
 # ── Step 5: Build the image ──
 info "Building image with Docker (this takes 15-30 minutes)..."
