@@ -2,6 +2,8 @@ name: Build SentryUSB Image
 
 on:
   workflow_dispatch:
+  release:
+    types: [published]
 
 jobs:
   build:
@@ -63,21 +65,34 @@ jobs:
           docker rm -v pigen_work 2>/dev/null || true
           ./build-docker.sh
 
-      - name: Compress and upload image
+      - name: List deploy output
+        run: ls -lah /tmp/pi-gen/deploy/ 2>/dev/null || echo "deploy/ does not exist"
+
+      - name: Prepare artifact
         run: |
-          IMAGE=$(find /tmp/pi-gen/deploy -name '*.img' | head -1)
-          if [ -z "$IMAGE" ]; then
+          # pi-gen may output .img, .zip, .img.xz, or .img.gz depending on config
+          ARTIFACT=$(find /tmp/pi-gen/deploy -type f \( -name '*.img' -o -name '*.zip' -o -name '*.img.xz' -o -name '*.img.gz' \) | head -1)
+          if [ -z "$ARTIFACT" ]; then
             echo "::error::Build failed — no image found in deploy/"
             exit 1
           fi
-          BASENAME=$(basename "$IMAGE")
-          gzip -9 -c "$IMAGE" > "/tmp/${BASENAME}.gz"
-          echo "image_path=/tmp/${BASENAME}.gz" >> "$GITHUB_ENV"
-          echo "image_name=${BASENAME}.gz" >> "$GITHUB_ENV"
+          # If raw .img, compress it; otherwise use as-is
+          if [[ "$ARTIFACT" == *.img ]]; then
+            gzip -9 -c "$ARTIFACT" > "/tmp/$(basename "$ARTIFACT").gz"
+            ARTIFACT="/tmp/$(basename "$ARTIFACT").gz"
+          fi
+          echo "artifact_path=$ARTIFACT" >> "$GITHUB_ENV"
+          echo "artifact_name=$(basename "$ARTIFACT")" >> "$GITHUB_ENV"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.image_name }}
-          path: ${{ env.image_path }}
+          name: ${{ env.artifact_name }}
+          path: ${{ env.artifact_path }}
           retention-days: 30
+
+      - name: Attach to release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.event.release.tag_name }}" "${{ env.artifact_path }}" --clobber
