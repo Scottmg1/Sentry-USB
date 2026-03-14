@@ -644,31 +644,68 @@ class WifiScanCharacteristic(Characteristic):
         return dbus.Array([dbus.Byte(b) for b in data], signature='y')
 
     def _do_scan(self):
-        """Run WiFi scan off the BLE read path, cache results and notify client.
+        """Run WiFi scan, cache results, and deliver via two parallel paths.
 
-        Instead of streaming chunked notifications (unreliable across different
-        BLE hardware), we cache the results and send a tiny "ready" notification.
-        The client then does a normal Read + Read Blob to fetch the full data,
-        which is handled reliably at the ATT protocol level on every board.
+        Path 1 (Read Blob): Cache results and send a "ready" notification.
+                The client reads the characteristic; BlueZ handles ATT Read Blob
+                to transfer data larger than the MTU.  Works on Pi 5, Pi Zero 2 W.
+        Path 2 (Chunked notifications): Also send the data as chunked
+                notifications with generous stagger, starting after a 1-second
+                delay.  This is the fallback for boards where BlueZ does not
+                handle Read Blob correctly (e.g. Pi 4B).
+        The client accepts whichever path delivers complete data first.
         """
         networks = scan_wifi_networks()
         self._scanning = False
 
-        data = json.dumps(networks).encode()
-        log.info(f'WiFi scan complete: {len(networks)} networks ({len(data)} bytes)')
+        data_str = json.dumps(networks)
+        total_bytes = len(data_str.encode())
+        log.info(f'WiFi scan complete: {len(networks)} networks ({total_bytes} bytes)')
 
-        # Cache results so the next ReadValue returns them
+        # --- Path 1: Cache for Read Blob ---
         self._cached_networks = networks
         self._read_blob_data = None  # will be set on next ReadValue
 
-        # Send a small notification telling the client results are ready.
-        # This fits within any BLE MTU (well under 20 bytes).
-        ready_msg = json.dumps({'wifi_results': True, 'count': len(networks)}).encode()
+        # Send "ready" notification with total byte count so client can
+        # detect truncation if Read Blob fails.
+        ready_msg = json.dumps({
+            'wifi_results': True,
+            'count': len(networks),
+            'total_bytes': total_bytes,
+        }).encode()
         def send_ready():
             self.send_notification(
                 dbus.Array([dbus.Byte(b) for b in ready_msg], signature='y'))
             return False
         GLib.idle_add(send_ready)
+
+        # --- Path 2: Chunked notifications as fallback ---
+        # Use a conservative chunk size that fits in any MTU (min BLE MTU is 23,
+        # but iOS typically negotiates >= 185).  We use 180 bytes of data per
+        # chunk — after JSON wrapping this stays well under 250 bytes.
+        CHUNK_DATA_SIZE = 180
+        chunks = []
+        remaining = data_str
+        while remaining:
+            chunks.append(remaining[:CHUNK_DATA_SIZE])
+            remaining = remaining[CHUNK_DATA_SIZE:]
+
+        total = len(chunks)
+        log.info(f'WiFi scan: also sending {total} notification chunks as fallback')
+        for idx, chunk_data in enumerate(chunks):
+            chunk_msg = json.dumps({
+                'wifi_chunks': True,
+                'chunks': total,
+                'chunk': idx,
+                'data': chunk_data,
+            }).encode()
+            def send_chunk(msg=chunk_msg):
+                self.send_notification(
+                    dbus.Array([dbus.Byte(b) for b in msg], signature='y'))
+                return False
+            # Start after 1s delay (give Read Blob time), 200ms stagger between chunks
+            GLib.timeout_add(1000 + 200 * idx, send_chunk)
+
         return False  # Don't repeat the timeout
 
 
