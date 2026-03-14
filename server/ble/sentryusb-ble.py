@@ -607,9 +607,13 @@ class WifiScanCharacteristic(Characteristic):
         self._cached_networks = None
         self._scanning = False
         self._read_blob_data = None  # bytes kept for Read Blob continuation
+        self._client_mtu = 185      # conservative default; updated from ReadValue options
 
     def ReadValue(self, options):
         offset = int(options.get('offset', 0))
+        # Capture negotiated MTU from BlueZ for notification chunking
+        if 'mtu' in options:
+            self._client_mtu = int(options['mtu'])
 
         # Read Blob continuation — return remaining bytes from previous read
         if offset > 0 and self._read_blob_data is not None:
@@ -652,16 +656,17 @@ class WifiScanCharacteristic(Characteristic):
         data_str = json.dumps(networks)
         log.info(f'WiFi scan complete: {len(networks)} networks ({len(data_str)} bytes)')
 
-        # Split data into chunks that fit within 512-byte BLE MTU after
-        # JSON wrapping + quote escaping.  We build each message and verify
-        # it fits; if not, we binary-search for the right split point.
-        max_msg = 509  # stay a few bytes under 512 for safety
+        # Split data into chunks that fit within the negotiated BLE MTU.
+        # ATT notification overhead is 3 bytes, so usable payload = MTU - 3.
+        # We build each message and verify it fits; if not, binary-search
+        # for the right split point.
+        max_msg = self._client_mtu - 3  # ATT header overhead
         chunks = []
         remaining = data_str
         while remaining:
-            # Start optimistic, shrink until the encoded message fits
+            # Binary search: lo starts at 1 (guaranteed to fit), hi at full length
             hi = len(remaining)
-            lo = min(hi, 200)
+            lo = 1
             # Try full remaining first
             test_msg = json.dumps({'wifi_results': True, 'chunks': 0, 'chunk': 0, 'data': remaining})
             if len(test_msg.encode()) <= max_msg:
@@ -875,8 +880,12 @@ class APIRequestCharacteristic(Characteristic):
                                 ['write'], service)
         self.response_chrc = response_chrc
         self.write_buffer = bytearray()
+        self._client_mtu = 185  # conservative default; updated from WriteValue options
 
     def WriteValue(self, value, options):
+        # Capture negotiated MTU from BlueZ for response chunking
+        if 'mtu' in options:
+            self._client_mtu = int(options['mtu'])
         self.write_buffer.extend(bytes(value))
         try:
             request = json.loads(self.write_buffer.decode())
@@ -907,23 +916,42 @@ class APIRequestCharacteristic(Characteristic):
             }
             response_json = json.dumps(response).encode()
 
-            # Chunk if > 500 bytes
-            chunk_size = 500
-            if len(response_json) <= chunk_size:
+            # Send response, chunking if it exceeds the negotiated BLE MTU.
+            # ATT notification overhead is 3 bytes.
+            max_msg = self._client_mtu - 3
+            if len(response_json) <= max_msg:
                 def send_single():
                     self.response_chrc.send_notification(
                         dbus.Array([dbus.Byte(b) for b in response_json], signature='y'))
                     return False
                 GLib.idle_add(send_single)
             else:
-                chunks = [response_json[i:i+chunk_size]
-                          for i in range(0, len(response_json), chunk_size)]
-                for idx, chunk in enumerate(chunks):
+                # Binary-search split: find largest data slices whose
+                # JSON-wrapped chunk messages fit within max_msg.
+                remaining = response_json.decode('utf-8', errors='replace')
+                chunks = []
+                while remaining:
+                    test_msg = json.dumps({'id': request_id, 'chunks': 0, 'chunk': 0, 'data': remaining})
+                    if len(test_msg.encode()) <= max_msg:
+                        chunks.append(remaining)
+                        break
+                    lo, hi = 1, len(remaining)
+                    while lo < hi:
+                        mid = (lo + hi + 1) // 2
+                        test_msg = json.dumps({'id': request_id, 'chunks': 0, 'chunk': 0, 'data': remaining[:mid]})
+                        if len(test_msg.encode()) <= max_msg:
+                            lo = mid
+                        else:
+                            hi = mid - 1
+                    chunks.append(remaining[:lo])
+                    remaining = remaining[lo:]
+                total = len(chunks)
+                for idx, chunk_data in enumerate(chunks):
                     chunk_msg = json.dumps({
                         'id': request_id,
-                        'chunks': len(chunks),
+                        'chunks': total,
                         'chunk': idx,
-                        'data': chunk.decode('utf-8', errors='replace'),
+                        'data': chunk_data,
                     }).encode()
                     def send_chunk(msg=chunk_msg):
                         self.response_chrc.send_notification(
