@@ -591,14 +591,15 @@ class WifiScanCharacteristic(Characteristic):
     """Returns JSON array of visible WiFi networks.
 
     ReadValue triggers an async scan and returns {"scanning": true}.
-    When scan completes, a small {"ready": true, "count": N} notification
-    is sent (fits within BLE MTU).  The client then does a second read
-    to fetch the full cached results.
+    When scan completes, a small {"wifi_results": true, "count": N}
+    notification is sent (fits within any BLE MTU).  The client then
+    does a second ReadValue to fetch the full cached results.
 
-    BlueZ uses the 'offset' option in ReadValue for the ATT Read Blob
-    procedure, which allows reading data larger than the BLE MTU.  We
-    keep the serialized bytes in _read_blob_data so subsequent calls
-    with offset > 0 return the correct slice.
+    BlueZ handles the ATT Read Blob procedure automatically — when the
+    response exceeds the negotiated MTU, it issues follow-up reads with
+    increasing offsets.  We keep the serialized bytes in _read_blob_data
+    so subsequent calls with offset > 0 return the correct slice.
+    This works reliably across all boards regardless of BLE hardware.
     """
 
     def __init__(self, bus, index, service):
@@ -607,13 +608,9 @@ class WifiScanCharacteristic(Characteristic):
         self._cached_networks = None
         self._scanning = False
         self._read_blob_data = None  # bytes kept for Read Blob continuation
-        self._client_mtu = 185      # conservative default; updated from ReadValue options
 
     def ReadValue(self, options):
         offset = int(options.get('offset', 0))
-        # Capture negotiated MTU from BlueZ for notification chunking
-        if 'mtu' in options:
-            self._client_mtu = int(options['mtu'])
 
         # Read Blob continuation — return remaining bytes from previous read
         if offset > 0 and self._read_blob_data is not None:
@@ -647,57 +644,31 @@ class WifiScanCharacteristic(Characteristic):
         return dbus.Array([dbus.Byte(b) for b in data], signature='y')
 
     def _do_scan(self):
-        """Run WiFi scan off the BLE read path, send results as chunked notifications."""
+        """Run WiFi scan off the BLE read path, cache results and notify client.
+
+        Instead of streaming chunked notifications (unreliable across different
+        BLE hardware), we cache the results and send a tiny "ready" notification.
+        The client then does a normal Read + Read Blob to fetch the full data,
+        which is handled reliably at the ATT protocol level on every board.
+        """
         networks = scan_wifi_networks()
         self._scanning = False
-        self._cached_networks = None
-        self._read_blob_data = None
 
-        data_str = json.dumps(networks)
-        log.info(f'WiFi scan complete: {len(networks)} networks ({len(data_str)} bytes)')
+        data = json.dumps(networks).encode()
+        log.info(f'WiFi scan complete: {len(networks)} networks ({len(data)} bytes)')
 
-        # Split data into chunks that fit within the negotiated BLE MTU.
-        # ATT notification overhead is 3 bytes, so usable payload = MTU - 3.
-        # We build each message and verify it fits; if not, binary-search
-        # for the right split point.
-        max_msg = self._client_mtu - 3  # ATT header overhead
-        chunks = []
-        remaining = data_str
-        while remaining:
-            # Binary search: lo starts at 1 (guaranteed to fit), hi at full length
-            hi = len(remaining)
-            lo = 1
-            # Try full remaining first
-            test_msg = json.dumps({'wifi_results': True, 'chunks': 0, 'chunk': 0, 'data': remaining})
-            if len(test_msg.encode()) <= max_msg:
-                chunks.append(remaining)
-                break
-            # Binary search for largest slice that fits
-            while lo < hi:
-                mid = (lo + hi + 1) // 2
-                test_msg = json.dumps({'wifi_results': True, 'chunks': 0, 'chunk': 0, 'data': remaining[:mid]})
-                if len(test_msg.encode()) <= max_msg:
-                    lo = mid
-                else:
-                    hi = mid - 1
-            chunks.append(remaining[:lo])
-            remaining = remaining[lo:]
+        # Cache results so the next ReadValue returns them
+        self._cached_networks = networks
+        self._read_blob_data = None  # will be set on next ReadValue
 
-        total = len(chunks)
-        log.info(f'WiFi scan: sending {total} chunks')
-        for idx, chunk_data in enumerate(chunks):
-            chunk_msg = json.dumps({
-                'wifi_results': True,
-                'chunks': total,
-                'chunk': idx,
-                'data': chunk_data,
-            }).encode()
-            def send_chunk(msg=chunk_msg):
-                self.send_notification(
-                    dbus.Array([dbus.Byte(b) for b in msg], signature='y'))
-                return False
-            # Stagger by 50ms to prevent BlueZ notification drops
-            GLib.timeout_add(50 * idx, send_chunk)
+        # Send a small notification telling the client results are ready.
+        # This fits within any BLE MTU (well under 20 bytes).
+        ready_msg = json.dumps({'wifi_results': True, 'count': len(networks)}).encode()
+        def send_ready():
+            self.send_notification(
+                dbus.Array([dbus.Byte(b) for b in ready_msg], signature='y'))
+            return False
+        GLib.idle_add(send_ready)
         return False  # Don't repeat the timeout
 
 
