@@ -29,6 +29,10 @@ function SizeInput({
   // Derive unit from stored value; default to GB
   const [unit, setUnit] = useState<Unit>(() => (/[mM]$/.test(raw) ? "M" : "G"))
 
+  // Local editing state to allow clearing the field without snapping back to default
+  const [localVal, setLocalVal] = useState(numericVal)
+  const [focused, setFocused] = useState(false)
+
   // Sync unit when data changes externally (e.g. .conf import)
   useEffect(() => {
     if (/[mM]$/.test(raw)) setUnit("M")
@@ -36,20 +40,38 @@ function SizeInput({
     // If raw is empty, keep current unit selection so the dropdown stays put
   }, [raw])
 
-  const handleNumChange = (v: string) => {
-    const cleaned = v.replace(/[^0-9]/g, "")
-    // If cleared and a default exists, restore the default instead of empty
+  // Sync local val from external data changes (e.g. .conf import) when not focused
+  useEffect(() => {
+    if (!focused) setLocalVal(numericVal)
+  }, [numericVal, focused])
+
+  const handleFocus = () => {
+    setFocused(true)
+    setLocalVal(numericVal)
+  }
+
+  const handleBlur = () => {
+    setFocused(false)
+    const cleaned = localVal.replace(/[^0-9]/g, "")
+    // Commit on blur: restore default if empty, otherwise save with unit
     onChange(field, cleaned ? cleaned + unit : (defaultVal ? defaultVal : ""))
+  }
+
+  const handleChange = (v: string) => {
+    // Only allow digits while typing — don't commit to parent yet
+    setLocalVal(v.replace(/[^0-9]/g, ""))
   }
 
   const handleUnitChange = (newUnit: Unit) => {
     setUnit(newUnit)
-    if (numericVal) onChange(field, numericVal + newUnit)
+    const currentNum = focused ? localVal : numericVal
+    if (currentNum) onChange(field, currentNum + newUnit)
   }
 
   const unitLabel = unit === "M" ? "MB" : "GB"
-  const displayText = numericVal
-    ? `${numericVal} ${unitLabel}`
+  const displayNum = focused ? localVal : numericVal
+  const displayText = displayNum
+    ? `${displayNum} ${unitLabel}`
     : defaultVal
       ? `${defaultVal} GB`
       : "—"
@@ -64,8 +86,10 @@ function SizeInput({
         <input
           type="text"
           inputMode="numeric"
-          value={numericVal}
-          onChange={(e) => handleNumChange(e.target.value)}
+          value={focused ? localVal : numericVal}
+          onChange={(e) => handleChange(e.target.value)}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
           placeholder={defaultVal}
           className="flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none transition focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/25"
         />
