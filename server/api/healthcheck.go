@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // HealthCheck result types
@@ -593,7 +594,12 @@ func getRTCInfo() rtcStatusResponse {
 	if dateErr == nil && timeErr == nil {
 		d := strings.TrimSpace(string(date))
 		t := strings.TrimSpace(string(time_))
-		resp.RTCTime = d + " " + t
+		// RTC sysfs is always UTC; convert to system local timezone
+		if parsed, err := time.Parse("2006-01-02 15:04:05", d+" "+t); err == nil {
+			resp.RTCTime = parsed.UTC().In(time.Now().Location()).Format("2006-01-02 15:04:05 MST")
+		} else {
+			resp.RTCTime = d + " " + t + " UTC"
+		}
 
 		// Check battery health: if year < 2024, battery is dead/missing
 		if len(d) >= 4 {
