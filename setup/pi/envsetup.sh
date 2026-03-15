@@ -134,6 +134,7 @@ function read_setup_variables {
   export DATA_DRIVE=${DATA_DRIVE:-''}
   export USE_EXFAT=${USE_EXFAT:-false}
   export RTC_BATTERY_ENABLED=${RTC_BATTERY_ENABLED:-false}
+  export RTC_TRICKLE_CHARGE=${RTC_TRICKLE_CHARGE:-false}
 }
 
 read_setup_variables

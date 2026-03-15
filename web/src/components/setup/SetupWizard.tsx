@@ -213,6 +213,7 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
     TEMPERATURE_POSTARCHIVE: "true",
     USE_EXFAT: "true",
     RTC_BATTERY_ENABLED: "false",
+    RTC_TRICKLE_CHARGE: "false",
   }
   const [formData, setFormData] = useState<SetupFormData>({ ...defaults, ...(initialData ?? {}) })
   const [saving, setSaving] = useState(false)

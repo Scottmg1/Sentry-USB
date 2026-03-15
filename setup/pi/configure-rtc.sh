@@ -50,6 +50,7 @@ print(int(calendar.timegm(t)))
 }
 
 RTC_BATTERY_ENABLED=${RTC_BATTERY_ENABLED:-false}
+RTC_TRICKLE_CHARGE=${RTC_TRICKLE_CHARGE:-false}
 
 # Only relevant on Pi 5
 if ! grep -qi "Raspberry Pi 5" /proc/device-tree/model 2>/dev/null; then
@@ -106,6 +107,21 @@ UNIT
   # Sync current system time to RTC
   rtc_sync_systohc
 
+  # Trickle charging for rechargeable batteries (ML-2020, ML-2032, LIR2032)
+  if [ "$RTC_TRICKLE_CHARGE" = "true" ]; then
+    log_progress "Enabling RTC trickle charging (3.0V)"
+    if ! grep -q "dtparam=rtc_bbat_vchg" /boot/firmware/config.txt 2>/dev/null; then
+      echo "dtparam=rtc_bbat_vchg=3000000" >> /boot/firmware/config.txt
+    else
+      sed -i 's/^#*dtparam=rtc_bbat_vchg.*/dtparam=rtc_bbat_vchg=3000000/' /boot/firmware/config.txt
+    fi
+  else
+    if grep -q "^dtparam=rtc_bbat_vchg" /boot/firmware/config.txt 2>/dev/null; then
+      log_progress "Disabling RTC trickle charging"
+      sed -i '/^dtparam=rtc_bbat_vchg/d' /boot/firmware/config.txt
+    fi
+  fi
+
   log_progress "RTC battery support enabled"
 else
   log_progress "RTC battery support disabled, ensuring fake-hwclock is active"
@@ -116,6 +132,12 @@ else
     systemctl disable sentryusb-hwclock.service 2>/dev/null || true
     rm -f /lib/systemd/system/sentryusb-hwclock.service
     systemctl daemon-reload
+  fi
+
+  # Remove trickle charging if it was enabled
+  if grep -q "^dtparam=rtc_bbat_vchg" /boot/firmware/config.txt 2>/dev/null; then
+    log_progress "Removing RTC trickle charging"
+    sed -i '/^dtparam=rtc_bbat_vchg/d' /boot/firmware/config.txt
   fi
 
   # Re-enable fake-hwclock

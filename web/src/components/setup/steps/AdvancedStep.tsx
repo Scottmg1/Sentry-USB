@@ -321,27 +321,72 @@ export function AdvancedStep({ data, onChange }: StepProps) {
             <span className="text-sm text-slate-300">Enable RTC Battery support</span>
           </label>
           {data.RTC_BATTERY_ENABLED === "true" && (
-            <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/5 p-4">
-              <div className="flex items-start gap-3">
-                <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" />
-                <div>
-                  <p className="text-sm font-semibold text-amber-200">Hardware Required</p>
-                  <p className="mt-1 text-xs text-slate-400">
-                    You <strong className="text-amber-300">must</strong> have an RTC battery physically
-                    connected to the J5 header on your Raspberry Pi 5 before enabling this option.
-                  </p>
-                  <p className="mt-2 text-xs text-slate-400">
-                    Without a battery installed, your Pi will lose accurate time on every power
-                    loss — worse than the default behavior.
-                  </p>
-                  <ul className="mt-2 space-y-1 text-xs text-slate-400">
-                    <li>• Disables fake-hwclock (software time persistence)</li>
-                    <li>• Enables hardware clock sync using the Pi 5's built-in RTC</li>
-                    <li>• Maintains accurate time even without network access</li>
-                  </ul>
+            <>
+              <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/5 p-4">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" />
+                  <div>
+                    <p className="text-sm font-semibold text-amber-200">Hardware Required</p>
+                    <p className="mt-1 text-xs text-slate-400">
+                      You <strong className="text-amber-300">must</strong> have an RTC battery physically
+                      connected to the J5 header on your Raspberry Pi 5 before enabling this option.
+                    </p>
+                    <p className="mt-2 text-xs text-slate-400">
+                      Without a battery installed, your Pi will lose accurate time on every power
+                      loss — worse than the default behavior.
+                    </p>
+                    <ul className="mt-2 space-y-1 text-xs text-slate-400">
+                      <li>• Disables fake-hwclock (software time persistence)</li>
+                      <li>• Enables hardware clock sync using the Pi 5's built-in RTC</li>
+                      <li>• Maintains accurate time even without network access</li>
+                    </ul>
+                  </div>
                 </div>
               </div>
-            </div>
+
+              <label className="mt-4 flex cursor-pointer items-center gap-2">
+                <input type="checkbox" checked={data.RTC_TRICKLE_CHARGE === "true"}
+                  onChange={(e) => {
+                    if (!e.target.checked) {
+                      onChange("RTC_TRICKLE_CHARGE", "false")
+                      onChange("_RTC_TRICKLE_ACK", "false")
+                    } else {
+                      onChange("RTC_TRICKLE_CHARGE", data._RTC_TRICKLE_ACK === "true" ? "true" : "false")
+                    }
+                    onChange("_RTC_TRICKLE_TOGGLE", e.target.checked ? "true" : "false")
+                  }}
+                  className="h-4 w-4 rounded border-white/20 bg-white/5 accent-blue-500" />
+                <span className="text-sm text-slate-300">Enable trickle charging</span>
+              </label>
+
+              {data._RTC_TRICKLE_TOGGLE === "true" && (
+                <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 p-4">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-red-400" />
+                    <div>
+                      <p className="text-sm font-semibold text-red-300">Rechargeable Battery Required</p>
+                      <p className="mt-1 text-xs text-slate-400">
+                        Trickle charging is <strong className="text-red-300">ONLY</strong> safe with rechargeable
+                        batteries (ML-2020, ML-2032, LIR2032). Using this with a standard non-rechargeable CR2032
+                        battery may cause the battery to leak, rupture, or damage your Raspberry Pi.
+                      </p>
+                      <label className="mt-3 flex cursor-pointer items-start gap-2">
+                        <input type="checkbox" checked={data._RTC_TRICKLE_ACK === "true"}
+                          onChange={(e) => {
+                            onChange("_RTC_TRICKLE_ACK", e.target.checked ? "true" : "false")
+                            onChange("RTC_TRICKLE_CHARGE", e.target.checked ? "true" : "false")
+                          }}
+                          className="mt-0.5 h-4 w-4 rounded border-white/20 bg-white/5 accent-red-500" />
+                        <span className="text-xs text-slate-300">
+                          I confirm my RTC battery is rechargeable and accept all risk. Sentry-USB assumes no
+                          responsibility for damage caused by enabling trickle charging with an incompatible battery.
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
