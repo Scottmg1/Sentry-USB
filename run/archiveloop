@@ -996,6 +996,18 @@ function doubleblink () {
   echo 0 > "$STATUSLED/invert"
 }
 
+# Write system time → RTC via /dev/rtc0 ioctl (Pi 5 only)
+function rtc_sync_systohc () {
+  [ -e /dev/rtc0 ] || return 1
+  python3 -c "
+import fcntl, struct, time
+t = time.gmtime()
+data = struct.pack('9i', t.tm_sec, t.tm_min, t.tm_hour, t.tm_mday, t.tm_mon-1, t.tm_year-1900, t.tm_wday, t.tm_yday, -1)
+with open('/dev/rtc0', 'wb') as f:
+    fcntl.ioctl(f.fileno(), 0x4024700a, data)
+" 2>/dev/null
+}
+
 function set_time () {
   log "Trying to set time..."
   local -r uptime_start=$(awk '{print $1}' /proc/uptime)
@@ -1022,6 +1034,10 @@ function timesyncloop {
     sleep "${TIME_SYNC_INTERVAL:-3600}"
     if ping -c 1 -W 3 time.google.com &>/dev/null; then
       set_time
+      # Sync NTP-corrected time to RTC battery (Pi never shuts down gracefully)
+      if [ "${RTC_BATTERY_ENABLED:-false}" = "true" ] && isPi5; then
+        rtc_sync_systohc || true
+      fi
     fi
   done
 }
@@ -1181,6 +1197,11 @@ then
 
   set_time
 
+  # Seed RTC with NTP-corrected time on first boot
+  if [ "${RTC_BATTERY_ENABLED:-false}" = "true" ] && isPi5; then
+    rtc_sync_systohc || true
+  fi
+
   # A large clock step can cause NetworkManager to drop the WiFi
   # connection (it thinks the DHCP lease expired). Re-verify and recover.
   if ! archive_is_reachable; then
@@ -1210,6 +1231,11 @@ do
   fastblink
 
   set_time
+
+  # Sync NTP-corrected time to RTC battery
+  if [ "${RTC_BATTERY_ENABLED:-false}" = "true" ] && isPi5; then
+    rtc_sync_systohc || true
+  fi
 
   # A large clock step can cause NetworkManager to drop the WiFi
   # connection (it thinks the DHCP lease expired). Re-verify and recover.
