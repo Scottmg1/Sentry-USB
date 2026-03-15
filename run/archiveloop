@@ -882,7 +882,7 @@ function archive_teslacam_clips () {
 
     # Check RTC battery health (Pi 5 only) — warn on every archive if dead/missing
     if [ "${RTC_BATTERY_ENABLED:-false}" = "true" ] && isPi5; then
-      rtc_year=$(cat /sys/class/rtc/rtc0/date 2>/dev/null | cut -d- -f1)
+      rtc_year=$(cut -d- -f1 < /sys/class/rtc/rtc0/date 2>/dev/null)
       if [ -n "$rtc_year" ] && [ "$rtc_year" -lt 2024 ]; then
         /root/bin/send-push-message "$NOTIFICATION_TITLE:" \
           "RTC battery appears dead or missing. Replace the battery on the Pi 5's J5 header to maintain accurate time." \
