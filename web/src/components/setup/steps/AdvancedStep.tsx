@@ -1,5 +1,5 @@
-import { useState } from "react"
-import { Cog, Thermometer, MapPin, Search } from "lucide-react"
+import { useState, useEffect } from "react"
+import { Cog, Thermometer, MapPin, Search, Battery, AlertTriangle } from "lucide-react"
 import type { StepProps } from "../SetupWizard"
 
 function Field({ label, field, type = "text", placeholder, data, onChange, hint }: {
@@ -198,7 +198,19 @@ function TempInput({
 
 export function AdvancedStep({ data, onChange }: StepProps) {
   const [tzSearch, setTzSearch] = useState("")
+  const [isPi5, setIsPi5] = useState(false)
   const useFahrenheit = data.TEMPERATURE_UNIT === "F"
+
+  useEffect(() => {
+    fetch("/api/status")
+      .then((r) => r.json())
+      .then((s) => {
+        if (s.sbc_model && s.sbc_model.includes("Raspberry Pi 5")) {
+          setIsPi5(true)
+        }
+      })
+      .catch(() => {})
+  }, [])
 
   const filteredTz = tzSearch
     ? TIMEZONES.filter(tz => tz.toLowerCase().includes(tzSearch.toLowerCase()))
@@ -285,6 +297,54 @@ export function AdvancedStep({ data, onChange }: StepProps) {
           <span className="text-sm text-slate-300">Log temperature after each archive</span>
         </label>
       </div>
+
+      {/* RTC Battery (Pi 5 only) */}
+      {isPi5 && (
+        <div>
+          <div className="mb-3 flex items-center gap-2">
+            <Battery className="h-4 w-4 text-blue-400" />
+            <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400">
+              RTC Battery
+            </h3>
+            <span className="rounded-full bg-blue-500/15 px-2 py-0.5 text-[10px] font-medium text-blue-400">
+              Pi 5
+            </span>
+          </div>
+          <p className="mb-3 text-xs text-slate-500">
+            The Raspberry Pi 5 has a built-in real-time clock. With a battery on the J5 header,
+            your Pi maintains accurate time even without network access.
+          </p>
+          <label className="flex cursor-pointer items-center gap-2">
+            <input type="checkbox" checked={data.RTC_BATTERY_ENABLED === "true"}
+              onChange={(e) => onChange("RTC_BATTERY_ENABLED", e.target.checked ? "true" : "false")}
+              className="h-4 w-4 rounded border-white/20 bg-white/5 accent-blue-500" />
+            <span className="text-sm text-slate-300">Enable RTC Battery support</span>
+          </label>
+          {data.RTC_BATTERY_ENABLED === "true" && (
+            <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/5 p-4">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" />
+                <div>
+                  <p className="text-sm font-semibold text-amber-200">Hardware Required</p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    You <strong className="text-amber-300">must</strong> have an RTC battery physically
+                    connected to the J5 header on your Raspberry Pi 5 before enabling this option.
+                  </p>
+                  <p className="mt-2 text-xs text-slate-400">
+                    Without a battery installed, your Pi will lose accurate time on every power
+                    loss — worse than the default behavior.
+                  </p>
+                  <ul className="mt-2 space-y-1 text-xs text-slate-400">
+                    <li>• Disables fake-hwclock (software time persistence)</li>
+                    <li>• Enables hardware clock sync using the Pi 5's built-in RTC</li>
+                    <li>• Maintains accurate time even without network access</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* System tuning */}
       <div>

@@ -135,8 +135,12 @@ function enable_wifi () {
       if [[ -n "$SENTRYUSB_HOSTNAME" ]] && [[ "$SENTRYUSB_HOSTNAME" != "$old_host_name" ]]
       then
         local new_host_name="$SENTRYUSB_HOSTNAME"
-        sed -i -e "s/$old_host_name/$new_host_name/g" /etc/hosts
-        sed -i -e "s/$old_host_name/$new_host_name/g" /etc/hostname
+        echo "$new_host_name" > /etc/hostname
+        if grep -q "^127\.0\.1\.1" /etc/hosts; then
+          sed -i -e "s/^127\.0\.1\.1.*/127.0.1.1\t$new_host_name/" /etc/hosts
+        else
+          echo "127.0.1.1	$new_host_name" >> /etc/hosts
+        fi
       fi
 
       dpkg-reconfigure -f noninteractive openssh-server

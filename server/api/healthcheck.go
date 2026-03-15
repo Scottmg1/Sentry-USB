@@ -44,6 +44,7 @@ func (h *handlers) healthCheck(w http.ResponseWriter, r *http.Request) {
 	categories = append(categories, checkUSBGadget())
 	categories = append(categories, checkNetwork())
 	categories = append(categories, checkBLE())
+	categories = append(categories, checkRTC())
 
 	// Build summary
 	var pass, warn, fail int
@@ -565,6 +566,126 @@ func checkBLE() healthCategory {
 	}
 
 	return healthCategory{Name: "Bluetooth / BLE", Items: items}
+}
+
+// --- RTC Battery (Pi 5) ---
+
+type rtcStatusResponse struct {
+	IsPi5          bool   `json:"is_pi5"`
+	RTCPresent     bool   `json:"rtc_present"`
+	RTCTime        string `json:"rtc_time"`
+	RTCHealthy     bool   `json:"rtc_healthy"`
+	BatteryWarning string `json:"battery_warning,omitempty"`
+}
+
+func getRTCInfo() rtcStatusResponse {
+	resp := rtcStatusResponse{}
+
+	model := getSBCModel()
+	resp.IsPi5 = strings.Contains(model, "Raspberry Pi 5")
+
+	if _, err := os.Stat("/dev/rtc0"); err == nil {
+		resp.RTCPresent = true
+	}
+
+	date, dateErr := os.ReadFile("/sys/class/rtc/rtc0/date")
+	time_, timeErr := os.ReadFile("/sys/class/rtc/rtc0/time")
+	if dateErr == nil && timeErr == nil {
+		d := strings.TrimSpace(string(date))
+		t := strings.TrimSpace(string(time_))
+		resp.RTCTime = d + " " + t
+
+		// Check battery health: if year < 2024, battery is dead/missing
+		if len(d) >= 4 {
+			var year int
+			fmt.Sscanf(d[:4], "%d", &year)
+			if year >= 2024 {
+				resp.RTCHealthy = true
+			} else {
+				resp.BatteryWarning = "RTC battery appears dead or missing — replace the battery on the Pi 5's J5 header"
+			}
+		}
+	} else if resp.RTCPresent {
+		resp.BatteryWarning = "Unable to read RTC time"
+	}
+
+	return resp
+}
+
+func (h *handlers) getRTCStatus(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, getRTCInfo())
+}
+
+func checkRTC() healthCategory {
+	items := []healthItem{}
+
+	model := getSBCModel()
+	if !strings.Contains(model, "Raspberry Pi 5") {
+		return healthCategory{Name: "RTC Battery", Items: items}
+	}
+
+	// Check if RTC is enabled in config
+	configPath := findConfigFilePath()
+	rtcEnabled := false
+	if configPath != "" {
+		if data, err := os.ReadFile(configPath); err == nil {
+			for _, line := range strings.Split(string(data), "\n") {
+				line = strings.TrimSpace(line)
+				if strings.HasPrefix(line, "export RTC_BATTERY_ENABLED=") || strings.HasPrefix(line, "RTC_BATTERY_ENABLED=") {
+					val := strings.TrimPrefix(line, "export ")
+					val = strings.TrimPrefix(val, "RTC_BATTERY_ENABLED=")
+					val = strings.Trim(val, "\"'")
+					rtcEnabled = val == "true"
+				}
+			}
+		}
+	}
+
+	if !rtcEnabled {
+		items = append(items, healthItem{"RTC Battery", statusPass, "Not enabled (using fake-hwclock)"})
+		return healthCategory{Name: "RTC Battery", Items: items}
+	}
+
+	// RTC device
+	if _, err := os.Stat("/dev/rtc0"); err != nil {
+		items = append(items, healthItem{"RTC device", statusFail, "/dev/rtc0 not found"})
+		return healthCategory{Name: "RTC Battery", Items: items}
+	}
+	items = append(items, healthItem{"RTC device", statusPass, "/dev/rtc0 present"})
+
+	// RTC time / battery health
+	if date, err := os.ReadFile("/sys/class/rtc/rtc0/date"); err == nil {
+		d := strings.TrimSpace(string(date))
+		var year int
+		fmt.Sscanf(d[:4], "%d", &year)
+		if year >= 2024 {
+			items = append(items, healthItem{"RTC time", statusPass, d})
+		} else {
+			items = append(items, healthItem{"RTC time", statusFail, d + " — battery appears dead or missing, replace on J5 header"})
+		}
+	} else {
+		items = append(items, healthItem{"RTC time", statusFail, "Unable to read /sys/class/rtc/rtc0/date"})
+	}
+
+	// fake-hwclock should be inactive
+	fhcOut, _ := exec.Command("systemctl", "is-active", "fake-hwclock").Output()
+	fhcState := strings.TrimSpace(string(fhcOut))
+	if fhcState == "active" {
+		items = append(items, healthItem{"fake-hwclock", statusWarn, "Still active — may conflict with hardware RTC"})
+	} else {
+		items = append(items, healthItem{"fake-hwclock", statusPass, "Inactive (no conflict)"})
+	}
+
+	// hwclock sync service
+	hwcOut, _ := exec.Command("systemctl", "is-active", "sentryusb-hwclock").Output()
+	hwcState := strings.TrimSpace(string(hwcOut))
+	if hwcState == "active" {
+		items = append(items, healthItem{"hwclock sync service", statusPass, "Active"})
+	} else {
+		items = append(items, healthItem{"hwclock sync service", statusWarn, "Not active (" + hwcState + ")"})
+	}
+
+	return healthCategory{Name: "RTC Battery", Items: items}
 }
 
 // reverseLines splits text into lines and returns them in reverse order.

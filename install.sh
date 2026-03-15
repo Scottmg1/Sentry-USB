@@ -224,10 +224,11 @@ if [ "$CURRENT_HOSTNAME" != "$DESIRED_HOSTNAME" ]; then
         echo "$DESIRED_HOSTNAME" > /etc/hostname
         hostname "$DESIRED_HOSTNAME"
     }
-    # Update /etc/hosts so hostname resolves locally
-    if ! grep -q "$DESIRED_HOSTNAME" /etc/hosts 2>/dev/null; then
-        sed -i "s/127\.0\.1\.1.*/127.0.1.1\t$DESIRED_HOSTNAME/" /etc/hosts 2>/dev/null || \
-            echo "127.0.1.1	$DESIRED_HOSTNAME" >> /etc/hosts
+    # Update /etc/hosts so hostname resolves locally via 127.0.1.1
+    if grep -q "^127\.0\.1\.1" /etc/hosts 2>/dev/null; then
+        sed -i "s/^127\.0\.1\.1.*/127.0.1.1\t$DESIRED_HOSTNAME/" /etc/hosts 2>/dev/null
+    else
+        echo "127.0.1.1	$DESIRED_HOSTNAME" >> /etc/hosts
     fi
     systemctl enable avahi-daemon 2>/dev/null || true
     systemctl restart avahi-daemon 2>/dev/null || true

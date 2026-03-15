@@ -212,6 +212,7 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
     DRIVE_MAP_UNIT: "mi",
     TEMPERATURE_POSTARCHIVE: "true",
     USE_EXFAT: "true",
+    RTC_BATTERY_ENABLED: "false",
   }
   const [formData, setFormData] = useState<SetupFormData>({ ...defaults, ...(initialData ?? {}) })
   const [saving, setSaving] = useState(false)

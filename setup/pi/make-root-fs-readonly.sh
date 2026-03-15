@@ -92,30 +92,33 @@ tune2fs -c 1 /dev/disk/by-label/mutable || log_progress "tune2fs failed for muta
 # we're not using swap, so delete the swap file for some extra space
 rm -f /var/swap
 
-# Move fake-hwclock.data to /mutable directory so it can be updated
-if ! findmnt --mountpoint /mutable > /dev/null
-then
-  log_progress "Mounting the mutable partition..."
-  mount /mutable
-  log_progress "Mounted."
-fi
-if [ ! -e "/mutable/etc" ]
-then
-  mkdir -p /mutable/etc
-fi
+# Move fake-hwclock.data to /mutable directory so it can be updated.
+# Skip when RTC battery is enabled — fake-hwclock is disabled in that case.
+if [ "${RTC_BATTERY_ENABLED:-false}" != "true" ]; then
+  if ! findmnt --mountpoint /mutable > /dev/null
+  then
+    log_progress "Mounting the mutable partition..."
+    mount /mutable
+    log_progress "Mounted."
+  fi
+  if [ ! -e "/mutable/etc" ]
+  then
+    mkdir -p /mutable/etc
+  fi
 
-if [ ! -L "/etc/fake-hwclock.data" ] && [ -e "/etc/fake-hwclock.data" ]
-then
-  log_progress "Moving fake-hwclock data"
-  mv /etc/fake-hwclock.data /mutable/etc/fake-hwclock.data
-  ln -s /mutable/etc/fake-hwclock.data /etc/fake-hwclock.data
-fi
-# By default fake-hwclock is run during early boot, before /mutable
-# has been mounted and so will fail. Delay running it until /mutable
-# has been mounted.
-if [ -e /lib/systemd/system/fake-hwclock.service ]
-then
-  sed -i 's/Before=.*/After=mutable.mount/' /lib/systemd/system/fake-hwclock.service
+  if [ ! -L "/etc/fake-hwclock.data" ] && [ -e "/etc/fake-hwclock.data" ]
+  then
+    log_progress "Moving fake-hwclock data"
+    mv /etc/fake-hwclock.data /mutable/etc/fake-hwclock.data
+    ln -s /mutable/etc/fake-hwclock.data /etc/fake-hwclock.data
+  fi
+  # By default fake-hwclock is run during early boot, before /mutable
+  # has been mounted and so will fail. Delay running it until /mutable
+  # has been mounted.
+  if [ -e /lib/systemd/system/fake-hwclock.service ]
+  then
+    sed -i 's/Before=.*/After=mutable.mount/' /lib/systemd/system/fake-hwclock.service
+  fi
 fi
 
 # ---- NetworkManager runtime state (/var/lib/NetworkManager) ----

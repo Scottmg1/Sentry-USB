@@ -28,6 +28,7 @@ type piStatus struct {
 	EtherIP        string `json:"ether_ip"`
 	EtherSpeed     string `json:"ether_speed"`
 	DeviceSuffix   string `json:"device_suffix"`
+	SBCModel       string `json:"sbc_model"`
 }
 
 func (h *handlers) getStatus(w http.ResponseWriter, r *http.Request) {
@@ -40,6 +41,9 @@ func (h *handlers) getStatus(w http.ResponseWriter, r *http.Request) {
 			status.DeviceSuffix = strings.ToUpper(mid[len(mid)-4:])
 		}
 	}
+
+	// SBC model (e.g. "Raspberry Pi 5 Model B Rev 1.0")
+	status.SBCModel = getSBCModel()
 
 	// CPU temperature
 	if data, err := os.ReadFile("/sys/class/thermal/thermal_zone0/temp"); err == nil {

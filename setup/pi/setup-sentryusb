@@ -764,8 +764,9 @@ function configure_hostname () {
   if [ "$new_host_name" != "$old_host_name" ]
   then
     setup_progress "Configuring the hostname..."
-    sed -i -e "s/$old_host_name/$new_host_name/g" /etc/hosts
-    sed -i -e "s/$old_host_name/$new_host_name/g" /etc/hostname
+
+    # Set the kernel hostname first so /etc/hosts and the kernel agree
+    echo "$new_host_name" > /etc/hostname
     while ! hostnamectl set-hostname "$new_host_name"
     do
       if [ ! -e /lib/systemd/system/dbus.service ]
@@ -775,6 +776,16 @@ function configure_hostname () {
       setup_progress "hostnamectl failed, retrying"
       sleep 1
     done
+
+    # Ensure /etc/hosts has a correct 127.0.1.1 entry for the new hostname.
+    # A global sed replace is fragile — instead, explicitly manage the line.
+    if grep -q "^127\.0\.1\.1" /etc/hosts; then
+      sed -i -e "s/^127\.0\.1\.1.*/127.0.1.1\t$new_host_name/" /etc/hosts
+    else
+      echo "127.0.1.1	$new_host_name" >> /etc/hosts
+    fi
+
+    # Restart avahi so it picks up the new hostname for .local mDNS
     systemctl restart avahi-daemon || true
     setup_progress "Configured hostname: $(hostname)"
   fi
@@ -1553,6 +1564,9 @@ copy_script setup/pi/configure-web.sh /tmp
 copy_script setup/pi/configure-ssh.sh /tmp
 /tmp/configure-ssh.sh
 
+copy_script setup/pi/configure-rtc.sh /tmp
+/tmp/configure-rtc.sh
+
 # source setup-sentryusb from .bashrc to set up completion
 if ! grep -q envsetup.sh /root/.bashrc
 then
@@ -1579,14 +1593,17 @@ if [ -n "$DEFUSER" ]
 then
   if ! grep -q SENTRYUSB_TIP1 "/home/$DEFUSER/.bashrc"
   then
-    cat >> "/home/$DEFUSER/.bashrc" <<- EOC
-	if [ -n "\$PS1" ]; then
+    cat >> "/home/$DEFUSER/.bashrc" <<- 'EOC'
+	if [ -n "$PS1" ]; then
+		_SENTRY_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+		_SENTRY_HOST=$(hostname -s 2>/dev/null)
 		cat << SENTRYUSB_TIP1
 		Run 'sudo -i' if you need to make changes.
 
-		The SentryUSB web interface is at http://$(hostname -s) or http://$(hostname -I | awk '{print $1}')
+		The SentryUSB web interface is at http://${_SENTRY_HOST} or http://${_SENTRY_IP}
 
 		SENTRYUSB_TIP1
+		unset _SENTRY_IP _SENTRY_HOST
 	fi
 	EOC
   fi

@@ -41,6 +41,7 @@ const sections = [
     fields: [
       "TIME_ZONE", "ARCHIVE_DELAY", "SNAPSHOT_INTERVAL",
       "TEMPERATURE_UNIT", "TEMPERATURE_WARNING", "TEMPERATURE_CAUTION", "TEMPERATURE_INTERVAL", "TEMPERATURE_POSTARCHIVE",
+      "RTC_BATTERY_ENABLED",
       "INCREASE_ROOT_SIZE", "CPU_GOVERNOR", "REPO", "BRANCH",
     ],
   },
@@ -65,6 +66,9 @@ function formatReviewValue(key: string, value: string, data: StepProps["data"]):
   }
   if (key === "TEMPERATURE_UNIT") {
     return value === "F" ? "Fahrenheit" : "Celsius"
+  }
+  if (key === "RTC_BATTERY_ENABLED") {
+    return value === "true" ? "Enabled" : "Disabled"
   }
   return value
 }

@@ -14,6 +14,7 @@ import {
   Zap,
   ChevronRight,
   Download,
+  AlertTriangle,
 } from "lucide-react"
 import { api } from "@/lib/api"
 import { useKeepAwake } from "@/hooks/useKeepAwake"
@@ -119,6 +120,7 @@ export default function Dashboard() {
   const [processProgress, setProcessProgress] = useState<ProcessProgress | null>(null)
   const [metric, setMetric] = useState(false)
   const [useFahrenheit, setUseFahrenheit] = useState(false)
+  const [rtcWarning, setRtcWarning] = useState<string | null>(null)
 
   const archiveHistoryRef = useRef<ProgressSample[]>([])
   const processHistoryRef = useRef<ProgressSample[]>([])
@@ -195,6 +197,17 @@ export default function Dashboard() {
         }
       })
       .catch(() => { })
+
+    // Check RTC battery health (Pi 5 only)
+    fetch("/api/system/rtc-status")
+      .then((r) => r.json())
+      .then((rtc) => {
+        if (mounted && rtc.is_pi5 && !rtc.rtc_healthy && rtc.battery_warning) {
+          setRtcWarning(rtc.battery_warning)
+        }
+      })
+      .catch(() => { })
+
     const statusInterval = setInterval(fetchStatus, 4000)
     const statsInterval = setInterval(fetchDriveStats, 5000)
     const storageInterval = setInterval(fetchStorageBreakdown, 10000)
@@ -308,6 +321,18 @@ export default function Dashboard() {
           </div>
           <ChevronRight className="h-4 w-4 text-slate-600" />
         </Link>
+      )}
+
+      {rtcWarning && (
+        <div className="glass-card flex items-center gap-3 border border-amber-500/20 bg-amber-500/5 p-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-500/20">
+            <AlertTriangle className="h-4 w-4 text-amber-400" />
+          </div>
+          <div className="flex-1">
+            <span className="text-sm font-semibold text-amber-200">RTC Battery Warning</span>
+            <p className="text-xs text-slate-500">{rtcWarning}</p>
+          </div>
+        </div>
       )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
