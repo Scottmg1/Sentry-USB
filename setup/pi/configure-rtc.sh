@@ -9,6 +9,31 @@ function log_progress () {
   echo "configure-rtc: $1"
 }
 
+# Read system time → write to RTC via sysfs
+rtc_sync_systohc() {
+  if [ ! -e /dev/rtc0 ]; then
+    log_progress "Warning: /dev/rtc0 not found"
+    return 1
+  fi
+  local utc_time
+  utc_time=$(date -u +%s)
+  echo "$utc_time" > /sys/class/rtc/rtc0/since_epoch
+  log_progress "Synced system time to RTC"
+}
+
+# Read RTC → set system time
+rtc_sync_hctosys() {
+  if [ ! -e /sys/class/rtc/rtc0/since_epoch ]; then
+    return 1
+  fi
+  local epoch
+  epoch=$(cat /sys/class/rtc/rtc0/since_epoch 2>/dev/null)
+  if [ -n "$epoch" ] && [ "$epoch" -gt 1704067200 ]; then
+    # Only set if RTC has a sane date (after 2024-01-01)
+    date -u -s "@$epoch" > /dev/null
+  fi
+}
+
 RTC_BATTERY_ENABLED=${RTC_BATTERY_ENABLED:-false}
 
 # Only relevant on Pi 5
@@ -27,9 +52,9 @@ if [ "$RTC_BATTERY_ENABLED" = "true" ]; then
     systemctl disable fake-hwclock.service || true
   fi
 
-  # Create hwclock sync service
+  # Create RTC sync service using sysfs (hwclock is not available on minimal images)
   log_progress "Creating sentryusb-hwclock.service"
-  cat > /lib/systemd/system/sentryusb-hwclock.service << 'EOF'
+  cat > /lib/systemd/system/sentryusb-hwclock.service << 'UNIT'
 [Unit]
 Description=SentryUSB hardware clock sync
 DefaultDependencies=no
@@ -39,23 +64,18 @@ Before=time-sync.target sysinit.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/sbin/hwclock --hctosys --utc
-ExecStop=/sbin/hwclock --systohc --utc
+ExecStart=/bin/bash -c 'epoch=$(cat /sys/class/rtc/rtc0/since_epoch 2>/dev/null); [ -n "$epoch" ] && [ "$epoch" -gt 1704067200 ] && date -u -s "@$epoch" > /dev/null || true'
+ExecStop=/bin/bash -c 'date -u +%%s > /sys/class/rtc/rtc0/since_epoch'
 
 [Install]
 WantedBy=sysinit.target
-EOF
+UNIT
 
   systemctl daemon-reload
   systemctl enable sentryusb-hwclock.service
 
   # Sync current system time to RTC
-  if [ -e /dev/rtc0 ]; then
-    log_progress "Syncing system time to RTC"
-    hwclock --systohc --utc || log_progress "Warning: failed to sync time to RTC"
-  else
-    log_progress "Warning: /dev/rtc0 not found — RTC device not available"
-  fi
+  rtc_sync_systohc || log_progress "Warning: failed to sync time to RTC"
 
   log_progress "RTC battery support enabled"
 else
