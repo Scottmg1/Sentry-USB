@@ -330,7 +330,11 @@ then
   log "failed to take snapshot"
 fi
 
-# Rebuild missing symlinks AFTER snapshot, so autofs is guaranteed to be
-# active (snapshot waits for it).  This restores visibility of old clips
-# whose symlinks were lost (e.g. after a setup re-run).
-rebuild_all_snapshot_links
+# Only rebuild missing symlinks when explicitly requested via flag file.
+# The flag is created by configure.sh when a setup re-run is detected on
+# an existing install, signalling that symlinks may have been lost.
+if [ -e /mutable/.rebuild_snapshot_symlinks ]
+then
+  rebuild_all_snapshot_links
+  rm -f /mutable/.rebuild_snapshot_symlinks
+fi

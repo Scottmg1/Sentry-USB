@@ -824,6 +824,11 @@ if [ ! -e /backingfiles/cam_disk.bin ]
 then
   rm -rf /mutable/TeslaCam/RecentClips /mutable/TeslaCam/SavedClips /mutable/TeslaCam/SentryClips /mutable/TeslaCam/TeslaTrackMode
   rm -f /mutable/sentry_files_archived
+else
+  # Existing install re-running setup. Flag a one-time symlink rebuild so
+  # make_snapshot.sh restores any snapshot symlinks that may have been lost
+  # by earlier versions of this script or other edge cases.
+  touch /mutable/.rebuild_snapshot_symlinks
 fi
 
 archive_module="$( get_archive_module )"

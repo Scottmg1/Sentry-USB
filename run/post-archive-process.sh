@@ -134,11 +134,33 @@ PROCESSED=$?
 
 log "Drive processing complete. $PROCESSED directories processed."
 
+# Check if archive is still reachable before syncing drive data.
+# If the user drove away during processing, skip the sync — it will
+# be retried on the next archive cycle.
+ARCHIVE_REACHABLE=true
+if [ -x /root/bin/archive-is-reachable.sh ]; then
+  ARCHIVE_SERVER="${ARCHIVE_SERVER:-}"
+  # Derive ARCHIVE_SERVER from archive type if not set
+  if [ -z "$ARCHIVE_SERVER" ]; then
+    if [ -n "${RSYNC_SERVER:-}" ]; then
+      ARCHIVE_SERVER="$RSYNC_SERVER"
+    elif [ -n "${RCLONE_DRIVE:-}" ]; then
+      ARCHIVE_SERVER="8.8.8.8"
+    fi
+  fi
+  if [ -n "$ARCHIVE_SERVER" ]; then
+    if ! /root/bin/archive-is-reachable.sh "$ARCHIVE_SERVER" 2>/dev/null; then
+      ARCHIVE_REACHABLE=false
+      log "Archive unreachable after drive processing, skipping drive-data.json sync (user likely drove away)"
+    fi
+  fi
+fi
+
 # Sync drive-data.json to the rsync archive server.
 # For CIFS/NFS archive types, the Go server's SyncToArchive() handles this
 # while /mnt/archive is still mounted.  For rsync archive there is no local
 # mount, so SyncToArchive() silently skips — we handle it here instead.
-if [ -n "${RSYNC_SERVER:-}" ] && [ -n "${RSYNC_USER:-}" ] && [ -f /mutable/drive-data.json ]; then
+if [ "$ARCHIVE_REACHABLE" = "true" ] && [ -n "${RSYNC_SERVER:-}" ] && [ -n "${RSYNC_USER:-}" ] && [ -f /mutable/drive-data.json ]; then
   log "Syncing drive-data.json to rsync archive..."
   if rsync -avh --no-perms --omit-dir-times --timeout=60 \
       /mutable/drive-data.json \
@@ -150,7 +172,7 @@ if [ -n "${RSYNC_SERVER:-}" ] && [ -n "${RSYNC_USER:-}" ] && [ -f /mutable/drive
 fi
 
 # For rclone archive (no local mount; rclone pushes directly to cloud storage).
-if [ -n "${RCLONE_DRIVE:-}" ] && [ -f /mutable/drive-data.json ]; then
+if [ "$ARCHIVE_REACHABLE" = "true" ] && [ -n "${RCLONE_DRIVE:-}" ] && [ -f /mutable/drive-data.json ]; then
   log "Syncing drive-data.json to rclone archive..."
   if rclone --config /root/.config/rclone/rclone.conf copy \
       /mutable/drive-data.json "$RCLONE_DRIVE:${RCLONE_PATH}/drive-data.json" > /dev/null 2>&1; then
