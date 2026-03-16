@@ -96,6 +96,12 @@ func RegisterRoutes(mux *http.ServeMux, hub *ws.Hub) {
 	mux.HandleFunc("POST /api/support/ticket/{id}/register-device", h.registerSupportDevice)
 	mux.HandleFunc("POST /api/support/ticket/{id}/unregister-device", h.unregisterSupportDevice)
 
+	// Community wraps (proxy to api.sentry-six.com)
+	mux.HandleFunc("GET /api/wraps/library", h.communityWrapsLibrary)
+	mux.HandleFunc("GET /api/wraps/thumbnail/{code}", h.communityWrapsThumbnail)
+	mux.HandleFunc("POST /api/wraps/upload", h.communityWrapsUpload)
+	mux.HandleFunc("POST /api/wraps/download/{code}", h.communityWrapsDownload)
+
 	// Authentication
 	mux.HandleFunc("POST /api/auth/login", h.login)
 	mux.HandleFunc("POST /api/auth/logout", h.logout)

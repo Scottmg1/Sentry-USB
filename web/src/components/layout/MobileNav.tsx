@@ -13,6 +13,7 @@ import {
   HeartPulse,
   Timer,
   LogOut,
+  Paintbrush,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useKeepAwake } from "@/hooks/useKeepAwake"
@@ -31,6 +32,7 @@ const navItems = [
   { to: "/files", icon: FolderOpen, label: "Files" },
   { to: "/logs", icon: ScrollText, label: "Logs" },
   { to: "/drives", icon: MapPin, label: "Drives" },
+  { to: "/community-wraps", icon: Paintbrush, label: "Community Wraps" },
   { to: "/support", icon: MessageCircle, label: "Support" },
   { to: "/terminal", icon: TerminalSquare, label: "Terminal" },
   { to: "/settings", icon: Settings, label: "Settings" },
