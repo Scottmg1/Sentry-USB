@@ -34,7 +34,7 @@ else
       if [[ -n "${TESSIE_API_TOKEN:+x}" ]]
       # Use Tessie API to nudge the car
       then
-        http_response=$(curl -s -w "%{http_code}" \
+        http_response=$(curl -s --connect-timeout 10 --max-time 30 -w "%{http_code}" \
           -H "Authorization: Bearer $TESSIE_API_TOKEN" \
           -H "Accept: application/json" \
           -H "User-Agent: github.com/Scottmg1/Sentry-USB" \
@@ -107,7 +107,7 @@ else
       elif [[ -n "${KEEP_AWAKE_WEBHOOK_URL:+x}" ]]
       # Use webhook to send nudge message
       then
-        http_response=$(curl -s -w "%{http_code}" POST \
+        http_response=$(curl -s --connect-timeout 10 --max-time 30 -w "%{http_code}" POST \
           -d "{\"awake_command\":\"nudge\"}" \
           -H "Content-Type: application/json" \
           "$KEEP_AWAKE_WEBHOOK_URL")
@@ -145,7 +145,7 @@ else
       if [[ ( -n "${TESLAFI_API_TOKEN:+x}" ) ]]
       # Use TeslaFi API to enable Sentry Mode
       then
-        http_response=$(curl -s -w "%{http_code}" \
+        http_response=$(curl -s --connect-timeout 10 --max-time 30 -w "%{http_code}" \
           -H "Authorization: Bearer $TESLAFI_API_TOKEN" \
           -H "Accept: application/json" \
           -H "User-Agent: github.com/Scottmg1/Sentry-USB" \
@@ -198,7 +198,7 @@ else
         tessie_success=false
         while [ "$tessie_attempt" -le 3 ]
         do
-          http_response=$(curl -s -w "%{http_code}" \
+          http_response=$(curl -s --connect-timeout 10 --max-time 30 -w "%{http_code}" \
             -H "Authorization: Bearer $TESSIE_API_TOKEN" \
             -H "Accept: application/json" \
             -H "User-Agent: github.com/Scottmg1/Sentry-USB" \
@@ -301,7 +301,7 @@ else
       elif [[ -n "${KEEP_AWAKE_WEBHOOK_URL:+x}" ]]
       # Use webhook to send start command
       then
-        http_response=$(curl -s -w "%{http_code}" POST \
+        http_response=$(curl -s --connect-timeout 10 --max-time 30 -w "%{http_code}" POST \
           -d "{\"awake_command\":\"start\"}" \
           -H "Content-Type: application/json" \
           "$KEEP_AWAKE_WEBHOOK_URL")

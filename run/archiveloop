@@ -981,47 +981,6 @@ function archive_clips () {
   /root/bin/disconnect-archive.sh 2>> "$LOG_FILE" || true
 }
 
-# Run archive_clips in a loop, re-checking for new clips if processing
-# took a long time.  This handles the case where the user drives away and
-# returns while post-archive drive processing is still running — any new
-# footage recorded during that trip is archived immediately instead of
-# waiting for another departure/arrival cycle.
-function archive_clips_with_recheck () {
-  local first_run=true
-
-  while true; do
-    if [ "$first_run" != "true" ]; then
-      log "Re-checking for new clips after long processing cycle..."
-      sleep "${ARCHIVE_DELAY:-20}"
-      if has_cam_disk; then
-        /root/bin/make_snapshot.sh || true
-      fi
-    fi
-    first_run=false
-
-    local start_ts
-    start_ts=$(date +%s)
-    if ! archive_clips; then
-      log "ERROR: archive_clips failed"
-    fi
-    local elapsed=$(( $(date +%s) - start_ts ))
-
-    # If archive became unreachable, user drove away — stop re-checking.
-    if ! archive_is_reachable; then
-      log "Archive became unreachable during processing"
-      return
-    fi
-
-    # If cycle completed quickly (< 2 min), no significant new data
-    # appeared while we were processing — safe to stop.
-    if [ "$elapsed" -lt 120 ]; then
-      return
-    fi
-
-    log "Archive cycle took $(convert_seconds_to_nice_time $elapsed), new clips may have appeared"
-  done
-}
-
 function slowblink () {
   echo timer > "$STATUSLED/trigger" || return 0
   echo 900 > "$STATUSLED/delay_off"
@@ -1255,7 +1214,7 @@ then
 
   /root/bin/awake_start || true
 
-  archive_clips_with_recheck
+  archive_clips
 
   /root/bin/awake_stop || true
 
@@ -1302,7 +1261,7 @@ do
     fi
   fi
 
-  archive_clips_with_recheck
+  archive_clips
 
   /root/bin/awake_stop || true
 

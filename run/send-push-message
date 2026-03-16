@@ -10,7 +10,7 @@ notification_type="${4:-}"
 function checked_curl () {
   local service="$1"; shift
   local response http_code body
-  response=$(curl -s -w "\n%{http_code}" "$@") || {
+  response=$(curl -s --connect-timeout 10 --max-time 30 -w "\n%{http_code}" "$@") || {
     log "ERROR: $service — curl failed (exit code $?)"
     return 1
   }
@@ -137,7 +137,7 @@ function send_mobile_push () {
   payload+="}"
 
   local response http_code body
-  response=$(curl -s -w "\n%{http_code}" -X POST \
+  response=$(curl -s --connect-timeout 10 --max-time 30 -w "\n%{http_code}" -X POST \
     -H "Content-Type: application/json" \
     -H "X-Device-Secret: $MOBILE_PUSH_SECRET" \
     -d "$payload" \

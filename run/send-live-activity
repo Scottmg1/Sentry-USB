@@ -20,7 +20,7 @@ case "$ACTION" in
   start)
     TOTAL="${2:-0}"
     # Push-to-start (native Live Activity start)
-    curl -sf -X POST \
+    curl -sf --connect-timeout 10 --max-time 30 -X POST \
       -H "Content-Type: application/json" \
       -H "X-Device-Secret: $MOBILE_PUSH_SECRET" \
       -d "{
@@ -31,7 +31,7 @@ case "$ACTION" in
       }" \
       "${BACKEND_URL}/start-activity" > /dev/null 2>&1 || true
     # Silent push fallback (wakes app to start activity)
-    curl -sf -X POST \
+    curl -sf --connect-timeout 10 --max-time 30 -X POST \
       -H "Content-Type: application/json" \
       -H "X-Device-Secret: $MOBILE_PUSH_SECRET" \
       -d "{
@@ -46,7 +46,7 @@ case "$ACTION" in
     CURRENT="${3:-0}"
     TOTAL="${4:-0}"
     ETA="${5:-0}"
-    curl -sf -X POST \
+    curl -sf --connect-timeout 10 --max-time 30 -X POST \
       -H "Content-Type: application/json" \
       -H "X-Device-Secret: $MOBILE_PUSH_SECRET" \
       -d "{
@@ -58,7 +58,7 @@ case "$ACTION" in
     ;;
   end)
     PHASE="${2:-complete}"
-    curl -sf -X POST \
+    curl -sf --connect-timeout 10 --max-time 30 -X POST \
       -H "Content-Type: application/json" \
       -H "X-Device-Secret: $MOBILE_PUSH_SECRET" \
       -d "{
@@ -68,7 +68,7 @@ case "$ACTION" in
       }" \
       "${BACKEND_URL}/send-activity-update" > /dev/null 2>&1 || true
     # Silent push fallback to end activity
-    curl -sf -X POST \
+    curl -sf --connect-timeout 10 --max-time 30 -X POST \
       -H "Content-Type: application/json" \
       -H "X-Device-Secret: $MOBILE_PUSH_SECRET" \
       -d "{

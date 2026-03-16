@@ -10,7 +10,7 @@ case "${SENTRY_CASE}" in
     if [[ ( -n "${TESLAFI_API_TOKEN:+x}" ) ]]
     # Use TeslaFi API to disable Sentry Mode
     then
-      http_response=$(curl -s -w "%{http_code}" \
+      http_response=$(curl -s --connect-timeout 10 --max-time 30 -w "%{http_code}" \
           -H "Authorization: Bearer $TESLAFI_API_TOKEN" \
           -H "Accept: application/json" \
           -H "User-Agent: github.com/Scottmg1/Sentry-USB" \
@@ -57,7 +57,7 @@ case "${SENTRY_CASE}" in
       tessie_success=false
       while [ "$tessie_attempt" -le 3 ]
       do
-        http_response=$(curl -s -w "%{http_code}" \
+        http_response=$(curl -s --connect-timeout 10 --max-time 30 -w "%{http_code}" \
           -H "Authorization: Bearer $TESSIE_API_TOKEN" \
           -H "Accept: application/json" \
           -H "User-Agent: github.com/Scottmg1/Sentry-USB" \
@@ -153,7 +153,7 @@ case "${SENTRY_CASE}" in
     elif [[ -n "${KEEP_AWAKE_WEBHOOK_URL:+x}" ]]
     # Use webhook to send stop message
     then
-      http_response=$(curl -s -w "%{http_code}" POST \
+      http_response=$(curl -s --connect-timeout 10 --max-time 30 -w "%{http_code}" POST \
         -d "{\"awake_command\":\"stop\"}" \
         -H "Content-Type: application/json" \
         "$KEEP_AWAKE_WEBHOOK_URL")
