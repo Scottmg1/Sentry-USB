@@ -216,12 +216,12 @@ function BrowseTab() {
       ) : (
         <>
           {/* Grid */}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
             {wraps.map((wrap) => (
               <button
                 key={wrap.code}
                 onClick={() => setSelectedWrap(wrap)}
-                className="group overflow-hidden rounded-xl border border-white/5 bg-white/[0.02] transition-colors hover:border-white/10 hover:bg-white/[0.04]"
+                className="group overflow-hidden rounded-lg border border-white/5 bg-white/[0.02] transition-colors hover:border-white/10 hover:bg-white/[0.04]"
               >
                 <div className="aspect-square overflow-hidden bg-slate-800/50">
                   <img
@@ -231,8 +231,8 @@ function BrowseTab() {
                     loading="lazy"
                   />
                 </div>
-                <div className="p-3">
-                  <p className="truncate text-sm font-medium text-slate-200">{wrap.name}</p>
+                <div className="p-2">
+                  <p className="truncate text-xs font-medium text-slate-200">{wrap.name}</p>
                   <div className="mt-1 flex items-center justify-between">
                     <span className="rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] font-medium text-blue-400">
                       {wrap.tesla_model}
