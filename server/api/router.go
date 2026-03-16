@@ -101,6 +101,9 @@ func RegisterRoutes(mux *http.ServeMux, hub *ws.Hub) {
 	mux.HandleFunc("GET /api/wraps/thumbnail/{code}", h.communityWrapsThumbnail)
 	mux.HandleFunc("POST /api/wraps/upload", h.communityWrapsUpload)
 	mux.HandleFunc("POST /api/wraps/download/{code}", h.communityWrapsDownload)
+	mux.HandleFunc("POST /api/wraps/admin/validate", h.communityWrapsAdminValidate)
+	mux.HandleFunc("PUT /api/wraps/admin/edit/{code}", h.communityWrapsAdminEdit)
+	mux.HandleFunc("DELETE /api/wraps/admin/delete/{code}", h.communityWrapsAdminDelete)
 
 	// Authentication
 	mux.HandleFunc("POST /api/auth/login", h.login)

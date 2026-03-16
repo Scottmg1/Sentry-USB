@@ -27,7 +27,20 @@ func (h *handlers) communityWrapsLibrary(w http.ResponseWriter, r *http.Request)
 		path += "?" + query
 	}
 
-	respBody, status, err := supportProxy("GET", path, nil, "", 15*time.Second)
+	// Forward X-Passcode header if present (for admin fingerprint access)
+	var headers map[string]string
+	if passcode := r.Header.Get("X-Passcode"); passcode != "" {
+		headers = map[string]string{"X-Passcode": passcode}
+	}
+
+	var respBody []byte
+	var status int
+	var err error
+	if headers != nil {
+		respBody, status, err = supportProxyWithHeaders("GET", path, nil, headers, 15*time.Second)
+	} else {
+		respBody, status, err = supportProxy("GET", path, nil, "", 15*time.Second)
+	}
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "Community wraps service unreachable")
 		return
@@ -236,6 +249,85 @@ func sanitizeFilename(name string) string {
 		return "wrap"
 	}
 	return result
+}
+
+// POST /api/wraps/admin/validate — proxy admin passcode validation
+func (h *handlers) communityWrapsAdminValidate(w http.ResponseWriter, r *http.Request) {
+	passcode := r.Header.Get("X-Passcode")
+	if passcode == "" {
+		writeError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	headers := map[string]string{"X-Passcode": passcode}
+	respBody, status, err := supportProxyWithHeaders("POST", "/wraps/admin/validate", nil, headers, 15*time.Second)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "Community wraps service unreachable")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	w.Write(respBody)
+}
+
+// PUT /api/wraps/admin/edit/{code} — proxy admin wrap edit
+func (h *handlers) communityWrapsAdminEdit(w http.ResponseWriter, r *http.Request) {
+	code := r.PathValue("code")
+	if !validWrapCode.MatchString(code) {
+		writeError(w, http.StatusBadRequest, "Invalid code")
+		return
+	}
+
+	passcode := r.Header.Get("X-Passcode")
+	if passcode == "" {
+		writeError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Failed to read body")
+		return
+	}
+	defer r.Body.Close()
+
+	headers := map[string]string{"X-Passcode": passcode}
+	respBody, status, err := supportProxyWithHeaders("PUT", "/wraps/admin/edit/"+code, body, headers, 15*time.Second)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "Community wraps service unreachable")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	w.Write(respBody)
+}
+
+// DELETE /api/wraps/admin/delete/{code} — proxy admin wrap deletion
+func (h *handlers) communityWrapsAdminDelete(w http.ResponseWriter, r *http.Request) {
+	code := r.PathValue("code")
+	if !validWrapCode.MatchString(code) {
+		writeError(w, http.StatusBadRequest, "Invalid code")
+		return
+	}
+
+	passcode := r.Header.Get("X-Passcode")
+	if passcode == "" {
+		writeError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	headers := map[string]string{"X-Passcode": passcode}
+	respBody, status, err := supportProxyWithHeaders("DELETE", "/wraps/admin/delete/"+code, nil, headers, 15*time.Second)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "Community wraps service unreachable")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	w.Write(respBody)
 }
 
 // communityWrapsMetadata is a helper for parsing library responses

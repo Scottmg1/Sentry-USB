@@ -41,6 +41,36 @@ func supportProxy(method, path string, payload []byte, authToken string, timeout
 	return respBody, resp.StatusCode, nil
 }
 
+// supportProxyWithHeaders is like supportProxy but sets additional headers on the outbound request.
+func supportProxyWithHeaders(method, path string, payload []byte, extraHeaders map[string]string, timeout time.Duration) ([]byte, int, error) {
+	var body io.Reader
+	if payload != nil {
+		body = bytes.NewReader(payload)
+	}
+
+	req, err := http.NewRequest(method, supportServerURL+path, body)
+	if err != nil {
+		return nil, 0, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	for k, v := range extraHeaders {
+		req.Header.Set(k, v)
+	}
+
+	client := &http.Client{Timeout: timeout}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, resp.StatusCode, err
+	}
+	return respBody, resp.StatusCode, nil
+}
+
 // sanitizeJSON re-parses and re-serializes JSON to normalize any encoding issues
 // (e.g. diagnostics text containing backslash sequences like \usb that look like
 // incomplete Unicode escapes to strict JSON parsers).
