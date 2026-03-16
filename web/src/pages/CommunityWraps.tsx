@@ -3,11 +3,7 @@ import { Search, Upload, Download, Paintbrush, ChevronLeft, ChevronRight, Loader
 
 const API_BASE = "/api"
 
-// Base models for browse filter (uses LIKE prefix matching on server)
-const FILTER_MODELS = ["All", "Cybertruck", "Model 3", "Model S", "Model X", "Model Y"]
-
-// Specific models for upload
-const UPLOAD_MODELS = [
+const TESLA_MODELS = [
   "Cybertruck",
   "Model 3",
   "Model 3 (2024+) Standard & Premium",
@@ -20,6 +16,8 @@ const UPLOAD_MODELS = [
   "Model Y (2025+) Performance",
   "Model Y L",
 ]
+
+const FILTER_MODELS = ["All", ...TESLA_MODELS]
 
 type SortOption = "newest" | "oldest" | "popular" | "name"
 
@@ -430,7 +428,7 @@ function UploadTab() {
           className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-200 focus:border-blue-500/50 focus:outline-none"
         >
           <option value="" className="bg-slate-900">Select model...</option>
-          {UPLOAD_MODELS.map((m) => (
+          {TESLA_MODELS.map((m) => (
             <option key={m} value={m} className="bg-slate-900">{m}</option>
           ))}
         </select>
