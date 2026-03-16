@@ -157,6 +157,51 @@ function cleanup_deleted_clips {
   fi
 }
 
+# Rebuild symlinks in /mutable/TeslaCam for all existing completed snapshots
+# whose links have gone missing (e.g. after a setup re-run wiped them).
+# Only snapshots with a .toc file are considered complete.
+function rebuild_all_snapshot_links {
+  local snapshotsdir=/backingfiles/snapshots
+  local rebuilt=0
+
+  if ! stat "$snapshotsdir"/snap-*/snap.bin.toc > /dev/null 2>&1
+  then
+    return
+  fi
+
+  for tocfile in "$snapshotsdir"/snap-*/snap.bin.toc
+  do
+    local snapdir
+    snapdir=$(dirname "$tocfile")
+    local snapname
+    snapname=$(basename "$snapdir")
+    local snapmnt="/tmp/snapshots/$snapname"
+
+    # Ensure the mnt symlink exists (auto.sentryusb creates it on access,
+    # but make_links_for_snapshot needs it as the link target)
+    if [ ! -e "$snapdir/mnt" ]
+    then
+      ln -s "$snapmnt" "$snapdir/mnt"
+    fi
+
+    # Check whether this snapshot still has symlinks in /mutable/TeslaCam.
+    # If none exist, the links were lost and need rebuilding.
+    if find /mutable/TeslaCam/ -lname "*/${snapname}/*" -print -quit 2>/dev/null | grep -q .
+    then
+      continue
+    fi
+
+    log "rebuilding symlinks for $snapname"
+    make_links_for_snapshot "$snapmnt" "$snapdir/mnt"
+    rebuilt=$((rebuilt + 1))
+  done
+
+  if [ "$rebuilt" -gt 0 ]
+  then
+    log "rebuilt symlinks for $rebuilt snapshot(s)"
+  fi
+}
+
 function snapshot {
   # since taking a snapshot doesn't take much extra space, do that first,
   # before cleaning up old snapshots to maintain free space.
@@ -260,6 +305,10 @@ function snapshot {
     rm -rf "$newsnapdir"
   fi
 }
+
+# Rebuild missing symlinks for old snapshots before taking a new one,
+# so clips from previous snapshots are visible again immediately.
+rebuild_all_snapshot_links
 
 if ! snapshot "${1:-fsck}"
 then

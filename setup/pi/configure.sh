@@ -815,9 +815,16 @@ install_push_message_scripts /root/bin
 check_archive_configs
 
 rm -f /root/teslausb.conf
-# Clean stale TeslaCam symlinks so the viewer doesn't show old clips after re-setup
-rm -rf /mutable/TeslaCam/RecentClips /mutable/TeslaCam/SavedClips /mutable/TeslaCam/SentryClips /mutable/TeslaCam/TeslaTrackMode
-rm -f /mutable/sentry_files_archived
+# Only clean TeslaCam symlinks and archive tracking when the cam disk was
+# actually recreated (fresh install or size change).  create-backingfiles.sh
+# already handles this in setup-sentryusb; doing it unconditionally here
+# breaks the WebUI (symlinks gone → no clips visible) and forces the archive
+# to re-copy every file (tracking file gone → nothing marked as archived).
+if [ ! -e /backingfiles/cam_disk.bin ]
+then
+  rm -rf /mutable/TeslaCam/RecentClips /mutable/TeslaCam/SavedClips /mutable/TeslaCam/SentryClips /mutable/TeslaCam/TeslaTrackMode
+  rm -f /mutable/sentry_files_archived
+fi
 
 archive_module="$( get_archive_module )"
 log_progress "Using archive module: $archive_module"
