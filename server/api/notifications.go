@@ -191,8 +191,9 @@ func (h *handlers) generateNotificationPairingCode(w http.ResponseWriter, r *htt
 // registerCodeWithBackend sends the pairing code to the notification relay server
 func registerCodeWithBackend(creds *NotificationCredentials, code string) error {
 	hostname, _ := os.Hostname()
-	body := fmt.Sprintf(`{"device_id":"%s","device_secret":"%s","code":"%s","hostname":"%s"}`,
-		creds.DeviceID, creds.DeviceSecret, code, hostname)
+	fp := getFingerprint()
+	body := fmt.Sprintf(`{"device_id":"%s","device_secret":"%s","code":"%s","hostname":"%s","fingerprint":"%s"}`,
+		creds.DeviceID, creds.DeviceSecret, code, hostname, fp)
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	req, err := http.NewRequest("POST", "https://notifications.sentry-six.com/register-code", strings.NewReader(body))
