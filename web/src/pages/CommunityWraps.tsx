@@ -2,7 +2,26 @@ import { useEffect, useState, useCallback } from "react"
 import { Search, Upload, Download, Paintbrush, ChevronLeft, ChevronRight, Loader2, CheckCircle, AlertCircle } from "lucide-react"
 
 const API_BASE = "/api"
-const TESLA_MODELS = ["All", "Model 3", "Model Y", "Model S", "Model X", "Cybertruck"]
+
+// Base models for browse filter (uses LIKE prefix matching on server)
+const FILTER_MODELS = ["All", "Cybertruck", "Model 3", "Model S", "Model X", "Model Y"]
+
+// Specific models for upload
+const UPLOAD_MODELS = [
+  "Cybertruck",
+  "Model 3",
+  "Model 3 (2024+) Standard & Premium",
+  "Model 3 (2024+) Performance",
+  "Model S",
+  "Model X",
+  "Model Y",
+  "Model Y (2025+) Standard",
+  "Model Y (2025+) Premium",
+  "Model Y (2025+) Performance",
+  "Model Y L",
+]
+
+type SortOption = "newest" | "oldest" | "popular" | "name"
 
 interface CommunityWrap {
   code: string
@@ -74,6 +93,7 @@ function BrowseTab() {
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState("")
   const [model, setModel] = useState("All")
+  const [sort, setSort] = useState<SortOption>("newest")
   const [selectedWrap, setSelectedWrap] = useState<CommunityWrap | null>(null)
   const [downloading, setDownloading] = useState<string | null>(null)
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null)
@@ -86,6 +106,7 @@ function BrowseTab() {
       const params = new URLSearchParams({ page: String(page), limit: String(limit) })
       if (model !== "All") params.set("model", model)
       if (search.trim()) params.set("search", search.trim())
+      if (sort !== "newest") params.set("sort", sort)
 
       const res = await fetch(`${API_BASE}/wraps/library?${params}`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -97,14 +118,14 @@ function BrowseTab() {
     } finally {
       setLoading(false)
     }
-  }, [page, model, search])
+  }, [page, model, search, sort])
 
   useEffect(() => {
     const timer = setTimeout(fetchWraps, search ? 300 : 0)
     return () => clearTimeout(timer)
   }, [fetchWraps])
 
-  useEffect(() => { setPage(1) }, [model, search])
+  useEffect(() => { setPage(1) }, [model, search, sort])
 
   const totalPages = Math.ceil(total / limit)
 
@@ -160,9 +181,19 @@ function BrowseTab() {
           onChange={(e) => setModel(e.target.value)}
           className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-200 focus:border-blue-500/50 focus:outline-none"
         >
-          {TESLA_MODELS.map((m) => (
+          {FILTER_MODELS.map((m) => (
             <option key={m} value={m} className="bg-slate-900">{m}</option>
           ))}
+        </select>
+        <select
+          value={sort}
+          onChange={(e) => setSort(e.target.value as SortOption)}
+          className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-200 focus:border-blue-500/50 focus:outline-none"
+        >
+          <option value="newest" className="bg-slate-900">Newest</option>
+          <option value="oldest" className="bg-slate-900">Oldest</option>
+          <option value="popular" className="bg-slate-900">Most Popular</option>
+          <option value="name" className="bg-slate-900">Name (A-Z)</option>
         </select>
       </div>
 
@@ -399,7 +430,7 @@ function UploadTab() {
           className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-200 focus:border-blue-500/50 focus:outline-none"
         >
           <option value="" className="bg-slate-900">Select model...</option>
-          {TESLA_MODELS.filter(m => m !== "All").map((m) => (
+          {UPLOAD_MODELS.map((m) => (
             <option key={m} value={m} className="bg-slate-900">{m}</option>
           ))}
         </select>
