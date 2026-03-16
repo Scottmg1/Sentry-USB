@@ -177,6 +177,12 @@ function rebuild_all_snapshot_links {
     snapname=$(basename "$snapdir")
     local snapmnt="/tmp/snapshots/$snapname"
 
+    # Skip if snap.bin is missing (incomplete cleanup)
+    if [ ! -e "$snapdir/snap.bin" ]
+    then
+      continue
+    fi
+
     # Ensure the mnt symlink exists (auto.sentryusb creates it on access,
     # but make_links_for_snapshot needs it as the link target)
     if [ ! -e "$snapdir/mnt" ]
@@ -191,8 +197,21 @@ function rebuild_all_snapshot_links {
       continue
     fi
 
+    # Verify the snapshot can actually be mounted before attempting to
+    # rebuild links. If autofs can't mount it (corrupt image, missing
+    # loop device, etc.) skip it rather than crashing the archiveloop.
+    if ! ls "$snapmnt/" > /dev/null 2>&1
+    then
+      log "WARNING: cannot mount $snapname, skipping symlink rebuild"
+      continue
+    fi
+
     log "rebuilding symlinks for $snapname"
-    make_links_for_snapshot "$snapmnt" "$snapdir/mnt"
+    if ! make_links_for_snapshot "$snapmnt" "$snapdir/mnt" 2>/dev/null
+    then
+      log "WARNING: failed to rebuild symlinks for $snapname, skipping"
+      continue
+    fi
     rebuilt=$((rebuilt + 1))
   done
 
@@ -306,11 +325,12 @@ function snapshot {
   fi
 }
 
-# Rebuild missing symlinks for old snapshots before taking a new one,
-# so clips from previous snapshots are visible again immediately.
-rebuild_all_snapshot_links
-
 if ! snapshot "${1:-fsck}"
 then
   log "failed to take snapshot"
 fi
+
+# Rebuild missing symlinks AFTER snapshot, so autofs is guaranteed to be
+# active (snapshot waits for it).  This restores visibility of old clips
+# whose symlinks were lost (e.g. after a setup re-run).
+rebuild_all_snapshot_links
