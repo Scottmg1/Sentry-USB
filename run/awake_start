@@ -4,22 +4,39 @@ if [[ ( -z "${TESLAFI_API_TOKEN:+x}" ) && ( -z "${TESSIE_API_TOKEN:+x}" ) && ( -
 then
   log "Not configured to keep car awake."
 else
+  # Pause heavy WiFi traffic (rsync/cp archive transfers) so the shared
+  # WiFi+BLE radio chip has airtime for Tesla BLE commands.  The Pi's
+  # combo chip (BCM43xx) time-shares a single 2.4 GHz antenna between
+  # WiFi and BLE; sustained WiFi throughput starves BLE of slots and
+  # causes "context deadline exceeded" errors from tesla-control.
+  function pause_archive_io {
+    if pkill -STOP -f 'rsync|archive-clips' 2>/dev/null; then
+      log "Tesla BLE: Paused archive transfers to free radio for BLE."
+    fi
+    sleep 2  # let in-flight WiFi frames drain so BLE gets clean airtime
+  }
+  function resume_archive_io {
+    if pkill -CONT -f 'rsync|archive-clips' 2>/dev/null; then
+      log "Tesla BLE: Resumed archive transfers."
+    fi
+  }
+
+  # Returns a label like "Archive", "Drive Processing", "Manual (8m left)"
+  function nudge_label {
+    local label="${KEEP_AWAKE_REASON:-Keep Awake}"
+    if [ -n "${KEEP_AWAKE_EXPIRES_AT:-}" ]; then
+      local now remaining
+      now=$(date +%s)
+      remaining=$((KEEP_AWAKE_EXPIRES_AT - now))
+      if [ "$remaining" -gt 0 ]; then
+        label="$label ($((remaining / 60))m left)"
+      fi
+    fi
+    echo "$label"
+  }
+
   function nudge {
     local retry=1
-
-    # Returns a label like "Archive", "Drive Processing", "Manual (8m left)"
-    function nudge_label {
-      local label="${KEEP_AWAKE_REASON:-Keep Awake}"
-      if [ -n "${KEEP_AWAKE_EXPIRES_AT:-}" ]; then
-        local now remaining
-        now=$(date +%s)
-        remaining=$((KEEP_AWAKE_EXPIRES_AT - now))
-        if [ "$remaining" -gt 0 ]; then
-          label="$label ($((remaining / 60))m left)"
-        fi
-      fi
-      echo "$label"
-    }
 
     # Send a notification when the final nudge attempt fails
     function notify_nudge_failure {
@@ -27,23 +44,6 @@ else
       local reason="$2"
       /root/bin/send-push-message "${NOTIFICATION_TITLE:-SentryUSB}:" \
         "${provider}: Keep awake failed (attempt 3/3). ${reason}" "" "keep_awake_failure" || true
-    }
-
-    # Pause heavy WiFi traffic (rsync/cp archive transfers) so the shared
-    # WiFi+BLE radio chip has airtime for Tesla BLE commands.  The Pi's
-    # combo chip (BCM43xx) time-shares a single 2.4 GHz antenna between
-    # WiFi and BLE; sustained WiFi throughput starves BLE of slots and
-    # causes "context deadline exceeded" errors from tesla-control.
-    function pause_archive_io {
-      if pkill -STOP -f 'rsync|archive-clips' 2>/dev/null; then
-        log "Tesla BLE: Paused archive transfers to free radio for BLE."
-      fi
-      sleep 2  # let in-flight WiFi frames drain so BLE gets clean airtime
-    }
-    function resume_archive_io {
-      if pkill -CONT -f 'rsync|archive-clips' 2>/dev/null; then
-        log "Tesla BLE: Resumed archive transfers."
-      fi
     }
 
     while true
@@ -312,9 +312,9 @@ else
         systemctl stop sentryusb-ble 2>/dev/null || true
         if timeout 30 /root/bin/tesla-control -ble -key-file /root/.ble/key_private.pem -vin "${TESLA_BLE_VIN^^}" -session-cache /tmp/tesla-ble-session-cache sentry-mode on
         then
-          log "Tesla BLE: Command sent to enable Sentry Mode."
+          log "Tesla BLE: Sentry Mode enabled [$(nudge_label)]."
         else
-          log "Tesla BLE: Failed to set Sentry Mode."
+          log "Tesla BLE: Failed to enable Sentry Mode [$(nudge_label)]."
           /root/bin/send-push-message "${NOTIFICATION_TITLE:-SentryUSB}:" \
             "Tesla BLE: Failed to enable Sentry Mode via BLE." "" "keep_awake_failure" || true
         fi

@@ -5,6 +5,20 @@ then
   exit
 fi
 
+# Returns a label like "Archive", "Drive Processing", "Manual (8m left)"
+function nudge_label {
+  local label="${KEEP_AWAKE_REASON:-Keep Awake}"
+  if [ -n "${KEEP_AWAKE_EXPIRES_AT:-}" ]; then
+    local now remaining
+    now=$(date +%s)
+    remaining=$((KEEP_AWAKE_EXPIRES_AT - now))
+    if [ "$remaining" -gt 0 ]; then
+      label="$label ($((remaining / 60))m left)"
+    fi
+  fi
+  echo "$label"
+}
+
 case "${SENTRY_CASE}" in
   1 | 2)
     if [[ ( -n "${TESLAFI_API_TOKEN:+x}" ) ]]
@@ -149,9 +163,9 @@ case "${SENTRY_CASE}" in
       systemctl stop sentryusb-ble 2>/dev/null || true
       if timeout 30 /root/bin/tesla-control -ble -key-file /root/.ble/key_private.pem -vin "${TESLA_BLE_VIN^^}" -session-cache /tmp/tesla-ble-session-cache sentry-mode off
       then
-        log "Tesla BLE: Command sent to disable Sentry Mode."
+        log "Tesla BLE: Sentry Mode disabled [$(nudge_label)]."
       else
-        log "Tesla BLE: Failed to disable Sentry Mode."
+        log "Tesla BLE: Failed to disable Sentry Mode [$(nudge_label)]."
       fi
       systemctl start sentryusb-ble 2>/dev/null || true
       if pkill -CONT -f 'rsync|archive-clips' 2>/dev/null; then
