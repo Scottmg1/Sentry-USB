@@ -29,6 +29,23 @@ else
         "${provider}: Keep awake failed (attempt 3/3). ${reason}" "" "keep_awake_failure" || true
     }
 
+    # Pause heavy WiFi traffic (rsync/cp archive transfers) so the shared
+    # WiFi+BLE radio chip has airtime for Tesla BLE commands.  The Pi's
+    # combo chip (BCM43xx) time-shares a single 2.4 GHz antenna between
+    # WiFi and BLE; sustained WiFi throughput starves BLE of slots and
+    # causes "context deadline exceeded" errors from tesla-control.
+    function pause_archive_io {
+      if pkill -STOP -f 'rsync|archive-clips' 2>/dev/null; then
+        log "Tesla BLE: Paused archive transfers to free radio for BLE."
+      fi
+      sleep 2  # let in-flight WiFi frames drain so BLE gets clean airtime
+    }
+    function resume_archive_io {
+      if pkill -CONT -f 'rsync|archive-clips' 2>/dev/null; then
+        log "Tesla BLE: Resumed archive transfers."
+      fi
+    }
+
     while true
     do
       if [[ -n "${TESSIE_API_TOKEN:+x}" ]]
@@ -76,12 +93,15 @@ else
       if [[ -n "${TESLA_BLE_VIN:+x}" ]]
       # use Tesla BLE API to nudge the car
       then
+        # Pause archive WiFi traffic so the shared radio chip can service BLE.
+        pause_archive_io
         # Stop the GATT daemon so tesla-control gets exclusive access to hci0.
         # sentryusb-ble holding the adapter causes "context deadline exceeded" and
         # "io: read/write on closed pipe" errors during BLE commands.
         systemctl stop sentryusb-ble 2>/dev/null || true
-        BLE_response=$(/root/bin/tesla-control -ble -key-file /root/.ble/key_private.pem -vin "${TESLA_BLE_VIN^^}" charge-port-close 2>&1) || true
+        BLE_response=$(timeout 30 /root/bin/tesla-control -ble -key-file /root/.ble/key_private.pem -vin "${TESLA_BLE_VIN^^}" -session-cache /tmp/tesla-ble-session-cache charge-port-close 2>&1) || true
         systemctl start sentryusb-ble 2>/dev/null || true
+        resume_archive_io
         if [[ $BLE_response == *"already closed"* || $BLE_response == *"cable connected"* ]]
         then
           log "Tesla BLE: Nudge OK [$(nudge_label)] (charge port already closed/cable connected)."
@@ -288,8 +308,9 @@ else
       elif [[ -n "${TESLA_BLE_VIN:+x}" ]]
       # Use Tesla BLE API to enable Sentry Mode
       then
+        pause_archive_io
         systemctl stop sentryusb-ble 2>/dev/null || true
-        if /root/bin/tesla-control -ble -key-file /root/.ble/key_private.pem -vin "${TESLA_BLE_VIN^^}" sentry-mode on
+        if timeout 30 /root/bin/tesla-control -ble -key-file /root/.ble/key_private.pem -vin "${TESLA_BLE_VIN^^}" -session-cache /tmp/tesla-ble-session-cache sentry-mode on
         then
           log "Tesla BLE: Command sent to enable Sentry Mode."
         else
@@ -298,6 +319,7 @@ else
             "Tesla BLE: Failed to enable Sentry Mode via BLE." "" "keep_awake_failure" || true
         fi
         systemctl start sentryusb-ble 2>/dev/null || true
+        resume_archive_io
       elif [[ -n "${KEEP_AWAKE_WEBHOOK_URL:+x}" ]]
       # Use webhook to send start command
       then

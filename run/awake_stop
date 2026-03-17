@@ -141,14 +141,22 @@ case "${SENTRY_CASE}" in
     elif [[ -n "${TESLA_BLE_VIN:+x}" ]]
     then
       # Use Tesla BLE API to disable Sentry Mode
+      # Pause archive WiFi traffic so the shared radio chip can service BLE.
+      if pkill -STOP -f 'rsync|archive-clips' 2>/dev/null; then
+        log "Tesla BLE: Paused archive transfers to free radio for BLE."
+      fi
+      sleep 2
       systemctl stop sentryusb-ble 2>/dev/null || true
-      if /root/bin/tesla-control -ble -key-file /root/.ble/key_private.pem -vin "${TESLA_BLE_VIN^^}" sentry-mode off
+      if timeout 30 /root/bin/tesla-control -ble -key-file /root/.ble/key_private.pem -vin "${TESLA_BLE_VIN^^}" -session-cache /tmp/tesla-ble-session-cache sentry-mode off
       then
         log "Tesla BLE: Command sent to disable Sentry Mode."
       else
-        log "Tesla BLE: Failed to set Sentry Mode."
+        log "Tesla BLE: Failed to disable Sentry Mode."
       fi
       systemctl start sentryusb-ble 2>/dev/null || true
+      if pkill -CONT -f 'rsync|archive-clips' 2>/dev/null; then
+        log "Tesla BLE: Resumed archive transfers."
+      fi
 
     elif [[ -n "${KEEP_AWAKE_WEBHOOK_URL:+x}" ]]
     # Use webhook to send stop message
