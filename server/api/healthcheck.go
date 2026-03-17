@@ -585,6 +585,27 @@ func getRTCInfo() rtcStatusResponse {
 	model := getSBCModel()
 	resp.IsPi5 = strings.Contains(model, "Raspberry Pi 5")
 
+	// Only report RTC battery warnings if the user has enabled RTC support
+	rtcEnabled := false
+	if configPath := findConfigFilePath(); configPath != "" {
+		if data, err := os.ReadFile(configPath); err == nil {
+			for _, line := range strings.Split(string(data), "\n") {
+				line = strings.TrimSpace(line)
+				if strings.HasPrefix(line, "export RTC_BATTERY_ENABLED=") || strings.HasPrefix(line, "RTC_BATTERY_ENABLED=") {
+					val := strings.TrimPrefix(line, "export ")
+					val = strings.TrimPrefix(val, "RTC_BATTERY_ENABLED=")
+					val = strings.Trim(val, "\"'")
+					rtcEnabled = val == "true"
+				}
+			}
+		}
+	}
+
+	if !rtcEnabled {
+		resp.RTCHealthy = true
+		return resp
+	}
+
 	if _, err := os.Stat("/dev/rtc0"); err == nil {
 		resp.RTCPresent = true
 	}
