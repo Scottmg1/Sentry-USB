@@ -161,7 +161,7 @@ case "${SENTRY_CASE}" in
       fi
       sleep 2
       systemctl stop sentryusb-ble 2>/dev/null || true
-      if timeout 30 /root/bin/tesla-control -ble -key-file /root/.ble/key_private.pem -vin "${TESLA_BLE_VIN^^}" -session-cache /tmp/tesla-ble-session-cache sentry-mode off
+      if timeout 90 /root/bin/tesla-control -ble -key-file /root/.ble/key_private.pem -vin "${TESLA_BLE_VIN^^}" -session-cache /tmp/tesla-ble-session-cache sentry-mode off
       then
         log "Tesla BLE: Sentry Mode disabled [$(nudge_label)]."
       else
