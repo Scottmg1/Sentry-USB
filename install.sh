@@ -260,7 +260,7 @@ ARCH=$(uname -m)
 case "$ARCH" in
     aarch64)  BINARY_SUFFIX="linux-arm64"; GO_ARCH="arm64" ;;
     armv7l)   BINARY_SUFFIX="linux-armv7"; GO_ARCH="armv6l" ;;
-    armv6l)   BINARY_SUFFIX="linux-armv7"; GO_ARCH="armv6l" ;;
+    armv6l)   BINARY_SUFFIX="linux-armv6"; GO_ARCH="armv6l" ;;
     x86_64)   BINARY_SUFFIX="linux-amd64"; GO_ARCH="amd64" ;;
     *)        error_exit "Unsupported architecture: $ARCH" ;;
 esac
