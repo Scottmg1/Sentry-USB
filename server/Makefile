@@ -1,4 +1,4 @@
-.PHONY: build build-arm64 build-armv7 dev clean copy-static
+.PHONY: build build-arm64 build-armv7 build-armv6 dev clean copy-static
 
 # Build for current platform
 build: copy-static
@@ -12,8 +12,12 @@ build-arm64: copy-static
 build-armv7: copy-static
 	GOOS=linux GOARCH=arm GOARM=7 go build -o bin/sentryusb-linux-armv7 .
 
+# Build for Raspberry Pi Zero W (original, ARMv6)
+build-armv6: copy-static
+	GOOS=linux GOARCH=arm GOARM=6 go build -o bin/sentryusb-linux-armv6 .
+
 # Build all Pi targets
-build-all: build-arm64 build-armv7
+build-all: build-arm64 build-armv7 build-armv6
 
 # Copy built frontend into static/ for embedding
 copy-static:

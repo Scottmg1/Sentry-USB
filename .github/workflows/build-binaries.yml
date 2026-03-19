@@ -44,6 +44,7 @@ jobs:
           path: |
             server/bin/sentryusb-linux-arm64
             server/bin/sentryusb-linux-armv7
+            server/bin/sentryusb-linux-armv6
           retention-days: 30
 
       - name: Attach to release
@@ -54,4 +55,5 @@ jobs:
           gh release upload "${{ github.event.release.tag_name }}" \
             server/bin/sentryusb-linux-arm64 \
             server/bin/sentryusb-linux-armv7 \
+            server/bin/sentryusb-linux-armv6 \
             --clobber
