@@ -29,6 +29,7 @@ No — a **fresh install is required**. There is no in-place upgrade path from T
 | Board | Recommendation |
 |-------|---------------|
 | **Pi 4B / Pi 5** | Best choice — fast, USB 3.0, reliable |
+| **Pi 3 (A+/B/B+)** | Mid-range option — 5 GHz WiFi, requires USB-A to USB-A cable |
 | **Pi Zero 2 W** | Good budget option with adequate performance |
 
 ### How big should my SD card be?
@@ -52,6 +53,7 @@ When installing SentryUSB with an external drive, use the `norootshrink` variant
 ### What USB cable do I need?
 
 - **Pi 4/5**: USB-A to USB-C cable
+- **Pi 3**: USB-A to USB-A cable
 - **Pi Zero 2W**: USB-A to Micro-USB cable
 - **Important**: Use a **data** cable, not a charge-only cable. If your Tesla doesn't see the drive, try a different cable.
 

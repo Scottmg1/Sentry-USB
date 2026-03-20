@@ -22,7 +22,7 @@ Sentry USB turns a Raspberry Pi (or compatible SBC) into a smart USB drive for y
 
 ## Prerequisites
 
-- A Raspberry Pi (Zero 2 W, Pi 4, or Pi 5) or compatible SBC with USB OTG
+- A Raspberry Pi (Zero 2 W, Pi 3, Pi 4, or Pi 5) or compatible SBC with USB OTG
 - A MicroSD card, 64 GB minimum (128 GB+ recommended)
 - USB cable to connect the Pi to the Tesla
 

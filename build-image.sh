@@ -7,7 +7,7 @@
 #   - Internet access (to download Raspberry Pi OS base)
 #
 # Usage:
-#   ./build-image.sh                         # 64-bit image (Pi 4/5/Zero 2)
+#   ./build-image.sh                         # 64-bit image (Pi 3/4/5/Zero 2)
 #   ./build-image.sh --32bit                 # 32-bit image (Pi Zero W)
 #   ./build-image.sh /path/to/binary         # 64-bit with local binary
 #   ./build-image.sh --32bit /path/to/binary # 32-bit with local binary
@@ -52,7 +52,7 @@ if $BUILD_32BIT; then
     GO_ARM="7"
     CONFIG_FILE="pi-gen-config-32bit"
 else
-    ARCH_LABEL="64-bit (arm64 — Pi 4/5/Zero 2)"
+    ARCH_LABEL="64-bit (arm64 — Pi 3/4/5/Zero 2)"
     BINARY_SUFFIX="linux-arm64"
     GO_ARCH="arm64"
     GO_ARM=""

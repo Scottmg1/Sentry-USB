@@ -33,6 +33,7 @@ Sentry USB turns a Raspberry Pi into a smart USB drive for your Tesla's dashcam 
 |-------|--------|-------|
 | **Raspberry Pi 4B** | Recommended | Best performance, USB 3.0 |
 | **Raspberry Pi 5** | Recommended | Fastest, USB 3.0 |
+| **Raspberry Pi 3 (A+/B/B+)** | Supported | 5 GHz WiFi, USB-A to USB-A cable required |
 | **Raspberry Pi Zero 2 W** | Good | Budget option, adequate performance |
 | **Radxa Rock Pi 4C+** | Community Tested | USB 3.0 OTG Alternative |
 | **Radxa Zero 3W** | Community Tested |

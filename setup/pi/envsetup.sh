@@ -178,6 +178,11 @@ function isPi2 {
 }
 export -f isPi2
 
+function isPi3 {
+  grep -q "Raspberry Pi 3" /sys/firmware/devicetree/base/model
+}
+export -f isPi3
+
 function isRockPi4 {
   grep -q "ROCK Pi 4" /sys/firmware/devicetree/base/model
 }

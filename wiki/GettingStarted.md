@@ -6,9 +6,9 @@ Get SentryUSB running on your Raspberry Pi in about 20 minutes.
 
 | Part | Details |
 |------|---------|
-| **Raspberry Pi** | Pi 4B, Pi 5, or Pi Zero 2 W |
+| **Raspberry Pi** | Pi 4B, Pi 5, Pi 3 (A+/B/B+), or Pi Zero 2 W |
 | **MicroSD card** | 128 GB+ recommended (64 GB minimum) |
-| **USB cable** | Pi 4/5: USB-A → USB-C · Pi Zero 2W: USB-A → Micro-USB |
+| **USB cable** | Pi 4/5: USB-A → USB-C · Pi 3: USB-A → USB-A · Pi Zero 2W: USB-A → Micro-USB |
 | **Computer** | With an SD card reader |
 | **WiFi** | Internet access for initial setup |
 
