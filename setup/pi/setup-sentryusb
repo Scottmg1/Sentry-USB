@@ -1465,14 +1465,13 @@ then
   then
     if ! grep -q 'dtoverlay=dwc2,dr_mode=peripheral' "$PICONFIG_PATH"
     then
-      # Remove plain dtoverlay=dwc2 if present (from a prior setup attempt)
       sed -i '/^dtoverlay=dwc2$/d' "$PICONFIG_PATH"
       echo -e "dtoverlay=dwc2,dr_mode=peripheral\n" >> "$PICONFIG_PATH"
       setup_progress "rebooting to apply dwc2 overlay change (peripheral mode for Pi 3)"
       reboot
       exit 0
     fi
-    else
+  else
     if isPi4
     then
       if ! grep -q '^\[pi4\]' "$PICONFIG_PATH"
@@ -1497,7 +1496,7 @@ then
       fi
     fi
   fi
-
+fi
 
 configure_hostname
 
