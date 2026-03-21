@@ -1465,7 +1465,6 @@ then
   then
     if ! grep -q 'dtoverlay=dwc2,dr_mode=peripheral' "$PICONFIG_PATH"
     then
-      # Remove plain dtoverlay=dwc2 if present (from a prior setup attempt)
       sed -i '/^dtoverlay=dwc2$/d' "$PICONFIG_PATH"
       echo -e "dtoverlay=dwc2,dr_mode=peripheral\n" >> "$PICONFIG_PATH"
       setup_progress "rebooting to apply dwc2 overlay change (peripheral mode for Pi 3)"
@@ -1473,12 +1472,28 @@ then
       exit 0
     fi
   else
-    if ! grep -q 'dtoverlay=dwc2' "$PICONFIG_PATH"
+    if isPi4
     then
-      echo -e "dtoverlay=dwc2\n" >> "$PICONFIG_PATH"
-      setup_progress "rebooting to apply dwc2 overlay change"
-      reboot
-      exit 0
+      if ! grep -q '^\[pi4\]' "$PICONFIG_PATH"
+      then
+        if grep -q '^\[cm4\]' "$PICONFIG_PATH"
+        then
+          sed -i '/^\[cm4\]/i [pi4]\ndtoverlay=dwc2\n' "$PICONFIG_PATH"
+        else
+          printf '\n[pi4]\ndtoverlay=dwc2\n' >> "$PICONFIG_PATH"
+        fi
+        setup_progress "rebooting to apply dwc2 overlay change (Pi4 gadget mode)"
+        reboot
+        exit 0
+      fi
+    else
+      if ! grep -q 'dtoverlay=dwc2' "$PICONFIG_PATH"
+      then
+        echo -e "dtoverlay=dwc2\n" >> "$PICONFIG_PATH"
+        setup_progress "rebooting to apply dwc2 overlay change"
+        reboot
+        exit 0
+      fi
     fi
   fi
 fi
