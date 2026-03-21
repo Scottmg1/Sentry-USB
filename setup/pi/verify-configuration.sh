@@ -35,7 +35,7 @@ function check_supported_hardware () {
     return
   fi
   setup_progress "STOP: unsupported hardware: '$(cat /sys/firmware/devicetree/base/model)'"
-  setup_progress "(only Pi Zero W, Pi 3, Pi 4, and Pi 5 have the necessary hardware to run SentryUSB)"
+  setup_progress "(only Pi Zero W, Pi Zero 2 W, Pi 3, Pi 4, and Pi 5 have the necessary hardware to run SentryUSB)"
   exit 1
 }
 
@@ -45,6 +45,7 @@ function check_udc () {
   if [ "$udc" = "0" ]
   then
     setup_progress "STOP: this device ($(cat /sys/firmware/devicetree/base/model)) does not have a UDC driver"
+    setup_progress "(check that dtoverlay=dwc2 is in the correct section of config.txt for your Pi model)"
     exit 1
   fi
 }
