@@ -43,8 +43,8 @@ else
     systemctl stop sentryusb-ble 2>/dev/null || true
 
     # Wait for the daemon process to fully exit (up to 5 s).
-    local i
-    for i in $(seq 1 10); do
+    local _i
+    for _i in $(seq 1 10); do
       pgrep -f 'sentryusb-ble\.py' >/dev/null 2>&1 || break
       sleep 0.5
     done
