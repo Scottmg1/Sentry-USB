@@ -5,6 +5,41 @@ then
   exit
 fi
 
+# ---------------------------------------------------------------------------
+# BLE radio restore
+#
+# Restore the GATT daemon (mobile-app Bluetooth) after keep-awake ends.
+# awake_start disables it and creates BLE_LOCK; we restore only when:
+#   1. The lock file exists (we actually disabled it).
+#   2. No other keep-awake nudge loop is still running (overlap safety).
+# If another caller still needs the radio, we leave the lock in place and
+# let that caller's awake_stop handle the restore.
+# ---------------------------------------------------------------------------
+BLE_LOCK="/tmp/ble_keep_awake_active"
+
+ble_restore_gatt_daemon() {
+  if [ ! -e "$BLE_LOCK" ]; then
+    return
+  fi
+
+  # Check if a nudge loop is still running — if so, another keep-awake session
+  # still needs exclusive hci0 access.  Don't restore yet.
+  local nudge_pid_file="/tmp/keep_awake_nudge_pid"
+  if [ -e "$nudge_pid_file" ]; then
+    local nudge_pid
+    nudge_pid=$(cat "$nudge_pid_file" 2>/dev/null || echo "")
+    if [ -n "$nudge_pid" ] && kill -0 "$nudge_pid" 2>/dev/null; then
+      log "Tesla BLE: Keep-awake nudge loop still active (PID $nudge_pid) — mobile-app Bluetooth stays disabled."
+      return
+    fi
+  fi
+
+  rm -f "$BLE_LOCK"
+  log "Tesla BLE: Keep-awake ended. Restoring mobile-app Bluetooth (GATT daemon)..."
+  systemctl start sentryusb-ble 2>/dev/null || true
+  log "Tesla BLE: Mobile-app Bluetooth restored. iOS app can connect via Bluetooth again."
+}
+
 # Returns a label like "Archive", "Drive Processing", "Manual (8m left)"
 function nudge_label {
   local label="${KEEP_AWAKE_REASON:-Keep Awake}"
@@ -29,14 +64,14 @@ case "${SENTRY_CASE}" in
           -H "Accept: application/json" \
           -H "User-Agent: github.com/Scottmg1/Sentry-USB" \
           "https://www.teslafi.com/feed.php?command=set_sentry_mode&sentryMode=false&noWake=true")
-      
+
       log "TeslaFi: Command sent to disable Sentry Mode."
       # Extract HTTP status code
       http_status="${http_response: -3}"
-                
+
       # Extract response body (excluding status code)
       response_body="${http_response:0:${#http_response}-3}"
-      
+
       # Check if HTTP status code is not 200 (OK)
       if [ "$http_status" != "200" ]
       then
@@ -53,7 +88,7 @@ case "${SENTRY_CASE}" in
           result2=$(jq -r '.result' <<<"$result1")
           request_counter=$(jq -r '.tesla_request_counter' <<<"$response_body")
           commands=$(jq -r '.commands' <<<"$request_counter")
-      
+
           if [[ "$result2" = "true" ]]
           then
             log "TeslaFi: Sentry Mode Disabled. Monthly command counter = $commands."
@@ -154,15 +189,14 @@ case "${SENTRY_CASE}" in
 
     elif [[ -n "${TESLA_BLE_VIN:+x}" ]]
     then
-      # Use Tesla BLE API to disable Sentry Mode
-      systemctl stop sentryusb-ble 2>/dev/null || true
+      # Use Tesla BLE API to disable Sentry Mode.
+      # GATT daemon is already disabled (lock held by awake_start) — call directly.
       if /root/bin/tesla-control -ble -key-file /root/.ble/key_private.pem -vin "${TESLA_BLE_VIN^^}" sentry-mode off
       then
         log "Tesla BLE: Sentry Mode disabled [$(nudge_label)]."
       else
         log "Tesla BLE: Failed to disable Sentry Mode [$(nudge_label)]."
       fi
-      systemctl start sentryusb-ble 2>/dev/null || true
 
     elif [[ -n "${KEEP_AWAKE_WEBHOOK_URL:+x}" ]]
     # Use webhook to send stop message
@@ -171,7 +205,7 @@ case "${SENTRY_CASE}" in
         -d "{\"awake_command\":\"stop\"}" \
         -H "Content-Type: application/json" \
         "$KEEP_AWAKE_WEBHOOK_URL")
-      
+
       log "Awake Webhook: Command sent \"stop\""
 
       # Extract HTTP status code
@@ -184,6 +218,9 @@ case "${SENTRY_CASE}" in
         log "Awake Webhook: Failed to send command \"stop\". Check if your KEEP_AWAKE_WEBHOOK_URL is set correctly. If it is, check the service receiving webhooks for logs."
       fi
     fi
+
+    # Restore mobile-app Bluetooth now that keep-awake is done.
+    ble_restore_gatt_daemon
   ;;
   3)
     # Stop the single global nudge loop, plus clean up any legacy per-caller PID files
@@ -194,6 +231,8 @@ case "${SENTRY_CASE}" in
         rm -f "$pf"
       fi
     done
+    # Restore mobile-app Bluetooth now that keep-awake is done.
+    ble_restore_gatt_daemon
   ;;
   *)
     log "Invalid or no SENTRY_CASE defined."

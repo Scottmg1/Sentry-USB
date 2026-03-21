@@ -8,6 +8,9 @@ ConditionPathExists=/usr/bin/python3
 
 [Service]
 Type=simple
+# Clean up stale keep-awake lock if present — if systemd is starting us,
+# no keep-awake session should be holding the radio.
+ExecStartPre=-/bin/rm -f /tmp/ble_keep_awake_active
 ExecStartPre=/usr/sbin/rfkill unblock bluetooth
 ExecStartPre=-/usr/bin/hciconfig hci0 up
 ExecStartPre=/bin/bash -c 'for i in $(seq 1 30); do busctl status org.bluez >/dev/null 2>&1 && break; echo "Waiting for org.bluez... ($i/30)"; sleep 1; done'
