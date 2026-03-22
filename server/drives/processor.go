@@ -30,6 +30,8 @@ type Processor struct {
 	store      *Store
 	mu         sync.Mutex
 	running    bool
+	current    int
+	total      int
 	cancelFunc context.CancelFunc
 }
 
@@ -43,6 +45,14 @@ func (p *Processor) IsRunning() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.running
+}
+
+// Progress returns the current and total file counts for an active processing job.
+// Returns (0, 0) when no job is running.
+func (p *Processor) Progress() (current, total int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.current, p.total
 }
 
 // Cancel stops the current processing job if one is running.
@@ -65,6 +75,8 @@ func (p *Processor) ProcessDirectory(ctx context.Context, clipsDir string, throt
 		return nil, fmt.Errorf("processing already in progress")
 	}
 	p.running = true
+	p.current = 0
+	p.total = 0
 	ctx, cancel := context.WithCancel(ctx)
 	p.cancelFunc = cancel
 	p.mu.Unlock()
@@ -72,6 +84,8 @@ func (p *Processor) ProcessDirectory(ctx context.Context, clipsDir string, throt
 	defer func() {
 		p.mu.Lock()
 		p.running = false
+		p.current = 0
+		p.total = 0
 		p.cancelFunc = nil
 		p.mu.Unlock()
 		cancel()
@@ -104,6 +118,11 @@ func (p *Processor) ProcessDirectory(ctx context.Context, clipsDir string, throt
 	}
 
 	log.Printf("[drives] Processing %d new files from %s", len(newFiles), clipsDir)
+
+	// Set total early so the polling endpoint can report it immediately.
+	p.mu.Lock()
+	p.total = len(newFiles)
+	p.mu.Unlock()
 
 	saveInterval := 50
 	throttle := time.Duration(throttleMs) * time.Millisecond
@@ -161,8 +180,14 @@ func (p *Processor) ProcessDirectory(ctx context.Context, clipsDir string, throt
 		}
 
 		// Progress callback
-		if onProgress != nil && ((i+1)%10 == 0 || i == len(newFiles)-1) {
-			onProgress(i+1, len(newFiles))
+		if (i+1)%10 == 0 || i == len(newFiles)-1 {
+			p.mu.Lock()
+			p.current = i + 1
+			p.total = len(newFiles)
+			p.mu.Unlock()
+			if onProgress != nil {
+				onProgress(i+1, len(newFiles))
+			}
 		}
 
 		// Throttle to be kind to the Pi's CPU

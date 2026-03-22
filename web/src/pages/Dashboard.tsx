@@ -153,7 +153,16 @@ export default function Dashboard() {
         if (!mounted) return
         setDriveStats(stats)
         setProcessing(driveStatus.running)
-        if (!driveStatus.running) setProcessProgress(null)
+        if (!driveStatus.running) {
+          setProcessProgress(null)
+        } else if (driveStatus.process_total != null && driveStatus.process_total > 0) {
+          // Pick up processing progress from polling so the UI updates
+          // even if the WebSocket missed messages during the transition.
+          setProcessProgress({
+            current: driveStatus.process_current ?? 0,
+            total: driveStatus.process_total,
+          })
+        }
 
         if (driveStatus.phase === "archiving" && driveStatus.total != null) {
           setArchiveProgress({
@@ -488,9 +497,9 @@ export default function Dashboard() {
             </span>
           </div>
           {active && (
-            <span className="flex items-center gap-1.5 text-xs text-emerald-400">
-              <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
-              {archiveProgress ? "Archiving" : "Processing"}
+            <span className={`flex items-center gap-1.5 text-xs ${archiveProgress ? "text-emerald-400" : "text-blue-400"}`}>
+              <span className={`inline-block h-1.5 w-1.5 animate-pulse rounded-full ${archiveProgress ? "bg-emerald-400" : "bg-blue-400"}`} />
+              {archiveProgress ? "Archiving" : "Processing Drives"}
             </span>
           )}
         </div>
@@ -565,11 +574,11 @@ export default function Dashboard() {
               <>
                 <div className="mb-1.5 flex items-center justify-between text-xs text-slate-500">
                   <span>
-                    Processing: {processProgress.current.toLocaleString()} /{" "}
+                    Processing Drives: {processProgress.current.toLocaleString()} /{" "}
                     {processProgress.total.toLocaleString()} files
                     {(() => {
                       const eta = computeETA(processProgress.current, processProgress.total, processHistoryRef.current)
-                      return eta ? <span className="ml-2 text-emerald-400/70">{eta} left</span> : null
+                      return eta ? <span className="ml-2 text-blue-400/70">{eta} left</span> : null
                     })()}
                   </span>
                   <span>
@@ -581,14 +590,23 @@ export default function Dashboard() {
                 </div>
                 <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
                   <div
-                    className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all duration-500"
+                    className="h-full rounded-full bg-gradient-to-r from-blue-500 to-blue-400 transition-all duration-500"
                     style={{
                       width: `${(processProgress.current / processProgress.total) * 100}%`,
                     }}
                   />
                 </div>
               </>
-            ) : active ? (
+            ) : processing ? (
+              <>
+                <div className="mb-1.5 flex items-center justify-between text-xs text-slate-500">
+                  <span>Processing Drives...</span>
+                </div>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
+                  <div className="h-full w-2/5 animate-pulse rounded-full bg-gradient-to-r from-blue-500 to-blue-400" />
+                </div>
+              </>
+            ) : archiveProgress ? (
               <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
                 <div className="h-full w-2/5 animate-pulse rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400" />
               </div>

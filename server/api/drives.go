@@ -430,6 +430,13 @@ func (dh *DriveHandlers) processingStatus(w http.ResponseWriter, r *http.Request
 		"archiving":       IsArchiving(),
 	}
 
+	// Include processing progress so polling clients can pick it up
+	// even if they missed the WebSocket messages.
+	if cur, tot := dh.processor.Progress(); tot > 0 {
+		resp["process_current"] = cur
+		resp["process_total"] = tot
+	}
+
 	if archive := readArchiveStatus(); archive != nil {
 		for k, v := range archive {
 			resp[k] = v

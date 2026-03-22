@@ -588,7 +588,23 @@ export default function Files() {
                       }
                     }}
                   >
-                    <td className="px-3 py-3">
+                    <td className="w-8 px-2 py-3">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(f.path)}
+                        onChange={() => {
+                          setSelected((prev) => {
+                            const next = new Set(prev)
+                            if (next.has(f.path)) next.delete(f.path)
+                            else next.add(f.path)
+                            return next
+                          })
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="h-3.5 w-3.5 cursor-pointer rounded border-slate-600 accent-blue-500"
+                      />
+                    </td>
+                    <td className="px-1 py-3">
                       {f.is_dir ? (
                         <Folder className="h-4 w-4 text-blue-400" />
                       ) : (

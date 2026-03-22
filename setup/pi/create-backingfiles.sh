@@ -48,11 +48,24 @@ function is_percent() {
 }
 
 function available_space () {
-  freespace=$(df --output=size --block-size=1K "$BACKINGFILES_MOUNTPOINT/" | tail -n 1)
-  # reserve 10 GB for filesystem bookkeeping and snapshotting
-  # (in kilobytes so 10M KB)
-  padding=$(dehumanize "10M")
-  echo $((freespace-padding))
+  local total padding ten_percent min_padding max_padding
+  total=$(df --output=size --block-size=1K "$BACKINGFILES_MOUNTPOINT/" | tail -n 1)
+  # Reserve space for XFS metadata, snapshot COW overhead, and other
+  # filesystem bookkeeping.  Use 10% of total capped between 2 GB and 10 GB
+  # so we don't reject valid sizes on smaller SD cards (a fixed 10 GB
+  # reservation on a 32 GB card left almost no room for drive images).
+  # All values are in KB (dehumanize "XM" = X million KB ≈ X GB).
+  ten_percent=$((total / 10))
+  min_padding=$(dehumanize "2M")
+  max_padding=$(dehumanize "10M")
+  padding=$ten_percent
+  if [ "$padding" -lt "$min_padding" ]; then
+    padding=$min_padding
+  fi
+  if [ "$padding" -gt "$max_padding" ]; then
+    padding=$max_padding
+  fi
+  echo $((total - padding))
 }
 
 function calc_size () {
@@ -81,32 +94,6 @@ function calc_size () {
   fi
   requestedsize="$(( $(dehumanize $requestedsize) / 1024 ))"
   echo "$requestedsize"
-}
-
-function try_resize_image () {
-  local filename="$1"
-  local size_kb="$2"
-
-  if [ ! -e "$filename" ]
-  then
-    return 1
-  fi
-
-  if [ "$size_kb" -eq 0 ]
-  then
-    return 1
-  fi
-
-  local size_bytes=$((size_kb * 1024))
-  log_progress "Attempting in-place resize of $filename to ${size_kb}K..."
-  if /root/bin/resize-image.sh "$size_bytes" "$filename"
-  then
-    log_progress "Successfully resized $filename"
-    return 0
-  else
-    log_progress "In-place resize failed for $filename, will recreate"
-    return 1
-  fi
 }
 
 function create_drive () {
@@ -156,32 +143,6 @@ function create_drive () {
   fi
 }
 
-function add_drive () {
-  local name="$1"
-  local label="$2"
-  local size="$3"
-  local filename="$4"
-  local useexfat="$5"
-
-  if image_matches_params "$filename" "$size" &> /dev/null
-  then
-    return
-  fi
-
-  if [ "$size" -eq "0" ] || [ ! -e "$filename" ]
-  then
-    create_drive "$name" "$label" "$size" "$filename" "$useexfat"
-    return
-  fi
-
-  if try_resize_image "$filename" "$size"
-  then
-    return
-  fi
-
-  create_drive "$name" "$label" "$size" "$filename" "$useexfat"
-}
-
 function check_for_exfat_support () {
   # First check for built-in ExFAT support
   # If that fails, check for an ExFAT module
@@ -193,8 +154,8 @@ function check_for_exfat_support () {
   elif modprobe -n exfat &> /dev/null
   then
     return 0;
-  else 
-    return 1;  
+  else
+    return 1;
   fi
 }
 
@@ -257,7 +218,7 @@ function image_matches_params () {
   return 0
 }
 
-# Check if kernel supports ExFAT 
+# Check if kernel supports ExFAT
 if ! check_for_exfat_support
 then
   if [ "$USE_EXFAT" = true ]
@@ -300,6 +261,7 @@ LIGHTSHOW_DISK_SIZE="$(calc_size LIGHTSHOW_SIZE)"
 BOOMBOX_DISK_SIZE="$(calc_size BOOMBOX_SIZE)"
 WRAPS_DISK_SIZE="$(calc_size WRAPS_SIZE)"
 
+# ── Early exit: nothing to do if all images already match ──
 if image_matches_params "$CAM_DISK_FILE_NAME" "$CAM_DISK_SIZE" && \
    image_matches_params "$MUSIC_DISK_FILE_NAME" "$MUSIC_DISK_SIZE" && \
    image_matches_params "$LIGHTSHOW_DISK_FILE_NAME" "$LIGHTSHOW_DISK_SIZE" && \
@@ -310,6 +272,7 @@ then
   exit 0
 fi
 
+# ── Space check ──
 # reduce the value of the given variable by 5%, but only until the specified minimum is reached
 function reduce_size () {
   local curval="${!1}"
@@ -331,7 +294,7 @@ function reduce_size () {
 if [ "$((CAM_DISK_SIZE+MUSIC_DISK_SIZE+LIGHTSHOW_DISK_SIZE+BOOMBOX_DISK_SIZE+WRAPS_DISK_SIZE))" -gt "$(available_space)" ]
 then
   log_progress "Total requested size exceeds available space"
-  
+
   while [ "$((CAM_DISK_SIZE+MUSIC_DISK_SIZE+LIGHTSHOW_DISK_SIZE+BOOMBOX_DISK_SIZE+WRAPS_DISK_SIZE))" -gt "$(available_space)" ]
   do
     adjusted=false
@@ -348,15 +311,49 @@ then
   log_progress "Adjusted sizes to ${CAM_DISK_SIZE}K / ${MUSIC_DISK_SIZE}K / ${LIGHTSHOW_DISK_SIZE}K / ${BOOMBOX_DISK_SIZE}K / ${WRAPS_DISK_SIZE}K"
 fi
 
+# ── Apply changes ──
 # If we get here, one or more of the images need to be created, deleted, or
-# updated.  Try in-place resize first to preserve data; only fall back to
-# destructive recreation when resize is not possible (new image, exFAT, etc.).
+# updated.  The approach is simple: if a drive image doesn't match the
+# requested size, delete it and create a fresh one.  The user already
+# confirmed data loss through the wizard's destructive-change warning, so
+# there is no benefit in attempting a fragile in-place resize via fatresize
+# (which can't handle exFAT at all and is unreliable for large FAT32 changes).
 
-# shut down everything that might be using any of the drive images
+# Shut down everything that might be using any of the drive images.
 release_all_images
 
-CAM_NEEDS_RECREATE=false
-NEEDS_RECREATE=false
+# Determine which drives need recreation so we know what to clean up.
+CAM_CHANGED=false
+for pair in \
+  "cam:$CAM_DISK_SIZE:$CAM_DISK_FILE_NAME" \
+  "music:$MUSIC_DISK_SIZE:$MUSIC_DISK_FILE_NAME" \
+  "lightshow:$LIGHTSHOW_DISK_SIZE:$LIGHTSHOW_DISK_FILE_NAME" \
+  "boombox:$BOOMBOX_DISK_SIZE:$BOOMBOX_DISK_FILE_NAME" \
+  "wraps:$WRAPS_DISK_SIZE:$WRAPS_DISK_FILE_NAME"
+do
+  IFS=: read -r _name _size _file <<< "$pair"
+  if ! image_matches_params "$_file" "$_size" &> /dev/null; then
+    if [ "$_name" = "cam" ]; then CAM_CHANGED=true; fi
+  fi
+done
+
+# Interactive confirmation when running from a terminal.
+if [ -t 0 ]
+then
+  read -r -p 'Drive images will be recreated. Proceed? (yes/cancel) ' answer
+  case ${answer:0:1} in
+    y|Y )
+    ;;
+    * )
+      log_progress "aborting"
+      exit 1
+    ;;
+  esac
+fi
+
+# Recreate each drive that doesn't match.  Drives that already match are
+# left untouched — image_matches_params returned true for them during the
+# early-exit check and again here, so create_drive is never called.
 for pair in \
   "cam:CAM:$CAM_DISK_SIZE:$CAM_DISK_FILE_NAME" \
   "music:MUSIC:$MUSIC_DISK_SIZE:$MUSIC_DISK_FILE_NAME" \
@@ -365,30 +362,15 @@ for pair in \
   "wraps:WRAPS:$WRAPS_DISK_SIZE:$WRAPS_DISK_FILE_NAME"
 do
   IFS=: read -r _name _label _size _file <<< "$pair"
-  if image_matches_params "$_file" "$_size" &> /dev/null; then continue; fi
-  if [ "$_size" -gt 0 ] && [ -e "$_file" ] && try_resize_image "$_file" "$_size"; then continue; fi
-  NEEDS_RECREATE=true
-  if [ "$_name" = "cam" ]; then CAM_NEEDS_RECREATE=true; fi
+  if image_matches_params "$_file" "$_size" &> /dev/null; then
+    continue
+  fi
+  log_progress "Recreating $_name drive (${_size}K)..."
+  create_drive "$_name" "$_label" "$_size" "$_file" "$USE_EXFAT"
 done
 
-if [ "$NEEDS_RECREATE" = true ]
-then
-  if [ -t 0 ]
-  then
-    read -r -p 'Some drives must be recreated (resize was not possible). Proceed? (yes/cancel) ' answer
-    case ${answer:0:1} in
-      y|Y )
-      ;;
-      * )
-        log_progress "aborting"
-        exit 1
-      ;;
-    esac
-  fi
-fi
-
-add_drive "cam" "CAM" "$CAM_DISK_SIZE" "$CAM_DISK_FILE_NAME" "$USE_EXFAT"
-if [ "$CAM_DISK_SIZE" -eq 0 ] || [ "$CAM_NEEDS_RECREATE" = true ]
+# Clean up cam-related data when the cam drive was changed or removed.
+if [ "$CAM_DISK_SIZE" -eq 0 ] || [ "$CAM_CHANGED" = true ]
 then
   rm -rf "$BACKINGFILES_MOUNTPOINT/snapshots" &> /dev/null
   # Clean stale TeslaCam symlinks that pointed into the old snapshots
@@ -398,13 +380,5 @@ then
     rm -f /mutable/sentry_files_archived
   fi
 fi
-
-add_drive "music" "MUSIC" "$MUSIC_DISK_SIZE" "$MUSIC_DISK_FILE_NAME" "$USE_EXFAT"
-
-add_drive "lightshow" "LIGHTSHOW" "$LIGHTSHOW_DISK_SIZE" "$LIGHTSHOW_DISK_FILE_NAME" "$USE_EXFAT"
-
-add_drive "boombox" "BOOMBOX" "$BOOMBOX_DISK_SIZE" "$BOOMBOX_DISK_FILE_NAME" "$USE_EXFAT"
-
-add_drive "wraps" "WRAPS" "$WRAPS_DISK_SIZE" "$WRAPS_DISK_FILE_NAME" "$USE_EXFAT"
 
 log_progress "done"

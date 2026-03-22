@@ -54,6 +54,8 @@ export interface DriveStatus {
   current?: number
   total?: number
   archiving?: boolean
+  process_current?: number
+  process_total?: number
 }
 
 export interface EventMeta {
