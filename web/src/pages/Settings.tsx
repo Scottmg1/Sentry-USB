@@ -17,11 +17,15 @@ import {
   AlertTriangle,
   XCircle,
   HeartPulse,
+  Wifi,
+  WifiOff,
+  Clock,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { SetupWizard } from "@/components/setup/SetupWizard"
 import { wsClient } from "@/lib/ws"
 import { useKeepAwake } from "@/hooks/useKeepAwake"
+import { useAwayMode } from "@/hooks/useAwayMode"
 
 type ActionState = "idle" | "loading" | "success" | "error"
 
@@ -740,6 +744,216 @@ const KEEP_AWAKE_MODES = [
   { value: "auto", label: "Automatic", desc: "Stays awake while you're browsing" },
 ]
 
+const AWAY_MODE_PRESETS = [
+  { value: 60, label: "1h" },
+  { value: 120, label: "2h" },
+  { value: 240, label: "4h" },
+  { value: 480, label: "8h" },
+]
+
+function AwayModeControl() {
+  const { status, enable, disable } = useAwayMode()
+  const [selectedDuration, setSelectedDuration] = useState(240)
+  const [customHours, setCustomHours] = useState("")
+  const [customMinutes, setCustomMinutes] = useState("")
+  const [useCustom, setUseCustom] = useState(false)
+  const [enabling, setEnabling] = useState(false)
+  const [confirmOpen, setConfirmOpen] = useState(false)
+
+  const isActive = status.state === "active"
+
+  function getCustomMinutes() {
+    const h = parseInt(customHours) || 0
+    const m = parseInt(customMinutes) || 0
+    return h * 60 + m
+  }
+
+  function handleEnableClick() {
+    const durationMin = useCustom ? Math.min(Math.max(getCustomMinutes(), 1), 1440) : selectedDuration
+    if (isNaN(durationMin) || durationMin <= 0) return
+    setConfirmOpen(true)
+  }
+
+  async function handleConfirmEnable() {
+    const durationMin = useCustom ? Math.min(Math.max(getCustomMinutes(), 1), 1440) : selectedDuration
+    setConfirmOpen(false)
+    setEnabling(true)
+    await enable(durationMin)
+    setEnabling(false)
+  }
+
+  function formatRemaining(sec: number) {
+    const h = Math.floor(sec / 3600)
+    const m = Math.floor((sec % 3600) / 60)
+    if (h > 0) return `${h}h ${m}m remaining`
+    return `${m}m remaining`
+  }
+
+  function getProgress() {
+    if (!status.enabled_at || !status.expires_at || !status.remaining_sec) return 0
+    const total = (new Date(status.expires_at).getTime() - new Date(status.enabled_at).getTime()) / 1000
+    if (total <= 0) return 100
+    return Math.round(((total - status.remaining_sec) / total) * 100)
+  }
+
+  return (
+    <div className="glass-card p-4">
+      <div className="flex items-center gap-2 mb-3">
+        {isActive ? (
+          <Wifi className="h-4 w-4 text-blue-400" />
+        ) : (
+          <WifiOff className="h-4 w-4 text-slate-400" />
+        )}
+        <span className="text-sm font-medium text-slate-200">Away Mode</span>
+      </div>
+      <p className="mb-3 text-xs text-slate-500">
+        Enable the WiFi Access Point for a set duration. While active, the AP stays up without interruption for devices to connect.
+      </p>
+
+      {/* Info box — what Away Mode does */}
+      <div className="mb-3 rounded-lg border border-white/5 bg-white/[0.02] p-3 text-[11px] leading-relaxed text-slate-500 space-y-1">
+        <p><span className="text-slate-400 font-medium">What it does:</span> Turns on the Pi's WiFi hotspot so you can connect to the web UI when away from your home network.</p>
+        <p><span className="text-slate-400 font-medium">WiFi scanning paused:</span> While active, the Pi stops scanning for your home WiFi so the AP stays up without interruption.</p>
+        <p><span className="text-slate-400 font-medium">Auto-disable:</span> The AP automatically turns off when the timer expires, resuming normal WiFi operation.</p>
+        <p><span className="text-slate-400 font-medium">Max duration:</span> 24 hours. Archiving is unavailable while Away Mode is active.</p>
+      </div>
+
+      {/* Non-RTC warning */}
+      {status.has_rtc === false && (
+        <div className="mb-3 flex gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-[11px] text-amber-400/80">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+          <p>
+            <span className="font-medium">No RTC detected.</span> Your Pi does not have a hardware clock, so the timer uses a countdown that is saved every 30 seconds. If the Pi reboots while in Away Mode, up to 30 seconds of timer accuracy may be lost.
+          </p>
+        </div>
+      )}
+
+      {isActive ? (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 text-sm text-blue-400">
+            <Clock className="h-3.5 w-3.5" />
+            <span>{formatRemaining(status.remaining_sec ?? 0)}</span>
+          </div>
+          <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
+            <div
+              className="h-full rounded-full bg-blue-500/60 transition-all duration-1000"
+              style={{ width: `${getProgress()}%` }}
+            />
+          </div>
+          <p className="text-[11px] text-slate-600">
+            Disabling will immediately turn off the AP and disconnect any connected devices.
+          </p>
+          <button
+            onClick={disable}
+            className="w-full rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/20"
+          >
+            Disable Away Mode
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="grid grid-cols-5 gap-2">
+            {AWAY_MODE_PRESETS.map((p) => (
+              <button
+                key={p.value}
+                onClick={() => { setSelectedDuration(p.value); setUseCustom(false) }}
+                className={cn(
+                  "rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors",
+                  !useCustom && selectedDuration === p.value
+                    ? "border-blue-500/40 bg-blue-500/10 text-blue-400"
+                    : "border-white/5 bg-white/[0.02] text-slate-400 hover:bg-white/[0.05]"
+                )}
+              >
+                {p.label}
+              </button>
+            ))}
+            <button
+              onClick={() => setUseCustom(true)}
+              className={cn(
+                "rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors",
+                useCustom
+                  ? "border-blue-500/40 bg-blue-500/10 text-blue-400"
+                  : "border-white/5 bg-white/[0.02] text-slate-400 hover:bg-white/[0.05]"
+              )}
+            >
+              Custom
+            </button>
+          </div>
+          {useCustom && (
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min="0"
+                max="24"
+                step="1"
+                placeholder="0"
+                value={customHours}
+                onChange={(e) => setCustomHours(e.target.value)}
+                className="w-16 rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-xs text-slate-200 placeholder:text-slate-600 focus:border-blue-500/40 focus:outline-none"
+              />
+              <span className="text-xs text-slate-500">hrs</span>
+              <input
+                type="number"
+                min="0"
+                max="59"
+                step="1"
+                placeholder="0"
+                value={customMinutes}
+                onChange={(e) => setCustomMinutes(e.target.value)}
+                className="w-16 rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-xs text-slate-200 placeholder:text-slate-600 focus:border-blue-500/40 focus:outline-none"
+              />
+              <span className="text-xs text-slate-500">min</span>
+            </div>
+          )}
+          <button
+            onClick={handleEnableClick}
+            disabled={enabling || (useCustom && getCustomMinutes() <= 0)}
+            className="w-full rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-xs font-medium text-blue-400 transition-colors hover:bg-blue-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {enabling ? "Enabling..." : "Enable Away Mode"}
+          </button>
+
+          {/* Confirmation dialog */}
+          {confirmOpen && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 space-y-2">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-400" />
+                <div className="text-xs text-amber-300/90 space-y-1">
+                  <p className="font-medium">You may lose connection to this page</p>
+                  <p className="text-amber-400/70">
+                    Enabling Away Mode will start the WiFi hotspot and disconnect from your home network.
+                    {status.ap_ssid && (
+                      <> To continue using the web UI, connect your device to <span className="font-medium text-amber-300">"{status.ap_ssid}"</span></>
+                    )}
+                    {status.ap_ip && (
+                      <> and navigate to <span className="font-medium text-amber-300">http://{status.ap_ip}</span></>
+                    )}
+                    .
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleConfirmEnable}
+                  className="flex-1 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-400 transition-colors hover:bg-amber-500/20"
+                >
+                  Enable Away Mode
+                </button>
+                <button
+                  onClick={() => setConfirmOpen(false)}
+                  className="flex-1 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-1.5 text-xs font-medium text-slate-400 transition-colors hover:bg-white/[0.05]"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function KeepAwakePreference() {
   const { mode, updateMode } = useKeepAwake()
 
@@ -1163,6 +1377,7 @@ export default function Settings() {
         <h2 className="mb-3 text-sm font-medium uppercase tracking-wider text-slate-500">
           Preferences
         </h2>
+        <AwayModeControl />
         <KeepAwakePreference />
       </div>
 

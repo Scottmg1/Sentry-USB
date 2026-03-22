@@ -164,6 +164,38 @@ if [ -f "$TMPDIR/setup/pi/avahi-sentryusb.service" ]; then
   fi
 fi
 
+# ── Migrate AP to Away Mode (AP off by default) ──
+# Existing installs have SENTRYUSB_AP with autoconnect=true and a dispatcher
+# that always recreates ap0.  Away Mode now controls when the AP is on.
+if nmcli -t con show SENTRYUSB_AP &>/dev/null; then
+  nmcli con modify SENTRYUSB_AP connection.autoconnect no 2>/dev/null || true
+  # Tear down the currently running AP
+  nmcli con down SENTRYUSB_AP 2>/dev/null || true
+  iw dev ap0 del 2>/dev/null || true
+fi
+# Update the dispatcher script to only recreate ap0 when Away Mode is active
+WLAN=$(nmcli -t -f TYPE,DEVICE c show --active 2>/dev/null | grep 802-11-wireless | grep -v ':ap0$' | cut -d: -f2 | head -1)
+WLAN=${WLAN:-wlan0}
+if [ -d /etc/NetworkManager/dispatcher.d ]; then
+  cat > /etc/NetworkManager/dispatcher.d/10-sentryusb-ap << APEOF
+#!/bin/bash
+# Recreate ap0 only if Away Mode is active (flag file exists).
+IFACE="\$1"
+ACTION="\$2"
+if [ "\$IFACE" = "$WLAN" ] && [ "\$ACTION" = "up" ]; then
+  if [ -f /mutable/sentryusb_away_mode.json ]; then
+    if ! iw dev ap0 info &> /dev/null; then
+      iw dev $WLAN interface add ap0 type __ap || true
+    fi
+    iw $WLAN set power_save off 2>/dev/null || true
+    iw ap0 set power_save off 2>/dev/null || true
+    nmcli con up SENTRYUSB_AP 2>/dev/null || true
+  fi
+fi
+APEOF
+  chmod 755 /etc/NetworkManager/dispatcher.d/10-sentryusb-ap
+fi
+
 # ── Restart BLE daemon ──
 systemctl enable sentryusb-ble 2>/dev/null || true
 systemctl restart sentryusb-ble 2>/dev/null || true

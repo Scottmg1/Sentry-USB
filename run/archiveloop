@@ -269,6 +269,16 @@ function connect_usb_drives_to_host() {
   sleep 5
 }
 
+function away_mode_active () {
+  local flag="/mutable/sentryusb_away_mode.json"
+  [ -f "$flag" ] || return 1
+  # The Go server updates remaining_sec in the flag file every 30s,
+  # so this works reliably regardless of whether the Pi has an RTC.
+  local remaining
+  remaining=$(grep -o '"remaining_sec":[0-9]*' "$flag" | cut -d: -f2)
+  [ -n "$remaining" ] && [ "$remaining" -gt 0 ] 2>/dev/null
+}
+
 function wifi_cycle () {
   # This fix is only needed when ap0 exists.  ap0 shares the same physical
   # radio as wlan0 and locks it to the AP channel, preventing wlan0 from
@@ -325,18 +335,25 @@ function wait_for_archive_to_be_reachable () {
       rm /tmp/archive_is_reachable
       break
     fi
-    # WiFi recovery while waiting for home network:
-    #   - Every 30s:  trigger a scan so NM sees nearby networks
-    #   - Every 5min: tear down ap0 to free the radio, reconnect wlan0,
-    #                 then recreate ap0. This is needed because ap0 locks
-    #                 the radio to its channel, preventing station scanning.
+    # WiFi recovery while waiting for home network.
+    # When Away Mode is active the AP has exclusive radio access — skip
+    # all scanning and wifi_cycle so the AP stays up uninterrupted.
     scan_counter=$((scan_counter + 1))
-    if (( scan_counter % 30 == 0 )); then
-      nmcli device wifi rescan 2>/dev/null || true
-    fi
-    if (( scan_counter % 300 == 0 )); then
-      log "Archive still unreachable after ${scan_counter}s, cycling WiFi..."
-      wifi_cycle
+    if ! away_mode_active; then
+      # Normal mode: AP is off, scan freely
+      if (( scan_counter % 30 == 0 )); then
+        nmcli device wifi rescan 2>/dev/null || true
+      fi
+      # wifi_cycle only needed if ap0 somehow still exists
+      if (( scan_counter % 300 == 0 )) && iw dev ap0 info &>/dev/null; then
+        log "Archive still unreachable after ${scan_counter}s, cycling WiFi..."
+        wifi_cycle
+      fi
+    else
+      # Away Mode: skip all scanning, AP has exclusive radio access
+      if (( scan_counter % 300 == 0 )); then
+        log "Away Mode active, skipping WiFi scan/cycle"
+      fi
     fi
     sleep 1
   done

@@ -70,6 +70,8 @@ function nm_add_ap () {
   nmcli con modify SENTRYUSB_AP ipv4.addr "$IP/24" || return 1
   nmcli con modify SENTRYUSB_AP ipv4.method shared || return 1
   nmcli con modify SENTRYUSB_AP ipv6.method disabled || return 1
+  # Don't auto-start the AP — Away Mode controls when it comes up
+  nmcli con modify SENTRYUSB_AP connection.autoconnect no || return 1
   # Remove stale if-up.d script from previous installs — it doesn't fire on
   # NetworkManager/netplan systems (e.g. Pi 5 with Debian Trixie).
   rm -f /etc/network/if-up.d/sentryusb-ap
@@ -77,10 +79,14 @@ function nm_add_ap () {
   # Use a NetworkManager dispatcher script instead: NM calls scripts in
   # /etc/NetworkManager/dispatcher.d/ with $1=interface $2=action whenever
   # an interface changes state.
+  # Use a NetworkManager dispatcher script that only recreates ap0 when
+  # Away Mode is active (flag file exists).  During normal operation the AP
+  # stays off so wlan0 can freely scan all channels.
   mkdir -p /etc/NetworkManager/dispatcher.d
   cat > /etc/NetworkManager/dispatcher.d/10-sentryusb-ap << EOF
 #!/bin/bash
-# Recreate ap0 virtual interface when the wifi client comes up.
+# Recreate ap0 virtual interface when the wifi client comes up,
+# but ONLY if Away Mode is active (flag file exists).
 # Created by SentryUSB configure-ap.sh
 
 IFACE="\$1"
@@ -88,12 +94,14 @@ ACTION="\$2"
 
 if [ "\$IFACE" = "$WLAN" ] && [ "\$ACTION" = "up" ]
 then
-  if ! iw dev ap0 info &> /dev/null; then
-    iw dev $WLAN interface add ap0 type __ap || true
+  if [ -f /mutable/sentryusb_away_mode.json ]; then
+    if ! iw dev ap0 info &> /dev/null; then
+      iw dev $WLAN interface add ap0 type __ap || true
+    fi
+    iw $WLAN set power_save off 2>/dev/null || true
+    iw ap0 set power_save off 2>/dev/null || true
+    nmcli con up SENTRYUSB_AP 2>/dev/null || true
   fi
-  iw $WLAN set power_save off 2>/dev/null || true
-  iw ap0 set power_save off 2>/dev/null || true
-  nmcli con up SENTRYUSB_AP 2>/dev/null || true
 fi
 EOF
   chmod 755 /etc/NetworkManager/dispatcher.d/10-sentryusb-ap || return 1
@@ -129,7 +137,7 @@ function nm_write_ap_file () {
 id=SENTRYUSB_AP
 type=wifi
 interface-name=ap0
-autoconnect=true
+autoconnect=false
 
 [wifi]
 mode=ap
@@ -151,12 +159,14 @@ EOF
   # Tell NM to pick up the new file without a full restart
   nmcli con reload 2>/dev/null || true
 
-  # Install the dispatcher script for ap0
+  # Install the dispatcher script for ap0 — only recreates ap0 when Away
+  # Mode is active (flag file exists).
   rm -f /etc/network/if-up.d/sentryusb-ap
   mkdir -p /etc/NetworkManager/dispatcher.d
   cat > /etc/NetworkManager/dispatcher.d/10-sentryusb-ap << EOF2
 #!/bin/bash
-# Recreate ap0 virtual interface when the wifi client comes up.
+# Recreate ap0 virtual interface when the wifi client comes up,
+# but ONLY if Away Mode is active (flag file exists).
 # Created by SentryUSB configure-ap.sh
 
 IFACE="\$1"
@@ -164,12 +174,14 @@ ACTION="\$2"
 
 if [ "\$IFACE" = "$WLAN" ] && [ "\$ACTION" = "up" ]
 then
-  if ! iw dev ap0 info &> /dev/null; then
-    iw dev $WLAN interface add ap0 type __ap || true
+  if [ -f /mutable/sentryusb_away_mode.json ]; then
+    if ! iw dev ap0 info &> /dev/null; then
+      iw dev $WLAN interface add ap0 type __ap || true
+    fi
+    iw $WLAN set power_save off 2>/dev/null || true
+    iw ap0 set power_save off 2>/dev/null || true
+    nmcli con up SENTRYUSB_AP 2>/dev/null || true
   fi
-  iw $WLAN set power_save off 2>/dev/null || true
-  iw ap0 set power_save off 2>/dev/null || true
-  nmcli con up SENTRYUSB_AP 2>/dev/null || true
 fi
 EOF2
   chmod 755 /etc/NetworkManager/dispatcher.d/10-sentryusb-ap || return 1

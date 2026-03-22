@@ -40,6 +40,9 @@ const TIMESTAMP_RE =
 const TAG_RE = /^\[([^\]]+)\]\s*/
 
 function classifyLevel(message: string, tag: string): LogLevel {
+  // Away-mode lines are always amber/orange regardless of keywords
+  if (tag === "away-mode") return "warning"
+
   const lower = message.toLowerCase()
 
   // Errors — check first so "failed" always wins over softer matches

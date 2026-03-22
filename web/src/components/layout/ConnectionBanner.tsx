@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { Wifi, WifiOff, Loader2, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useConnectionStatus, type ConnectionState } from "@/hooks/useConnectionStatus"
+import { getStoredAwayMode } from "@/hooks/useAwayMode"
 
 export function ConnectionBanner() {
   const { state, retry } = useConnectionStatus()
@@ -31,6 +32,42 @@ export function ConnectionBanner() {
   }, [state])
 
   if (!visible || dismissed) return null
+
+  // Check if Away Mode was recently enabled (stored in localStorage before connection dropped)
+  const awayInfo = (displayState === "disconnected" || displayState === "reconnecting")
+    ? getStoredAwayMode()
+    : null
+
+  if (awayInfo) {
+    const enabledDate = new Date(awayInfo.enabled_at)
+    const timeStr = enabledDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+
+    return (
+      <div className="mb-4 flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">
+        <Wifi className="h-4 w-4 shrink-0 mt-0.5" />
+        <div className="flex-1 space-y-1">
+          <p className="font-medium">Away Mode is active</p>
+          <p className="text-xs text-amber-400/70">
+            Away Mode was enabled at {timeStr}. The Pi has disconnected from your home WiFi and will not reconnect until the timer expires.
+            {awayInfo.ap_ssid && (
+              <> Connect to <span className="font-medium text-amber-300">"{awayInfo.ap_ssid}"</span></>
+            )}
+            {awayInfo.ap_ip && (
+              <> and open <span className="font-medium text-amber-300">http://{awayInfo.ap_ip}</span></>
+            )}
+            {(awayInfo.ap_ssid || awayInfo.ap_ip) && <> to access the web UI.</>}
+          </p>
+        </div>
+
+        <button
+          onClick={() => setDismissed(true)}
+          className="shrink-0 rounded p-0.5 opacity-50 transition-opacity hover:opacity-100"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    )
+  }
 
   return (
     <div

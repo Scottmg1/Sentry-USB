@@ -14,8 +14,10 @@ import {
   Timer,
   LogOut,
   Paintbrush,
+  Wifi,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useAwayMode } from "@/hooks/useAwayMode"
 import { useKeepAwake } from "@/hooks/useKeepAwake"
 import { useUpdateAvailable } from "@/hooks/useUpdateAvailable"
 import { useConnectionStatus } from "@/hooks/useConnectionStatus"
@@ -39,6 +41,7 @@ const navItems = [
 ]
 
 export function MobileNav({ open, onClose }: MobileNavProps) {
+  const { status: awayModeStatus } = useAwayMode()
   const { status } = useKeepAwake()
   const isAwake = status.state === "active" || status.state === "pending"
   const { available: updateAvailable } = useUpdateAvailable()
@@ -124,6 +127,14 @@ export function MobileNav({ open, onClose }: MobileNavProps) {
             {connState === "connected" ? "Connected" : connState === "reconnecting" ? "Reconnecting" : "Offline"}
           </span>
         </div>
+
+        {/* Away Mode indicator */}
+        {awayModeStatus.state === "active" && (
+          <div className="mx-2 mb-1 flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-blue-400">
+            <Wifi className="h-3.5 w-3.5 animate-pulse" />
+            <span className="opacity-70">Away Mode</span>
+          </div>
+        )}
 
         {/* Keep-awake indicator */}
         {isAwake && (

@@ -50,6 +50,11 @@ func main() {
 	})
 	api.RegisterKeepAwakeRoutes(mux, kam)
 
+	// Away Mode manager (user-controlled AP from web UI)
+	awm := api.NewAwayModeManager()
+	awm.RestoreFromFile()
+	api.RegisterAwayModeRoutes(mux, awm)
+
 	// WebSocket endpoint
 	mux.HandleFunc("/api/ws", func(w http.ResponseWriter, r *http.Request) {
 		ws.ServeWs(hub, w, r)

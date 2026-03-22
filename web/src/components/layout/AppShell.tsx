@@ -6,6 +6,7 @@ import { MobileNav } from "./MobileNav"
 import { ConnectionBanner } from "./ConnectionBanner"
 import { cn } from "@/lib/utils"
 import { KeepAwakeProvider } from "@/hooks/useKeepAwake"
+import { AwayModeProvider } from "@/hooks/useAwayMode"
 import { ConnectionProvider } from "@/hooks/useConnectionStatus"
 
 export function AppShell() {
@@ -14,7 +15,8 @@ export function AppShell() {
 
   return (
     <ConnectionProvider>
-      <KeepAwakeProvider>
+      <AwayModeProvider>
+        <KeepAwakeProvider>
         <div className="flex h-full">
           {/* Desktop sidebar */}
           <div className="hidden md:block">
@@ -52,7 +54,8 @@ export function AppShell() {
             </div>
           </main>
         </div>
-      </KeepAwakeProvider>
+        </KeepAwakeProvider>
+      </AwayModeProvider>
     </ConnectionProvider>
   )
 }
