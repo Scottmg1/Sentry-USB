@@ -1,5 +1,6 @@
 import { memo } from "react"
 import type { TelemetryFrame } from "@/lib/api"
+import { useDraggable } from "@/hooks/useDraggable"
 
 const GEAR_LABELS: Record<number, { text: string; color: string }> = {
   0: { text: "P", color: "bg-blue-500/80 text-blue-100" },
@@ -14,6 +15,8 @@ interface TelemetryOverlayProps {
 }
 
 export default memo(function TelemetryOverlay({ frame, metric = false }: TelemetryOverlayProps) {
+  const { ref, dragProps } = useDraggable({ initialAnchor: "bottom-center" })
+
   if (!frame) return null
 
   const speedVal = frame.speed_mps * (metric ? 3.6 : 2.237)
@@ -24,7 +27,11 @@ export default memo(function TelemetryOverlay({ frame, metric = false }: Telemet
   const accelPct = Math.round(Math.min(Math.max(frame.accel_pos * 100, 0), 100))
 
   return (
-    <div className="pointer-events-none absolute bottom-8 left-1/2 z-10 flex -translate-x-1/2 items-center gap-3 rounded-xl border border-white/10 bg-black/60 px-4 py-2 backdrop-blur-md">
+    <div
+      ref={ref}
+      {...dragProps}
+      className="z-10 flex items-center gap-3 rounded-xl border border-white/10 bg-black/60 px-4 py-2 backdrop-blur-md select-none"
+    >
       {/* Speed */}
       <div className="text-center">
         <span className="text-2xl font-bold tabular-nums text-white">{speed}</span>

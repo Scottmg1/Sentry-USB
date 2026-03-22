@@ -3,6 +3,7 @@ import L from "leaflet"
 import "leaflet/dist/leaflet.css"
 import { MapPin, Minimize2, Maximize2 } from "lucide-react"
 import type { ClipTelemetry, TelemetryFrame } from "@/lib/api"
+import { useDraggable } from "@/hooks/useDraggable"
 
 interface MiniMapProps {
   telemetry: ClipTelemetry
@@ -10,6 +11,7 @@ interface MiniMapProps {
 }
 
 export default memo(function MiniMap({ telemetry, currentFrame }: MiniMapProps) {
+  const { ref: dragRef, dragProps } = useDraggable({ initialAnchor: "top-right" })
   const mapRef = useRef<HTMLDivElement>(null)
   const mapInstance = useRef<L.Map | null>(null)
   const markerRef = useRef<L.CircleMarker | null>(null)
@@ -100,9 +102,13 @@ export default memo(function MiniMap({ telemetry, currentFrame }: MiniMapProps) 
   if (!telemetry.has_gps) return null
 
   return (
-    <div className="absolute right-2 top-2 z-20 overflow-hidden rounded-lg border border-white/10 bg-black/40 shadow-xl backdrop-blur-sm">
-      {/* Header */}
-      <div className="flex items-center justify-between bg-black/40 px-2 py-1">
+    <div
+      ref={dragRef}
+      {...dragProps}
+      className="z-20 overflow-hidden rounded-lg border border-white/10 bg-black/40 shadow-xl backdrop-blur-sm select-none"
+    >
+      {/* Header — drag handle */}
+      <div className="flex items-center justify-between bg-black/40 px-2 py-1 cursor-grab">
         <div className="flex items-center gap-1">
           <MapPin className="h-3 w-3 text-blue-400" />
           <span className="text-[10px] font-medium text-slate-300">Map</span>
