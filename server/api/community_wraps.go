@@ -82,7 +82,7 @@ func (h *handlers) communityWrapsThumbnail(w http.ResponseWriter, r *http.Reques
 func (h *handlers) communityWrapsGodotAsset(w http.ResponseWriter, r *http.Request) {
 	file := r.PathValue("file")
 	// Whitelist: only allow Godot build files
-	matched, _ := regexp.MatchString(`^index\.(js|wasm|pck)$`, file)
+	matched, _ := regexp.MatchString(`^index\.(js|wasm|pck|html)$`, file)
 	if !matched {
 		writeError(w, http.StatusBadRequest, "Invalid file")
 		return
@@ -106,12 +106,18 @@ func (h *handlers) communityWrapsGodotAsset(w http.ResponseWriter, r *http.Reque
 		".js":   "application/javascript",
 		".wasm": "application/wasm",
 		".pck":  "application/octet-stream",
+		".html": "text/html",
 	}
 	ext := filepath.Ext(file)
 	if ct, ok := mimeTypes[ext]; ok {
 		w.Header().Set("Content-Type", ct)
 	}
-	w.Header().Set("Cache-Control", "public, max-age=604800, immutable")
+	// HTML gets short cache (may be updated); binary assets get long immutable cache
+	if ext == ".html" {
+		w.Header().Set("Cache-Control", "public, max-age=3600")
+	} else {
+		w.Header().Set("Cache-Control", "public, max-age=604800, immutable")
+	}
 	io.Copy(w, resp.Body)
 }
 

@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react"
 import { Search, Upload, Download, Paintbrush, ChevronLeft, ChevronRight, Loader2, CheckCircle, AlertCircle, Trash2, Pencil, Shield, X } from "lucide-react"
+import GodotRenderer, { type GodotRendererHandle } from "../components/wraps/GodotRenderer"
 
 const API_BASE = "/api"
 
@@ -19,6 +20,20 @@ const TESLA_MODELS = [
 
 const FILTER_MODELS = ["All", ...TESLA_MODELS]
 
+// Maps display names to Godot scene IDs from Tesla Wrap Studio
+// Models without a Godot 3D counterpart (Model S, Model X) are omitted — no 3D preview for those
+const MODEL_TO_GODOT_ID: Record<string, string> = {
+  "Cybertruck": "cybertruck",
+  "Model 3": "model3",
+  "Model 3 (2024+) Standard & Premium": "model3-2024-base",
+  "Model 3 (2024+) Performance": "model3-2024-performance",
+  "Model Y": "modely",
+  "Model Y (2025+) Standard": "modely-2025-base",
+  "Model Y (2025+) Premium": "modely-2025-premium",
+  "Model Y (2025+) Performance": "modely-2025-performance",
+  "Model Y L": "modely-l",
+}
+
 type SortOption = "newest" | "oldest" | "popular" | "name"
 
 interface CommunityWrap {
@@ -28,6 +43,7 @@ interface CommunityWrap {
   download_count: number
   created_at: string
   fingerprint?: string
+  has_preview?: boolean
 }
 
 interface LibraryResponse {
@@ -409,7 +425,7 @@ function BrowseTab({ adminPasscode, onAdminExit }: { adminPasscode: string | nul
                 >
                   <div className="aspect-square overflow-hidden bg-slate-800/50">
                     <img
-                      src={`${API_BASE}/wraps/thumbnail/${wrap.code}`}
+                      src={`${API_BASE}/wraps/${wrap.has_preview ? 'preview' : 'thumbnail'}/${wrap.code}`}
                       alt={wrap.name}
                       className="h-full w-full object-cover transition-transform group-hover:scale-105"
                       loading="lazy"
@@ -489,7 +505,7 @@ function BrowseTab({ adminPasscode, onAdminExit }: { adminPasscode: string | nul
           >
             <div className="aspect-square overflow-hidden bg-slate-800">
               <img
-                src={`${API_BASE}/wraps/thumbnail/${selectedWrap.code}`}
+                src={`${API_BASE}/wraps/${selectedWrap.has_preview ? 'preview' : 'thumbnail'}/${selectedWrap.code}`}
                 alt={selectedWrap.name}
                 className="h-full w-full object-cover"
               />
@@ -696,6 +712,58 @@ function UploadTab() {
   const [uploading, setUploading] = useState(false)
   const [result, setResult] = useState<{ success: boolean; message: string } | null>(null)
 
+  // 3D preview state
+  const [preview3d, setPreview3d] = useState<string | null>(null)
+  const [rendering3d, setRendering3d] = useState(false)
+  const [godotReady, setGodotReady] = useState(false)
+  const [godotError, setGodotError] = useState<string | null>(null)
+  const godotRef = useRef<GodotRendererHandle>(null)
+  const carLoadedRef = useRef(false)
+
+  // Check if the selected model has a Godot 3D counterpart
+  const hasGodotModel = model && MODEL_TO_GODOT_ID[model]
+
+  // Trigger 3D render when file, model, and Godot are all ready
+  useEffect(() => {
+    if (!file || !model || !godotReady || !hasGodotModel) return
+
+    const godotId = MODEL_TO_GODOT_ID[model]
+    if (!godotId) return
+
+    setRendering3d(true)
+    setPreview3d(null)
+    carLoadedRef.current = false
+
+    // Read the file as a data URL
+    const reader = new FileReader()
+    reader.onload = () => {
+      const dataUrl = reader.result as string
+
+      // Load the scene
+      godotRef.current?.loadScene(godotId)
+
+      // Wait for car to load (or timeout), then apply texture and capture
+      const startTime = Date.now()
+      const checkLoaded = setInterval(() => {
+        if (carLoadedRef.current || Date.now() - startTime > 3000) {
+          clearInterval(checkLoaded)
+          // Apply texture, wait for render, then capture
+          godotRef.current?.setTexture(dataUrl)
+          setTimeout(() => {
+            godotRef.current?.capture()
+          }, 1000)
+        }
+      }, 200)
+    }
+    reader.readAsDataURL(file)
+  }, [file, model, godotReady, hasGodotModel])
+
+  // Reset 3D preview when file or model changes
+  useEffect(() => {
+    setPreview3d(null)
+    setGodotError(null)
+  }, [file, model])
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
     if (!f) return
@@ -727,6 +795,12 @@ function UploadTab() {
       formData.append("name", name.trim())
       formData.append("tesla_model", model)
 
+      // Include 3D preview if available
+      if (preview3d) {
+        const previewBlob = await (await fetch(preview3d)).blob()
+        formData.append("preview", previewBlob, "preview.png")
+      }
+
       const res = await fetch(`${API_BASE}/wraps/upload`, {
         method: "POST",
         body: formData,
@@ -741,6 +815,7 @@ function UploadTab() {
       setResult({ success: true, message: data.message || "Wrap submitted! It will appear in the library once reviewed." })
       setFile(null)
       setPreview(null)
+      setPreview3d(null)
       setName("")
       setModel("")
     } catch (err: any) {
@@ -766,11 +841,39 @@ function UploadTab() {
         <p className="mt-1 text-xs text-slate-600">PNG, 512x512 to 1024x1024, max 1 MB</p>
       </div>
 
-      {/* Preview */}
+      {/* Flat preview */}
       {preview && (
         <div className="overflow-hidden rounded-xl border border-white/10">
           <img src={preview} alt="Preview" className="h-48 w-full object-contain bg-slate-800/50" />
         </div>
+      )}
+
+      {/* 3D preview */}
+      {rendering3d && !preview3d && (
+        <div className="flex items-center justify-center gap-2 rounded-xl border border-white/5 bg-white/[0.02] px-4 py-6 text-sm text-slate-400">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Generating 3D preview...
+        </div>
+      )}
+      {preview3d && (
+        <div className="overflow-hidden rounded-xl border border-blue-500/20">
+          <p className="bg-blue-500/10 px-3 py-1.5 text-xs font-medium text-blue-400">3D Preview</p>
+          <img src={preview3d} alt="3D Preview" className="h-48 w-full object-contain bg-slate-800/50" />
+        </div>
+      )}
+      {godotError && (
+        <p className="text-xs text-amber-500/60">3D preview unavailable — upload will still work.</p>
+      )}
+
+      {/* Hidden Godot renderer (only mounts when model has a 3D counterpart) */}
+      {file && hasGodotModel && (
+        <GodotRenderer
+          ref={godotRef}
+          onReady={() => setGodotReady(true)}
+          onCapture={(dataUrl) => { setPreview3d(dataUrl); setRendering3d(false) }}
+          onError={(msg) => { setGodotError(msg); setRendering3d(false) }}
+          onCarLoaded={() => { carLoadedRef.current = true }}
+        />
       )}
 
       {/* Name */}
