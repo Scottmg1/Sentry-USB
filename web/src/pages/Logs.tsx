@@ -29,12 +29,18 @@ interface ParsedLine {
   message: string
   level: LogLevel
   raw: string
+  fullTs: number // full timestamp in ms, used to detect clock jumps
 }
 
 // Matches: "Day DD Mon HH:MM:SS TZ YYYY:" at the start of a line
-// Captures: (DD) (Mon) (HH:MM:SS)
+// Captures: (DD) (Mon) (HH:MM:SS) (YYYY)
 const TIMESTAMP_RE =
-  /^[A-Z][a-z]{2}\s+(\d{1,2})\s+([A-Z][a-z]{2})\s+(\d{2}:\d{2}:\d{2})\s+\w+\s+\d{4}:\s*/
+  /^[A-Z][a-z]{2}\s+(\d{1,2})\s+([A-Z][a-z]{2})\s+(\d{2}:\d{2}:\d{2})\s+\w+\s+(\d{4}):\s*/
+
+const MONTH_INDEX: Record<string, number> = {
+  Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5,
+  Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11,
+}
 
 // Matches a [tag] prefix after the timestamp
 const TAG_RE = /^\[([^\]]+)\]\s*/
@@ -142,17 +148,27 @@ function classifyLevel(message: string, tag: string): LogLevel {
   return "default"
 }
 
+// Minimum jump (ms) between consecutive log lines to treat as a real clock
+// correction (fake-hwclock or NTP) rather than a normal gap between entries.
+const JUMP_THRESHOLD_MS = 120_000
+
 function parseLine(raw: string): ParsedLine {
   let rest = raw
   let date = ""
   let time = ""
   let tag = ""
+  let fullTs = 0
 
-  // Extract timestamp — captures (DD) (Mon) (HH:MM:SS)
+  // Extract timestamp — captures (DD) (Mon) (HH:MM:SS) (YYYY)
   const tsMatch = rest.match(TIMESTAMP_RE)
   if (tsMatch) {
+    const day = parseInt(tsMatch[1], 10)
+    const month = MONTH_INDEX[tsMatch[2]] ?? 0
+    const year = parseInt(tsMatch[4], 10)
     date = `${tsMatch[2]} ${tsMatch[1]}` // e.g. "Mar 20"
     time = tsMatch[3]
+    const [h, m, s] = time.split(":").map(Number)
+    fullTs = new Date(year, month, day, h, m, s).getTime()
     rest = rest.slice(tsMatch[0].length)
   }
 
@@ -166,7 +182,7 @@ function parseLine(raw: string): ParsedLine {
   const message = rest
   const level = classifyLevel(message, tag)
 
-  return { date, time, tag, message, level, raw }
+  return { date, time, tag, message, level, raw, fullTs }
 }
 
 // Colors for each level
@@ -204,7 +220,10 @@ function FormattedLog({ content }: { content: string }) {
     return content.split("\n").map((line) => parseLine(line))
   }, [content])
 
-  let lastDate = ""
+  // Track the previous timestamp so we can detect real clock jumps
+  // (fake-hwclock or NTP correction) vs. normal date-string changes
+  // caused by stale Pi clocks after a reboot.
+  let prevTs = 0
 
   return (
     <>
@@ -213,15 +232,35 @@ function FormattedLog({ content }: { content: string }) {
           return <span key={i} className="block">{"\n"}</span>
         }
 
-        // Show a date header when the day changes
-        let dateSeparator = null
-        if (parsed.date && parsed.date !== lastDate) {
-          lastDate = parsed.date
-          dateSeparator = (
-            <span className="block border-b border-slate-700/50 pb-1 pt-3 mb-1 text-xs font-medium text-slate-500 select-none">
-              — {parsed.date} —
-            </span>
+        // Boot cycle separator (====== lines from archiveloop)
+        if (parsed.raw.trim().startsWith("=====")) {
+          prevTs = 0 // reset — new boot cycle
+          return (
+            <span key={i} className="block border-b border-slate-700/40 my-3" />
           )
+        }
+
+        // Only show a date header when we detect a real clock jump
+        // (> 2 min between consecutive entries), which means fake-hwclock
+        // or NTP just corrected the time. This avoids confusing headers
+        // from stale-clock dates after a reboot.
+        let dateSeparator = null
+        if (parsed.fullTs > 0) {
+          if (prevTs > 0 && Math.abs(parsed.fullTs - prevTs) > JUMP_THRESHOLD_MS) {
+            dateSeparator = (
+              <span className="block border-b border-slate-700/50 pb-1 pt-3 mb-1 text-xs font-medium text-slate-500 select-none">
+                — {parsed.date} —
+              </span>
+            )
+          } else if (prevTs === 0) {
+            // First timestamped entry in a boot cycle — show its date
+            dateSeparator = (
+              <span className="block border-b border-slate-700/50 pb-1 pt-3 mb-1 text-xs font-medium text-slate-500 select-none">
+                — {parsed.date} —
+              </span>
+            )
+          }
+          prevTs = parsed.fullTs
         }
 
         return (
