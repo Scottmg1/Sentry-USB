@@ -78,12 +78,76 @@ func (h *handlers) communityWrapsThumbnail(w http.ResponseWriter, r *http.Reques
 	io.Copy(w, resp.Body)
 }
 
+// GET /api/wraps/godot/{file} — proxy Godot WebAssembly build files from support server
+func (h *handlers) communityWrapsGodotAsset(w http.ResponseWriter, r *http.Request) {
+	file := r.PathValue("file")
+	// Whitelist: only allow Godot build files
+	matched, _ := regexp.MatchString(`^index\.(js|wasm|pck)$`, file)
+	if !matched {
+		writeError(w, http.StatusBadRequest, "Invalid file")
+		return
+	}
+
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Get(supportServerURL + "/wraps/godot/" + file)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "Failed to fetch Godot asset")
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		w.WriteHeader(resp.StatusCode)
+		io.Copy(w, resp.Body)
+		return
+	}
+
+	mimeTypes := map[string]string{
+		".js":   "application/javascript",
+		".wasm": "application/wasm",
+		".pck":  "application/octet-stream",
+	}
+	ext := filepath.Ext(file)
+	if ct, ok := mimeTypes[ext]; ok {
+		w.Header().Set("Content-Type", ct)
+	}
+	w.Header().Set("Cache-Control", "public, max-age=604800, immutable")
+	io.Copy(w, resp.Body)
+}
+
+// GET /api/wraps/preview/{code} — proxy 3D preview image from support server
+func (h *handlers) communityWrapsPreview(w http.ResponseWriter, r *http.Request) {
+	code := r.PathValue("code")
+	if !validWrapCode.MatchString(code) {
+		writeError(w, http.StatusBadRequest, "Invalid code")
+		return
+	}
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Get(supportServerURL + "/wraps/preview/" + code)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "Failed to fetch preview")
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		w.WriteHeader(resp.StatusCode)
+		io.Copy(w, resp.Body)
+		return
+	}
+
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	io.Copy(w, resp.Body)
+}
+
 // POST /api/wraps/upload — proxy wrap upload to support server with fingerprint injection
 func (h *handlers) communityWrapsUpload(w http.ResponseWriter, r *http.Request) {
-	// Limit to 2MB to allow for multipart overhead
-	r.Body = http.MaxBytesReader(w, r.Body, 2*1024*1024)
+	// Limit to 4MB to allow for wrap image + optional 3D preview + multipart overhead
+	r.Body = http.MaxBytesReader(w, r.Body, 4*1024*1024)
 
-	if err := r.ParseMultipartForm(2 << 20); err != nil {
+	if err := r.ParseMultipartForm(4 << 20); err != nil {
 		writeError(w, http.StatusBadRequest, "Failed to parse upload")
 		return
 	}
@@ -103,11 +167,21 @@ func (h *handlers) communityWrapsUpload(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Read file data
+	// Read image file data
 	fileData, err := io.ReadAll(file)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "Failed to read file")
 		return
+	}
+
+	// Read optional 3D preview file
+	var previewData []byte
+	var previewFilename string
+	previewFile, previewHeader, previewErr := r.FormFile("preview")
+	if previewErr == nil {
+		defer previewFile.Close()
+		previewData, _ = io.ReadAll(previewFile)
+		previewFilename = previewHeader.Filename
 	}
 
 	// Build new multipart request to support server
@@ -123,6 +197,15 @@ func (h *handlers) communityWrapsUpload(w http.ResponseWriter, r *http.Request) 
 
 	writer.WriteField("name", name)
 	writer.WriteField("tesla_model", teslaModel)
+
+	// Include 3D preview if provided
+	if len(previewData) > 0 {
+		previewPart, err := writer.CreateFormFile("preview", previewFilename)
+		if err == nil {
+			previewPart.Write(previewData)
+		}
+	}
+
 	writer.Close()
 
 	req, err := http.NewRequest("POST", supportServerURL+"/wraps/upload", &buf)
