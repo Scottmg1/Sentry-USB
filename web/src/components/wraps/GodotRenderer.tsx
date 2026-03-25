@@ -35,8 +35,8 @@ const GodotRenderer = forwardRef<GodotRendererHandle, GodotRendererProps>(
         sendToGodot({ type: "set_texture", texture: dataUrl })
       },
       capture() {
-        // Set camera to three-quarter view, then capture after a short delay
-        sendToGodot({ type: "set_camera_preset", preset: "three_quarter" })
+        // Set camera to elevated front-left angle, then capture after a short delay
+        sendToGodot({ type: "set_camera_angle", horizontal: -135, vertical: 25, distance: 7 })
         setTimeout(() => {
           sendToGodot({ type: "capture" })
         }, 500)
