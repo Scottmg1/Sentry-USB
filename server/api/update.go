@@ -118,6 +118,47 @@ func sendTelemetrySync(currentVersion string, updateAvailable bool, newVersion s
 
 const updateRepo = "Scottmg1/Sentry-USB"
 
+// releaseInfo mirrors the fields we need from a GitHub release object.
+type releaseInfo struct {
+	TagName    string `json:"tag_name"`
+	HTMLURL    string `json:"html_url"`
+	Body       string `json:"body"`
+	Prerelease bool   `json:"prerelease"`
+}
+
+// fetchReleases fetches the most recent GitHub releases (both stable and prerelease).
+func fetchReleases() ([]releaseInfo, error) {
+	output, err := shell.RunWithTimeout(10*time.Second, "curl", "-sfL", "--max-time", "8",
+		fmt.Sprintf("https://api.github.com/repos/%s/releases?per_page=20", updateRepo))
+	if err != nil {
+		return nil, fmt.Errorf("cannot reach GitHub: %w", err)
+	}
+	var releases []releaseInfo
+	if err := json.Unmarshal([]byte(output), &releases); err != nil {
+		return nil, fmt.Errorf("failed to parse releases: %w", err)
+	}
+	return releases, nil
+}
+
+// findLatestReleases picks the first stable and first prerelease from a list.
+func findLatestReleases(releases []releaseInfo) (stable *releaseInfo, prerelease *releaseInfo) {
+	for i := range releases {
+		if releases[i].Prerelease {
+			if prerelease == nil {
+				prerelease = &releases[i]
+			}
+		} else {
+			if stable == nil {
+				stable = &releases[i]
+			}
+		}
+		if stable != nil && prerelease != nil {
+			break
+		}
+	}
+	return
+}
+
 func (h *handlers) checkInternet(w http.ResponseWriter, r *http.Request) {
 	_, err := shell.RunWithTimeout(10*time.Second, "curl", "-sf", "--max-time", "8",
 		"-o", "/dev/null", "https://github.com")
@@ -134,6 +175,16 @@ func (h *handlers) checkInternet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) runUpdate(w http.ResponseWriter, r *http.Request) {
+	// Parse optional target version from request body.
+	// If empty, installs the latest stable release (backward-compatible).
+	var req struct {
+		Version string `json:"version"`
+	}
+	if r.Body != nil {
+		json.NewDecoder(r.Body).Decode(&req)
+	}
+	targetVersion := req.Version
+
 	go func() {
 		broadcast := func(status, msg string) {
 			h.hub.Broadcast("update_status", map[string]string{"status": status, "message": msg})
@@ -153,17 +204,26 @@ func (h *handlers) runUpdate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// 2. Check if a release actually exists
-		broadcast("checking", "Checking for latest release...")
+		// 2. Build download URL — tag-specific if a version was requested, otherwise latest
+		broadcast("checking", "Checking for release...")
 		arch := runtime.GOARCH
 		suffix := "linux-arm64"
 		if arch == "arm" {
 			suffix = "linux-armv7"
 		}
-		downloadURL := fmt.Sprintf(
-			"https://github.com/%s/releases/latest/download/sentryusb-%s",
-			updateRepo, suffix,
-		)
+
+		var downloadURL string
+		if targetVersion != "" {
+			downloadURL = fmt.Sprintf(
+				"https://github.com/%s/releases/download/%s/sentryusb-%s",
+				updateRepo, targetVersion, suffix,
+			)
+		} else {
+			downloadURL = fmt.Sprintf(
+				"https://github.com/%s/releases/latest/download/sentryusb-%s",
+				updateRepo, suffix,
+			)
+		}
 
 		// HEAD request to check the binary exists before downloading
 		_, err = shell.RunWithTimeout(15*time.Second, "curl", "-sfI", "--max-time", "10",
@@ -184,7 +244,7 @@ func (h *handlers) runUpdate(w http.ResponseWriter, r *http.Request) {
 		shell.Run("bash", "-c", "/root/bin/remountfs_rw")
 
 		// 4. Download the binary
-		broadcast("downloading", "Downloading latest release...")
+		broadcast("downloading", "Downloading update...")
 		tmpPath := "/tmp/sentryusb-update"
 		_, err = shell.RunWithTimeout(120*time.Second, "curl", "-fsSL",
 			"-o", tmpPath, downloadURL)
@@ -196,16 +256,20 @@ func (h *handlers) runUpdate(w http.ResponseWriter, r *http.Request) {
 
 		broadcast("installing", "Installing update...")
 
-		// 5. Also fetch the latest version tag
-		versionTag := "unknown"
-		tagOutput, tagErr := shell.RunWithTimeout(10*time.Second, "curl", "-sfL", "--max-time", "8",
-			fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", updateRepo))
-		if tagErr == nil {
-			var release struct {
-				TagName string `json:"tag_name"`
-			}
-			if json.Unmarshal([]byte(tagOutput), &release) == nil && release.TagName != "" {
-				versionTag = release.TagName
+		// 5. Determine version tag
+		versionTag := targetVersion
+		if versionTag == "" {
+			// No specific version requested — fetch latest stable tag
+			versionTag = "unknown"
+			tagOutput, tagErr := shell.RunWithTimeout(10*time.Second, "curl", "-sfL", "--max-time", "8",
+				fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", updateRepo))
+			if tagErr == nil {
+				var rel struct {
+					TagName string `json:"tag_name"`
+				}
+				if json.Unmarshal([]byte(tagOutput), &rel) == nil && rel.TagName != "" {
+					versionTag = rel.TagName
+				}
 			}
 		}
 
@@ -348,16 +412,30 @@ systemctl restart sentryusb-ble 2>/dev/null || true
 	writeJSON(w, http.StatusOK, map[string]string{"status": "update_started"})
 }
 
-// checkForUpdate checks GitHub for a newer release and stores the result.
-// Always sends a telemetry heartbeat regardless of whether GitHub is reachable,
-// so the API server sees the device even when called from shell scripts
-// (e.g. post-archive-process.sh) that may run without full internet.
+// checkForUpdate checks GitHub for newer releases and stores the result.
+// Returns both the latest stable release and (optionally) the latest prerelease
+// so the UI can show both options and let the user choose.
+//
+// Query params:
+//   - include_prerelease=true  — also return prerelease info (one-time check)
+//
+// If the user preference "update_channel" is "prerelease", prereleases are
+// always included regardless of the query param.
+//
+// Telemetry only reports stable updates — prereleases are never reported.
 func (h *handlers) checkForUpdate(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[update] checkForUpdate called (source: %s)", r.RemoteAddr)
 
 	currentVersion := ""
 	if data, err := os.ReadFile("/opt/sentryusb/version"); err == nil {
 		currentVersion = strings.TrimSpace(string(data))
+	}
+
+	// Should we include prerelease info?
+	includePrerelease := r.URL.Query().Get("include_prerelease") == "true"
+	if !includePrerelease {
+		prefs := loadPreferences()
+		includePrerelease = prefs["update_channel"] == "prerelease"
 	}
 
 	// Track whether we sent rich telemetry; if not, the defer sends a basic heartbeat.
@@ -369,9 +447,8 @@ func (h *handlers) checkForUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	tagOutput, tagErr := shell.RunWithTimeout(10*time.Second, "curl", "-sfL", "--max-time", "8",
-		fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", updateRepo))
-	if tagErr != nil {
+	releases, err := fetchReleases()
+	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"update_available": false,
 			"error":            "Cannot reach GitHub",
@@ -379,43 +456,56 @@ func (h *handlers) checkForUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var release struct {
-		TagName string `json:"tag_name"`
-		HTMLURL string `json:"html_url"`
-		Body    string `json:"body"`
-	}
-	if err := json.Unmarshal([]byte(tagOutput), &release); err != nil || release.TagName == "" {
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"update_available": false,
-			"error":            "Failed to parse release info",
-		})
-		return
+	latestStable, latestPrerelease := findLatestReleases(releases)
+
+	canUpdate := currentVersion != "" && currentVersion != "dev"
+
+	// Build response — top-level fields stay backward-compatible (stable info)
+	result := map[string]interface{}{
+		"current_version": currentVersion,
+		"checked_at":      time.Now().UTC().Format(time.RFC3339),
 	}
 
-	updateAvailable := release.TagName != currentVersion && currentVersion != "" && currentVersion != "dev"
-
-	// Store the check result for the Settings UI to read
-	updateInfo := map[string]interface{}{
-		"update_available":  updateAvailable,
-		"current_version":   currentVersion,
-		"latest_version":    release.TagName,
-		"release_url":       release.HTMLURL,
-		"release_notes":     release.Body,
-		"checked_at":        time.Now().UTC().Format(time.RFC3339),
+	if latestStable != nil {
+		stableAvailable := canUpdate && latestStable.TagName != currentVersion
+		result["update_available"] = stableAvailable
+		result["latest_version"] = latestStable.TagName
+		result["release_url"] = latestStable.HTMLURL
+		result["release_notes"] = latestStable.Body
+		result["stable"] = map[string]interface{}{
+			"version":       latestStable.TagName,
+			"release_url":   latestStable.HTMLURL,
+			"release_notes": latestStable.Body,
+			"available":     stableAvailable,
+		}
+	} else {
+		result["update_available"] = false
 	}
-	if data, err := json.Marshal(updateInfo); err == nil {
+
+	if includePrerelease && latestPrerelease != nil {
+		preAvailable := canUpdate && latestPrerelease.TagName != currentVersion
+		result["prerelease"] = map[string]interface{}{
+			"version":       latestPrerelease.TagName,
+			"release_url":   latestPrerelease.HTMLURL,
+			"release_notes": latestPrerelease.Body,
+			"available":     preAvailable,
+		}
+	}
+
+	// Cache for the Settings UI to read on page load
+	if data, err := json.Marshal(result); err == nil {
 		os.WriteFile("/tmp/sentryusb-update-check.json", data, 0644)
 	}
 
-	// Send telemetry with update info
+	// Telemetry — only report stable updates, never prereleases
 	newVer := ""
-	if updateAvailable {
-		newVer = release.TagName
+	if latestStable != nil && canUpdate && latestStable.TagName != currentVersion {
+		newVer = latestStable.TagName
 	}
-	sendTelemetry(currentVersion, updateAvailable, newVer)
+	sendTelemetry(currentVersion, newVer != "", newVer)
 	telemetrySent = true
 
-	writeJSON(w, http.StatusOK, updateInfo)
+	writeJSON(w, http.StatusOK, result)
 }
 
 // getUpdateStatus returns the last cached update check result

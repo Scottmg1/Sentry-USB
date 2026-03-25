@@ -1000,8 +1000,10 @@ export default function Settings() {
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false)
   const [version, setVersion] = useState<string | null>(null)
   const [piConfig, setPiConfig] = useState<{ uses_ble: string } | null>(null)
-  const [updateAvailable, setUpdateAvailable] = useState<{ latest_version: string; release_url: string; release_notes: string } | null>(null)
+  const [stableUpdate, setStableUpdate] = useState<{ version: string; release_url: string; release_notes: string } | null>(null)
+  const [prereleaseUpdate, setPrereleaseUpdate] = useState<{ version: string; release_url: string; release_notes: string } | null>(null)
   const [autoUpdateEnabled, setAutoUpdateEnabled] = useState(true)
+  const [includePrerelease, setIncludePrerelease] = useState(false)
 
   useEffect(() => {
     fetch("/api/system/version")
@@ -1019,39 +1021,60 @@ export default function Settings() {
     fetch("/api/system/update-status")
       .then(r => r.json())
       .then(data => {
-        if (data.update_available) {
-          setUpdateAvailable({ latest_version: data.latest_version, release_url: data.release_url, release_notes: data.release_notes })
+        if (data.stable?.available) {
+          setStableUpdate({ version: data.stable.version, release_url: data.stable.release_url, release_notes: data.stable.release_notes })
+        } else if (data.update_available) {
+          // Backward compat with old cache format
+          setStableUpdate({ version: data.latest_version, release_url: data.release_url, release_notes: data.release_notes })
+        }
+        if (data.prerelease?.available) {
+          setPrereleaseUpdate({ version: data.prerelease.version, release_url: data.prerelease.release_url, release_notes: data.prerelease.release_notes })
         }
       })
       .catch(() => { })
-    // Load auto-update preference
+    // Load preferences
     fetch("/api/config/preference?key=auto_update_check")
       .then(r => r.json())
       .then(data => setAutoUpdateEnabled(data.value !== "disabled"))
       .catch(() => { })
+    fetch("/api/config/preference?key=update_channel")
+      .then(r => r.json())
+      .then(data => setIncludePrerelease(data.value === "prerelease"))
+      .catch(() => { })
   }, [])
 
-  async function handleCheckForUpdate() {
+  async function handleCheckForUpdate(oneTimePrerelease = false) {
     setIsCheckingUpdate(true)
-    setUpdateAvailable(null)
+    setStableUpdate(null)
+    setPrereleaseUpdate(null)
     setUpdateError(null)
     try {
-      const res = await fetch("/api/system/check-update", { method: "POST" })
+      const wantPrerelease = includePrerelease || oneTimePrerelease
+      const url = "/api/system/check-update" + (wantPrerelease ? "?include_prerelease=true" : "")
+      const res = await fetch(url, { method: "POST" })
       if (!res.ok) throw new Error("Failed to check for updates")
       const data = await res.json()
       if (data.error) {
         setUpdateError(data.error)
-      } else if (data.update_available) {
-        setUpdateAvailable({
-          latest_version: data.latest_version,
-          release_url: data.release_url,
-          release_notes: data.release_notes,
-        })
       } else {
-        // Already up to date — briefly show "done" state
-        setUpdateStatus("done")
-        setUpdateMessage(`You're up to date (${data.current_version || version})`)
-        setTimeout(() => { setUpdateStatus("idle"); setUpdateMessage(null) }, 4000)
+        let foundAny = false
+        if (data.stable?.available) {
+          setStableUpdate({ version: data.stable.version, release_url: data.stable.release_url, release_notes: data.stable.release_notes })
+          foundAny = true
+        } else if (data.update_available) {
+          // Backward compat
+          setStableUpdate({ version: data.latest_version, release_url: data.release_url, release_notes: data.release_notes })
+          foundAny = true
+        }
+        if (data.prerelease?.available) {
+          setPrereleaseUpdate({ version: data.prerelease.version, release_url: data.prerelease.release_url, release_notes: data.prerelease.release_notes })
+          foundAny = true
+        }
+        if (!foundAny) {
+          setUpdateStatus("done")
+          setUpdateMessage(`You're up to date (${data.current_version || version})`)
+          setTimeout(() => { setUpdateStatus("idle"); setUpdateMessage(null) }, 4000)
+        }
       }
     } catch (err) {
       setUpdateError(err instanceof Error ? err.message : "Failed to check for updates")
@@ -1060,7 +1083,7 @@ export default function Settings() {
     }
   }
 
-  async function handleInstallUpdate() {
+  async function handleInstallUpdate(targetVersion?: string) {
     setUpdateStatus("checking_internet")
     setUpdateError(null)
     setUpdateMessage("Checking internet connection...")
@@ -1104,7 +1127,11 @@ export default function Settings() {
       }
 
       // Trigger the update — the backend broadcasts real-time progress over WebSocket
-      const res = await fetch("/api/system/update", { method: "POST" })
+      const res = await fetch("/api/system/update", {
+        method: "POST",
+        headers: targetVersion ? { "Content-Type": "application/json" } : {},
+        body: targetVersion ? JSON.stringify({ version: targetVersion }) : undefined,
+      })
       if (!res.ok) throw new Error("Failed to start update")
 
       // The server will restart itself as the last step, killing our WebSocket.
@@ -1122,7 +1149,8 @@ export default function Settings() {
               const data = await r.json()
               reconnected = true
               clearInterval(pollInterval)
-              setUpdateAvailable(null)
+              setStableUpdate(null)
+              setPrereleaseUpdate(null)
               setUpdateStatus("done")
               setUpdateMessage(`Update complete — now running ${data.version || "latest"}`)
               setVersion(data.version || "unknown")
@@ -1275,8 +1303,41 @@ export default function Settings() {
         </div>
       </div>
 
-      {/* Update available banner */}
-      {updateAvailable && updateStatus === "idle" && (
+      {/* Stable update banner */}
+      {stableUpdate && updateStatus === "idle" && (
+        <div className="glass-card overflow-hidden border border-emerald-500/20 bg-emerald-500/5">
+          <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20">
+              <Download className="h-6 w-6 text-emerald-400" />
+            </div>
+            <div className="flex-1">
+              <h2 className="text-lg font-semibold text-emerald-200">
+                Stable Update: {stableUpdate.version}
+              </h2>
+              <p className="mt-0.5 text-sm text-slate-400">
+                Updates the server, shell scripts, and BLE daemon. No setup changes are made.
+                {" "}
+                <a href={stableUpdate.release_url} target="_blank" rel="noopener noreferrer"
+                  className="text-blue-400 hover:text-blue-300 underline">View release notes</a>
+              </p>
+              {stableUpdate.release_notes && (
+                <pre className="mt-2 max-h-32 overflow-y-auto whitespace-pre-wrap rounded-lg bg-black/20 p-3 text-xs text-slate-400">
+                  {stableUpdate.release_notes}
+                </pre>
+              )}
+            </div>
+            <button
+              onClick={() => handleInstallUpdate(stableUpdate.version)}
+              className="shrink-0 self-start rounded-lg bg-emerald-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-600"
+            >
+              Install Stable
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Prerelease update banner */}
+      {prereleaseUpdate && updateStatus === "idle" && (
         <div className="glass-card overflow-hidden border border-amber-500/20 bg-amber-500/5">
           <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-amber-500/20">
@@ -1284,25 +1345,25 @@ export default function Settings() {
             </div>
             <div className="flex-1">
               <h2 className="text-lg font-semibold text-amber-200">
-                Update Available: {updateAvailable.latest_version}
+                Pre-release: {prereleaseUpdate.version}
               </h2>
               <p className="mt-0.5 text-sm text-slate-400">
-                Updates the server, shell scripts, and BLE daemon. No setup changes are made.
+                This is a test build and may contain bugs. You can always switch back to the latest stable release.
                 {" "}
-                <a href={updateAvailable.release_url} target="_blank" rel="noopener noreferrer"
+                <a href={prereleaseUpdate.release_url} target="_blank" rel="noopener noreferrer"
                   className="text-blue-400 hover:text-blue-300 underline">View release notes</a>
               </p>
-              {updateAvailable.release_notes && (
+              {prereleaseUpdate.release_notes && (
                 <pre className="mt-2 max-h-32 overflow-y-auto whitespace-pre-wrap rounded-lg bg-black/20 p-3 text-xs text-slate-400">
-                  {updateAvailable.release_notes}
+                  {prereleaseUpdate.release_notes}
                 </pre>
               )}
             </div>
             <button
-              onClick={handleInstallUpdate}
+              onClick={() => handleInstallUpdate(prereleaseUpdate.version)}
               className="shrink-0 self-start rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-600"
             >
-              Install Update
+              Install Pre-release
             </button>
           </div>
         </div>
@@ -1338,7 +1399,7 @@ export default function Settings() {
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <button
-              onClick={handleCheckForUpdate}
+              onClick={() => handleCheckForUpdate()}
               disabled={isCheckingUpdate || (updateStatus !== "idle" && updateStatus !== "error" && updateStatus !== "done")}
               className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-600 disabled:opacity-50"
             >
@@ -1370,6 +1431,41 @@ export default function Settings() {
             />
           </label>
         </div>
+        {/* Include pre-releases toggle */}
+        <div className="border-t border-white/5 px-5 py-3">
+          <label className="flex cursor-pointer items-center justify-between">
+            <div>
+              <span className="text-sm text-slate-400">Always include pre-releases when checking for updates</span>
+              <span className="block text-xs text-slate-600">Test builds may contain bugs. Auto-check notifications are always stable-only.</span>
+            </div>
+            <input
+              type="checkbox"
+              checked={includePrerelease}
+              onChange={async (e) => {
+                const enabled = e.target.checked
+                setIncludePrerelease(enabled)
+                await fetch("/api/config/preference", {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ key: "update_channel", value: enabled ? "prerelease" : "stable" }),
+                }).catch(() => { })
+              }}
+              className="h-4 w-4 rounded border-white/20 bg-white/5 accent-blue-500"
+            />
+          </label>
+        </div>
+        {/* One-time prerelease check */}
+        {!includePrerelease && (
+          <div className="border-t border-white/5 px-5 py-3">
+            <button
+              onClick={() => handleCheckForUpdate(true)}
+              disabled={isCheckingUpdate}
+              className="text-sm text-slate-500 transition-colors hover:text-slate-300"
+            >
+              {isCheckingUpdate ? "Checking..." : "One-time check for pre-releases"}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Preferences */}
