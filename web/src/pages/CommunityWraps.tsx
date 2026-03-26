@@ -62,7 +62,6 @@ export default function CommunityWraps() {
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Godot 3D engine state — mounted at page level so it starts loading immediately
-  const [godotReady, setGodotReady] = useState(false)
   const godotReadyRef = useRef(false)
   const godotRef = useRef<GodotRendererHandle>(null)
   const carLoadedRef = useRef(false)
@@ -145,7 +144,7 @@ export default function CommunityWraps() {
       {/* Hidden Godot renderer — starts loading 283MB .pck immediately */}
       <GodotRenderer
         ref={godotRef}
-        onReady={() => { setGodotReady(true); godotReadyRef.current = true }}
+        onReady={() => { godotReadyRef.current = true }}
         onCapture={() => {}}
         onError={() => {}}
         onCarLoaded={() => { carLoadedRef.current = true }}
@@ -772,15 +771,23 @@ function UploadTab({ godotReadyRef, godotRef, carLoadedRef }: UploadTabProps) {
       reader.onload = () => {
         const dataUrl = reader.result as string
         carLoadedRef.current = false
-        godotRef.current?.loadScene(godotId)
 
-        // Wait for car model to load (or 5s timeout), then apply texture and capture
+        // Skip loadScene if model is already the default (modely) — saves time
+        const isDefaultModel = godotId === "modely"
+        if (!isDefaultModel) {
+          godotRef.current?.loadScene(godotId)
+        }
+
+        // Wait for car model to load (or timeout), then apply texture and capture
+        const timeout = isDefaultModel ? 1000 : 8000
         const start = Date.now()
         const check = setInterval(() => {
-          if (carLoadedRef.current || Date.now() - start > 5000) {
+          if (carLoadedRef.current || Date.now() - start > timeout) {
             clearInterval(check)
             godotRef.current?.setTexture(dataUrl)
-            setTimeout(() => godotRef.current?.capture(), 1500)
+            // Extra wait for non-default models to fully settle after scene switch
+            const captureDelay = isDefaultModel ? 1000 : 2500
+            setTimeout(() => godotRef.current?.capture(), captureDelay)
           }
         }, 200)
       }
