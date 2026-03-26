@@ -933,6 +933,14 @@ function UploadTab({ godotReadyRef, godotRef, carLoadedRef }: UploadTabProps) {
         </select>
       </div>
 
+      {/* Upload status indicator */}
+      {uploading && uploadStatus && (
+        <div className="flex items-center justify-center gap-2 rounded-lg border border-blue-500/20 bg-blue-500/10 px-4 py-3 text-sm text-blue-300">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          {uploadStatus}
+        </div>
+      )}
+
       {/* Submit */}
       <button
         onClick={handleSubmit}
