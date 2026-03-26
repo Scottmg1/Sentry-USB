@@ -62,6 +62,10 @@ export default function CommunityWraps() {
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Godot 3D engine state — mounted at page level so it starts loading immediately
+<<<<<<< HEAD
+=======
+  const [godotReady, setGodotReady] = useState(false)
+>>>>>>> origin/main-dev
   const godotReadyRef = useRef(false)
   const godotRef = useRef<GodotRendererHandle>(null)
   const carLoadedRef = useRef(false)
@@ -144,7 +148,11 @@ export default function CommunityWraps() {
       {/* Hidden Godot renderer — starts loading 283MB .pck immediately */}
       <GodotRenderer
         ref={godotRef}
+<<<<<<< HEAD
         onReady={() => { godotReadyRef.current = true }}
+=======
+        onReady={() => { setGodotReady(true); godotReadyRef.current = true }}
+>>>>>>> origin/main-dev
         onCapture={() => {}}
         onError={() => {}}
         onCarLoaded={() => { carLoadedRef.current = true }}
