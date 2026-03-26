@@ -61,6 +61,11 @@ export default function CommunityWraps() {
   const clickCountRef = useRef(0)
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Godot 3D engine state — mounted at page level so it starts loading immediately
+  const godotReadyRef = useRef(false)
+  const godotRef = useRef<GodotRendererHandle>(null)
+  const carLoadedRef = useRef(false)
+
   const handleHeadingClick = () => {
     if (adminPasscode) {
       // Already in admin mode — 5 clicks exits
@@ -136,10 +141,19 @@ export default function CommunityWraps() {
         )}
       </div>
 
+      {/* Hidden Godot renderer — starts loading 283MB .pck immediately */}
+      <GodotRenderer
+        ref={godotRef}
+        onReady={() => { godotReadyRef.current = true }}
+        onCapture={() => {}}
+        onError={() => {}}
+        onCarLoaded={() => { carLoadedRef.current = true }}
+      />
+
       {tab === "browse" ? (
         <BrowseTab adminPasscode={adminPasscode} onAdminExit={() => setAdminPasscode(null)} />
       ) : (
-        <UploadTab />
+        <UploadTab godotReadyRef={godotReadyRef} godotRef={godotRef} carLoadedRef={carLoadedRef} />
       )}
 
       {/* Passcode prompt modal */}
@@ -704,65 +718,74 @@ function DeleteWrapModal({ wrap, onDelete, onClose }: {
   )
 }
 
-function UploadTab() {
+interface UploadTabProps {
+  godotReadyRef: React.MutableRefObject<boolean>
+  godotRef: React.RefObject<GodotRendererHandle | null>
+  carLoadedRef: React.MutableRefObject<boolean>
+}
+
+function UploadTab({ godotReadyRef, godotRef, carLoadedRef }: UploadTabProps) {
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
   const [name, setName] = useState("")
   const [model, setModel] = useState("")
   const [uploading, setUploading] = useState(false)
+  const [uploadStatus, setUploadStatus] = useState<string | null>(null)
   const [result, setResult] = useState<{ success: boolean; message: string } | null>(null)
 
-  // 3D preview state
-  const [preview3d, setPreview3d] = useState<string | null>(null)
-  const [rendering3d, setRendering3d] = useState(false)
-  const [godotReady, setGodotReady] = useState(false)
-  const [godotError, setGodotError] = useState<string | null>(null)
-  const godotRef = useRef<GodotRendererHandle>(null)
-  const carLoadedRef = useRef(false)
+  // Wait for Godot engine to finish loading (polls the ref)
+  const waitForGodotReady = useCallback((timeoutMs: number): Promise<boolean> => {
+    return new Promise((resolve) => {
+      if (godotReadyRef.current) { resolve(true); return }
+      const start = Date.now()
+      const check = setInterval(() => {
+        if (godotReadyRef.current) { clearInterval(check); resolve(true) }
+        else if (Date.now() - start > timeoutMs) { clearInterval(check); resolve(false) }
+      }, 500)
+    })
+  }, [godotReadyRef])
 
-  // Check if the selected model has a Godot 3D counterpart
-  const hasGodotModel = model && MODEL_TO_GODOT_ID[model]
+  // Generate a 3D preview by sending commands to Godot and capturing the result
+  const generate3DPreview = useCallback((imageFile: File, godotId: string): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        window.removeEventListener("message", handler)
+        reject(new Error("Preview capture timeout"))
+      }, 15000)
 
-  // Trigger 3D render when file, model, and Godot are all ready
-  useEffect(() => {
-    if (!file || !model || !godotReady || !hasGodotModel) return
-
-    const godotId = MODEL_TO_GODOT_ID[model]
-    if (!godotId) return
-
-    setRendering3d(true)
-    setPreview3d(null)
-    carLoadedRef.current = false
-
-    // Read the file as a data URL
-    const reader = new FileReader()
-    reader.onload = () => {
-      const dataUrl = reader.result as string
-
-      // Load the scene
-      godotRef.current?.loadScene(godotId)
-
-      // Wait for car to load (or timeout), then apply texture and capture
-      const startTime = Date.now()
-      const checkLoaded = setInterval(() => {
-        if (carLoadedRef.current || Date.now() - startTime > 3000) {
-          clearInterval(checkLoaded)
-          // Apply texture, wait for render, then capture
-          godotRef.current?.setTexture(dataUrl)
-          setTimeout(() => {
-            godotRef.current?.capture()
-          }, 1000)
+      const handler = (e: MessageEvent) => {
+        if (e.data?.type === "capture_result" && e.data.dataUrl) {
+          clearTimeout(timeout)
+          window.removeEventListener("message", handler)
+          resolve(e.data.dataUrl)
+        } else if (e.data?.type === "capture_error") {
+          clearTimeout(timeout)
+          window.removeEventListener("message", handler)
+          reject(new Error(e.data.error || "Capture failed"))
         }
-      }, 200)
-    }
-    reader.readAsDataURL(file)
-  }, [file, model, godotReady, hasGodotModel])
+      }
+      window.addEventListener("message", handler)
 
-  // Reset 3D preview when file or model changes
-  useEffect(() => {
-    setPreview3d(null)
-    setGodotError(null)
-  }, [file, model])
+      // Read the file as data URL, then send to Godot
+      const reader = new FileReader()
+      reader.onload = () => {
+        const dataUrl = reader.result as string
+        carLoadedRef.current = false
+        godotRef.current?.loadScene(godotId)
+
+        // Wait for car model to load (or 5s timeout), then apply texture and capture
+        const start = Date.now()
+        const check = setInterval(() => {
+          if (carLoadedRef.current || Date.now() - start > 5000) {
+            clearInterval(check)
+            godotRef.current?.setTexture(dataUrl)
+            setTimeout(() => godotRef.current?.capture(), 1500)
+          }
+        }, 200)
+      }
+      reader.readAsDataURL(imageFile)
+    })
+  }, [godotRef, carLoadedRef])
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
@@ -790,14 +813,40 @@ function UploadTab() {
     setResult(null)
 
     try {
+      let previewDataUrl: string | null = null
+      const godotId = MODEL_TO_GODOT_ID[model]
+
+      // Generate 3D preview if model has a Godot counterpart
+      if (godotId && godotRef.current) {
+        // Wait for Godot to be ready (may still be downloading the 283MB .pck)
+        if (!godotReadyRef.current) {
+          setUploadStatus("Loading 3D engine...")
+          const ready = await waitForGodotReady(60000)
+          if (!ready) {
+            // Godot didn't load in time — continue without preview
+            setUploadStatus("Uploading...")
+          }
+        }
+
+        if (godotReadyRef.current) {
+          setUploadStatus("Generating 3D preview...")
+          try {
+            previewDataUrl = await generate3DPreview(file, godotId)
+          } catch {
+            // Preview generation failed — continue without it
+          }
+        }
+      }
+
+      setUploadStatus("Uploading...")
+
       const formData = new FormData()
       formData.append("image", file)
       formData.append("name", name.trim())
       formData.append("tesla_model", model)
 
-      // Include 3D preview if available
-      if (preview3d) {
-        const previewBlob = await (await fetch(preview3d)).blob()
+      if (previewDataUrl) {
+        const previewBlob = await (await fetch(previewDataUrl)).blob()
         formData.append("preview", previewBlob, "preview.png")
       }
 
@@ -815,13 +864,13 @@ function UploadTab() {
       setResult({ success: true, message: data.message || "Wrap submitted! It will appear in the library once reviewed." })
       setFile(null)
       setPreview(null)
-      setPreview3d(null)
       setName("")
       setModel("")
     } catch (err: any) {
       setResult({ success: false, message: err.message || "Upload failed" })
     } finally {
       setUploading(false)
+      setUploadStatus(null)
     }
   }
 
@@ -846,34 +895,6 @@ function UploadTab() {
         <div className="overflow-hidden rounded-xl border border-white/10">
           <img src={preview} alt="Preview" className="h-48 w-full object-contain bg-slate-800/50" />
         </div>
-      )}
-
-      {/* 3D preview */}
-      {rendering3d && !preview3d && (
-        <div className="flex items-center justify-center gap-2 rounded-xl border border-white/5 bg-white/[0.02] px-4 py-6 text-sm text-slate-400">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Generating 3D preview...
-        </div>
-      )}
-      {preview3d && (
-        <div className="overflow-hidden rounded-xl border border-blue-500/20">
-          <p className="bg-blue-500/10 px-3 py-1.5 text-xs font-medium text-blue-400">3D Preview</p>
-          <img src={preview3d} alt="3D Preview" className="h-48 w-full object-contain bg-slate-800/50" />
-        </div>
-      )}
-      {godotError && (
-        <p className="text-xs text-amber-500/60">3D preview unavailable — upload will still work.</p>
-      )}
-
-      {/* Hidden Godot renderer (only mounts when model has a 3D counterpart) */}
-      {file && hasGodotModel && (
-        <GodotRenderer
-          ref={godotRef}
-          onReady={() => setGodotReady(true)}
-          onCapture={(dataUrl) => { setPreview3d(dataUrl); setRendering3d(false) }}
-          onError={(msg) => { setGodotError(msg); setRendering3d(false) }}
-          onCarLoaded={() => { carLoadedRef.current = true }}
-        />
       )}
 
       {/* Name */}
@@ -915,7 +936,7 @@ function UploadTab() {
         ) : (
           <Upload className="h-4 w-4" />
         )}
-        {uploading ? "Uploading..." : "Submit Wrap"}
+        {uploading ? (uploadStatus || "Uploading...") : "Submit Wrap"}
       </button>
 
       {/* Result message */}
