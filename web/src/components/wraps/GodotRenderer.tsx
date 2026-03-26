@@ -52,6 +52,7 @@ const GodotRenderer = forwardRef<GodotRendererHandle, GodotRendererProps>(
             onReady()
             break
           case "car_loaded":
+          case "scene_loaded":
             onCarLoaded?.()
             break
           case "capture_result":
