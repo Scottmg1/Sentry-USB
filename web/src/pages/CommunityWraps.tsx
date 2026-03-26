@@ -833,8 +833,8 @@ function UploadTab({ godotReadyRef, godotRef, carLoadedRef }: UploadTabProps) {
           setUploadStatus("Generating 3D preview...")
           try {
             previewDataUrl = await generate3DPreview(file, godotId)
-          } catch {
-            // Preview generation failed — continue without it
+          } catch (previewErr) {
+            console.warn("[WRAPS] 3D preview generation failed:", previewErr)
           }
         }
       }
