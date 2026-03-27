@@ -22,9 +22,10 @@ const FILTER_MODELS = ["All", ...TESLA_MODELS]
 
 // Maps display names to Godot scene IDs from Tesla Wrap Studio
 // Models without a Godot 3D counterpart (Model S, Model X) are omitted — no 3D preview for those
+// NOTE: "model3" scene renders black — use model3-2024-base as fallback until a dedicated pre-2024 scene is added
 const MODEL_TO_GODOT_ID: Record<string, string> = {
   "Cybertruck": "cybertruck",
-  "Model 3": "model3",
+  "Model 3": "model3-2024-base",
   "Model 3 (2024+) Standard & Premium": "model3-2024-base",
   "Model 3 (2024+) Performance": "model3-2024-performance",
   "Model Y": "modely",
@@ -772,22 +773,18 @@ function UploadTab({ godotReadyRef, godotRef, carLoadedRef }: UploadTabProps) {
         const dataUrl = reader.result as string
         carLoadedRef.current = false
 
-        // Skip loadScene if model is already the default (modely) — saves time
-        const isDefaultModel = godotId === "modely"
-        if (!isDefaultModel) {
-          godotRef.current?.loadScene(godotId)
-        }
+        // Always explicitly load the scene — the default Godot scene may not
+        // match the requested model (e.g. default is Juniper, not pre-2025 Model Y)
+        godotRef.current?.loadScene(godotId)
 
         // Wait for car model to load (or timeout), then apply texture and capture
-        const loadTimeout = isDefaultModel ? 1000 : 8000
+        const loadTimeout = 8000
         const start = Date.now()
         const check = setInterval(() => {
           if (carLoadedRef.current || Date.now() - start > loadTimeout) {
             clearInterval(check)
             godotRef.current?.setTexture(dataUrl)
-            // Extra wait for non-default models to fully settle after scene switch
-            const captureDelay = isDefaultModel ? 1000 : 2500
-            setTimeout(() => godotRef.current?.capture(), captureDelay)
+            setTimeout(() => godotRef.current?.capture(), 2500)
           }
         }, 200)
       }
