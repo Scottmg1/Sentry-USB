@@ -3,7 +3,7 @@ import { useEffect, useRef, useImperativeHandle, forwardRef, useCallback } from 
 export interface GodotRendererHandle {
   loadScene(modelId: string): void
   setTexture(dataUrl: string): void
-  capture(): void
+  capture(distance?: number): void
 }
 
 interface GodotRendererProps {
@@ -34,9 +34,9 @@ const GodotRenderer = forwardRef<GodotRendererHandle, GodotRendererProps>(
       setTexture(dataUrl: string) {
         sendToGodot({ type: "set_texture", texture: dataUrl })
       },
-      capture() {
+      capture(distance?: number) {
         // Set camera to elevated front-left angle, then capture after a short delay
-        sendToGodot({ type: "set_camera_angle", horizontal: -135, vertical: 25, distance: 7 })
+        sendToGodot({ type: "set_camera_angle", horizontal: -135, vertical: 25, distance: distance ?? 7 })
         setTimeout(() => {
           sendToGodot({ type: "capture" })
         }, 500)

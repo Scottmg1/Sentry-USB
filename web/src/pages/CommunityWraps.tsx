@@ -34,6 +34,18 @@ const MODEL_TO_GODOT_ID: Record<string, string> = {
   "Model Y L": "modely-l",
 }
 
+const GODOT_CAMERA_DISTANCE: Record<string, number> = {
+  "cybertruck": 10,
+  "model3": 7,
+  "model3-2024-base": 7,
+  "model3-2024-performance": 7,
+  "modely": 8,
+  "modely-2025-base": 8,
+  "modely-2025-premium": 8,
+  "modely-2025-performance": 8,
+  "modely-l": 8,
+}
+
 type SortOption = "newest" | "oldest" | "popular" | "name"
 
 interface CommunityWrap {
@@ -809,7 +821,8 @@ function UploadTab({ godotReadyRef, godotRef, adminPasscode }: UploadTabProps) {
           if (sceneReady || Date.now() - start > loadTimeout) {
             clearInterval(check)
             godotRef.current?.setTexture(dataUrl)
-            setTimeout(() => godotRef.current?.capture(), 2500)
+            const camDistance = GODOT_CAMERA_DISTANCE[godotId]
+            setTimeout(() => godotRef.current?.capture(camDistance), 2500)
           }
         }, 200)
       }
