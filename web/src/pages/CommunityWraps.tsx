@@ -770,7 +770,22 @@ function UploadTab({ godotReadyRef, godotRef, adminPasscode }: UploadTabProps) {
 
         if (e.data.type === "capture_result" && e.data.dataUrl) {
           cleanup()
-          resolve(e.data.dataUrl)
+
+          // Crop to 1:1 (1024×1024) for consistent thumbnails
+          const img = new Image()
+          img.onload = () => {
+            const size = Math.min(img.width, img.height)
+            const sx = (img.width - size) / 2
+            const sy = (img.height - size) / 2
+            const canvas = document.createElement("canvas")
+            canvas.width = 1024
+            canvas.height = 1024
+            const ctx = canvas.getContext("2d")!
+            ctx.drawImage(img, sx, sy, size, size, 0, 0, 1024, 1024)
+            resolve(canvas.toDataURL("image/png"))
+          }
+          img.onerror = () => resolve(e.data.dataUrl) // fallback to raw if crop fails
+          img.src = e.data.dataUrl
         } else if (e.data.type === "capture_error") {
           cleanup()
           reject(new Error(e.data.error || "Capture failed"))
