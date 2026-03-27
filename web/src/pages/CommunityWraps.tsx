@@ -22,10 +22,9 @@ const FILTER_MODELS = ["All", ...TESLA_MODELS]
 
 // Maps display names to Godot scene IDs from Tesla Wrap Studio
 // Models without a Godot 3D counterpart (Model S, Model X) are omitted — no 3D preview for those
-// NOTE: "model3" scene renders black — use model3-2024-base as fallback until a dedicated pre-2024 scene is added
 const MODEL_TO_GODOT_ID: Record<string, string> = {
   "Cybertruck": "cybertruck",
-  "Model 3": "model3-2024-base",
+  "Model 3": "model3",
   "Model 3 (2024+) Standard & Premium": "model3-2024-base",
   "Model 3 (2024+) Performance": "model3-2024-performance",
   "Model Y": "modely",
@@ -749,19 +748,31 @@ function UploadTab({ godotReadyRef, godotRef, carLoadedRef }: UploadTabProps) {
   // Generate a 3D preview by sending commands to Godot and capturing the result
   const generate3DPreview = useCallback((imageFile: File, godotId: string): Promise<string> => {
     return new Promise((resolve, reject) => {
+      let sceneReady = false
+
       const abortTimer = setTimeout(() => {
         window.removeEventListener("message", handler)
         reject(new Error("Preview capture timeout"))
       }, 30000)
 
+      const cleanup = () => {
+        clearTimeout(abortTimer)
+        window.removeEventListener("message", handler)
+      }
+
       const handler = (e: MessageEvent) => {
-        if (e.data?.type === "capture_result" && e.data.dataUrl) {
-          clearTimeout(abortTimer)
-          window.removeEventListener("message", handler)
+        if (!e.data?.type) return
+
+        // Wait for the scene to finish loading before applying texture
+        if (e.data.type === "car_loaded" || e.data.type === "scene_loaded") {
+          sceneReady = true
+        }
+
+        if (e.data.type === "capture_result" && e.data.dataUrl) {
+          cleanup()
           resolve(e.data.dataUrl)
-        } else if (e.data?.type === "capture_error") {
-          clearTimeout(abortTimer)
-          window.removeEventListener("message", handler)
+        } else if (e.data.type === "capture_error") {
+          cleanup()
           reject(new Error(e.data.error || "Capture failed"))
         }
       }
@@ -771,17 +782,16 @@ function UploadTab({ godotReadyRef, godotRef, carLoadedRef }: UploadTabProps) {
       const reader = new FileReader()
       reader.onload = () => {
         const dataUrl = reader.result as string
-        carLoadedRef.current = false
 
-        // Always explicitly load the scene — the default Godot scene may not
-        // match the requested model (e.g. default is Juniper, not pre-2025 Model Y)
+        // Always explicitly load the scene — even if it's the same model,
+        // Godot needs to re-init for back-to-back uploads
         godotRef.current?.loadScene(godotId)
 
-        // Wait for car model to load (or timeout), then apply texture and capture
-        const loadTimeout = 8000
+        // Wait for car_loaded/scene_loaded event (or timeout) before applying texture
+        const loadTimeout = 10000
         const start = Date.now()
         const check = setInterval(() => {
-          if (carLoadedRef.current || Date.now() - start > loadTimeout) {
+          if (sceneReady || Date.now() - start > loadTimeout) {
             clearInterval(check)
             godotRef.current?.setTexture(dataUrl)
             setTimeout(() => godotRef.current?.capture(), 2500)
@@ -790,7 +800,7 @@ function UploadTab({ godotReadyRef, godotRef, carLoadedRef }: UploadTabProps) {
       }
       reader.readAsDataURL(imageFile)
     })
-  }, [godotRef, carLoadedRef])
+  }, [godotRef])
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
