@@ -223,6 +223,9 @@ func (h *handlers) communityWrapsUpload(w http.ResponseWriter, r *http.Request) 
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("X-Fingerprint", getFingerprint())
+	if passcode := r.Header.Get("X-Passcode"); passcode != "" {
+		req.Header.Set("X-Passcode", passcode)
+	}
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
