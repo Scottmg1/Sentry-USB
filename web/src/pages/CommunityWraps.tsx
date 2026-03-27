@@ -760,10 +760,11 @@ function UploadTab({ godotReadyRef, godotRef, adminPasscode }: UploadTabProps) {
   // Generate a 3D preview by sending commands to Godot and capturing the result
   const generate3DPreview = useCallback((imageFile: File, godotId: string): Promise<string> => {
     return new Promise((resolve, reject) => {
-      let sceneReady = false
+      let textureDataUrl: string | null = null
+      let phase: "loading_scene" | "applying_texture" | "capturing" = "loading_scene"
 
       const abortTimer = setTimeout(() => {
-        window.removeEventListener("message", handler)
+        cleanup()
         reject(new Error("Preview capture timeout"))
       }, 30000)
 
@@ -775,11 +776,19 @@ function UploadTab({ godotReadyRef, godotRef, adminPasscode }: UploadTabProps) {
       const handler = (e: MessageEvent) => {
         if (!e.data?.type) return
 
-        // Wait for the scene to finish loading before applying texture
-        if (e.data.type === "car_loaded" || e.data.type === "scene_loaded") {
-          sceneReady = true
+        // Step 2: Scene loaded → apply texture
+        if ((e.data.type === "car_loaded" || e.data.type === "scene_loaded") && phase === "loading_scene") {
+          phase = "applying_texture"
+          if (textureDataUrl) {
+            godotRef.current?.setTexture(textureDataUrl)
+            // Wait for texture to apply, then set camera + capture
+            phase = "capturing"
+            const camDistance = GODOT_CAMERA_DISTANCE[godotId]
+            setTimeout(() => godotRef.current?.capture(camDistance), 2500)
+          }
         }
 
+        // Step 3: Capture result → crop to 1:1
         if (e.data.type === "capture_result" && e.data.dataUrl) {
           cleanup()
 
@@ -805,26 +814,25 @@ function UploadTab({ godotReadyRef, godotRef, adminPasscode }: UploadTabProps) {
       }
       window.addEventListener("message", handler)
 
-      // Read the file as data URL, then send to Godot
+      // Step 1: Read the file, then load the scene
       const reader = new FileReader()
       reader.onload = () => {
-        const dataUrl = reader.result as string
+        textureDataUrl = reader.result as string
 
         // Always explicitly load the scene — even if it's the same model,
         // Godot needs to re-init for back-to-back uploads
         godotRef.current?.loadScene(godotId)
 
-        // Wait for car_loaded/scene_loaded event (or timeout) before applying texture
-        const loadTimeout = 10000
-        const start = Date.now()
-        const check = setInterval(() => {
-          if (sceneReady || Date.now() - start > loadTimeout) {
-            clearInterval(check)
-            godotRef.current?.setTexture(dataUrl)
+        // Fallback: if scene_loaded/car_loaded never fires, apply texture after timeout
+        setTimeout(() => {
+          if (phase === "loading_scene") {
+            console.warn("Scene load event not received, applying texture anyway")
+            phase = "capturing"
+            godotRef.current?.setTexture(textureDataUrl!)
             const camDistance = GODOT_CAMERA_DISTANCE[godotId]
             setTimeout(() => godotRef.current?.capture(camDistance), 2500)
           }
-        }, 200)
+        }, 10000)
       }
       reader.readAsDataURL(imageFile)
     })
