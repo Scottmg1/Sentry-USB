@@ -153,7 +153,7 @@ export default function CommunityWraps() {
       {tab === "browse" ? (
         <BrowseTab adminPasscode={adminPasscode} onAdminExit={() => setAdminPasscode(null)} />
       ) : (
-        <UploadTab godotReadyRef={godotReadyRef} godotRef={godotRef} carLoadedRef={carLoadedRef} />
+        <UploadTab godotReadyRef={godotReadyRef} godotRef={godotRef} />
       )}
 
       {/* Passcode prompt modal */}
@@ -721,10 +721,9 @@ function DeleteWrapModal({ wrap, onDelete, onClose }: {
 interface UploadTabProps {
   godotReadyRef: React.MutableRefObject<boolean>
   godotRef: React.RefObject<GodotRendererHandle | null>
-  carLoadedRef: React.MutableRefObject<boolean>
 }
 
-function UploadTab({ godotReadyRef, godotRef, carLoadedRef }: UploadTabProps) {
+function UploadTab({ godotReadyRef, godotRef }: UploadTabProps) {
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
   const [name, setName] = useState("")
