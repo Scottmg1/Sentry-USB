@@ -79,6 +79,8 @@ func (h *handlers) communityWrapsThumbnail(w http.ResponseWriter, r *http.Reques
 }
 
 // GET /api/wraps/godot/{file} — proxy Godot WebAssembly build files from support server
+// NOTE: The Godot iframe now loads directly from api.sentry-six.com to avoid
+// proxying the 283MB .pck through the Pi. This endpoint is kept as a fallback.
 func (h *handlers) communityWrapsGodotAsset(w http.ResponseWriter, r *http.Request) {
 	file := r.PathValue("file")
 	// Whitelist: only allow Godot build files

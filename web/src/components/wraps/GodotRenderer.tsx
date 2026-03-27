@@ -74,7 +74,7 @@ const GodotRenderer = forwardRef<GodotRendererHandle, GodotRendererProps>(
     return (
       <iframe
         ref={iframeRef}
-        src="/api/wraps/godot/index.html"
+        src="https://api.sentry-six.com/wraps/godot/index.html"
         title="Wrap 3D Preview Renderer"
         style={{
           position: "absolute",
