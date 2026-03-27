@@ -36,9 +36,9 @@ const MODEL_TO_GODOT_ID: Record<string, string> = {
 
 const GODOT_CAMERA_DISTANCE: Record<string, number> = {
   "cybertruck": 10,
-  "model3": 7,
-  "model3-2024-base": 7,
-  "model3-2024-performance": 7,
+  "model3": 8,
+  "model3-2024-base": 8,
+  "model3-2024-performance": 8,
   "modely": 8,
   "modely-2025-base": 8,
   "modely-2025-premium": 8,
