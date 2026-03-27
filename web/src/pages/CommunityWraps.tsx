@@ -748,18 +748,18 @@ function UploadTab({ godotReadyRef, godotRef, carLoadedRef }: UploadTabProps) {
   // Generate a 3D preview by sending commands to Godot and capturing the result
   const generate3DPreview = useCallback((imageFile: File, godotId: string): Promise<string> => {
     return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
+      const abortTimer = setTimeout(() => {
         window.removeEventListener("message", handler)
         reject(new Error("Preview capture timeout"))
-      }, 15000)
+      }, 30000)
 
       const handler = (e: MessageEvent) => {
         if (e.data?.type === "capture_result" && e.data.dataUrl) {
-          clearTimeout(timeout)
+          clearTimeout(abortTimer)
           window.removeEventListener("message", handler)
           resolve(e.data.dataUrl)
         } else if (e.data?.type === "capture_error") {
-          clearTimeout(timeout)
+          clearTimeout(abortTimer)
           window.removeEventListener("message", handler)
           reject(new Error(e.data.error || "Capture failed"))
         }
@@ -779,10 +779,10 @@ function UploadTab({ godotReadyRef, godotRef, carLoadedRef }: UploadTabProps) {
         }
 
         // Wait for car model to load (or timeout), then apply texture and capture
-        const timeout = isDefaultModel ? 1000 : 8000
+        const loadTimeout = isDefaultModel ? 1000 : 8000
         const start = Date.now()
         const check = setInterval(() => {
-          if (carLoadedRef.current || Date.now() - start > timeout) {
+          if (carLoadedRef.current || Date.now() - start > loadTimeout) {
             clearInterval(check)
             godotRef.current?.setTexture(dataUrl)
             // Extra wait for non-default models to fully settle after scene switch
