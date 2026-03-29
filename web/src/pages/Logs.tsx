@@ -148,10 +148,6 @@ function classifyLevel(message: string, tag: string): LogLevel {
   return "default"
 }
 
-// Minimum jump (ms) between consecutive log lines to treat as a real clock
-// correction (fake-hwclock or NTP) rather than a normal gap between entries.
-const JUMP_THRESHOLD_MS = 120_000
-
 function parseLine(raw: string): ParsedLine {
   let rest = raw
   let date = ""
@@ -220,10 +216,10 @@ function FormattedLog({ content }: { content: string }) {
     return content.split("\n").map((line) => parseLine(line))
   }, [content])
 
-  // Track the previous timestamp so we can detect real clock jumps
-  // (fake-hwclock or NTP correction) vs. normal date-string changes
-  // caused by stale Pi clocks after a reboot.
-  let prevTs = 0
+  // Track the last displayed date string so we only show a date header
+  // when the date actually changes (or at the start of a boot cycle).
+  let prevDate = ""
+  let inBootCycle = false // becomes true after we see the first entry
 
   return (
     <>
@@ -234,33 +230,27 @@ function FormattedLog({ content }: { content: string }) {
 
         // Boot cycle separator (====== lines from archiveloop)
         if (parsed.raw.trim().startsWith("=====")) {
-          prevTs = 0 // reset — new boot cycle
+          prevDate = "" // reset — new boot cycle
+          inBootCycle = false
           return (
             <span key={i} className="block border-b border-slate-700/40 my-3" />
           )
         }
 
-        // Only show a date header when we detect a real clock jump
-        // (> 2 min between consecutive entries), which means fake-hwclock
-        // or NTP just corrected the time. This avoids confusing headers
-        // from stale-clock dates after a reboot.
+        // Show a date header when:
+        // 1. First timestamped entry in a boot cycle
+        // 2. The date string actually changes (new day or clock correction)
         let dateSeparator = null
-        if (parsed.fullTs > 0) {
-          if (prevTs > 0 && Math.abs(parsed.fullTs - prevTs) > JUMP_THRESHOLD_MS) {
-            dateSeparator = (
-              <span className="block border-b border-slate-700/50 pb-1 pt-3 mb-1 text-xs font-medium text-slate-500 select-none">
-                — {parsed.date} —
-              </span>
-            )
-          } else if (prevTs === 0) {
-            // First timestamped entry in a boot cycle — show its date
+        if (parsed.date) {
+          if (!inBootCycle || parsed.date !== prevDate) {
             dateSeparator = (
               <span className="block border-b border-slate-700/50 pb-1 pt-3 mb-1 text-xs font-medium text-slate-500 select-none">
                 — {parsed.date} —
               </span>
             )
           }
-          prevTs = parsed.fullTs
+          prevDate = parsed.date
+          inBootCycle = true
         }
 
         return (

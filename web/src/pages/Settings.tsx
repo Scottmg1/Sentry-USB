@@ -1028,9 +1028,8 @@ function AwayModeControl() {
 
 const TABS = [
   { id: "general", label: "General", icon: Sliders },
-  { id: "notifications", label: "Notifications", icon: Bell },
-  { id: "updates", label: "Updates", icon: Download },
-  { id: "system", label: "System", icon: Cpu },
+  { id: "connections", label: "Connections", icon: Wifi },
+  { id: "advanced", label: "Advanced", icon: Cpu },
 ] as const
 
 type TabId = typeof TABS[number]["id"]
@@ -1325,10 +1324,39 @@ export default function Settings() {
             </div>
           </div>
 
+          {/* Quick Actions */}
+          <div>
+            <p className="section-label mb-3 px-1">Quick Actions</p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <ActionButton
+                icon={Unplug}
+                label="Toggle USB Drives"
+                description="Connect or disconnect drives from the host"
+                successMessage="Drives toggled successfully"
+                onClick={async () => {
+                  const res = await fetch("/api/system/toggle-drives", { method: "POST" })
+                  if (!res.ok) throw new Error("Failed to toggle drives")
+                }}
+              />
+              <ActionButton
+                icon={RefreshCw}
+                label="Trigger Archive Sync"
+                description="Start archiving recorded clips now"
+                successMessage="Archive sync started"
+                onClick={async () => {
+                  const res = await fetch("/api/system/trigger-sync", { method: "POST" })
+                  if (!res.ok) throw new Error("Failed to trigger sync")
+                }}
+              />
+              <SpeedTestButton />
+              <HealthCheckButton />
+            </div>
+          </div>
+
           {/* Preferences */}
           <div>
             <p className="section-label mb-3 px-1">Preferences</p>
-            <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <KeepAwakePreference />
               <AwayModeControl />
             </div>
@@ -1336,8 +1364,8 @@ export default function Settings() {
         </div>
       )}
 
-      {/* ── Notifications Tab ──────────────────────────────────────── */}
-      {activeTab === "notifications" && (
+      {/* ── Connections Tab ─────────────────────────────────────────── */}
+      {activeTab === "connections" && (
         <div className="space-y-5">
           <MobileNotificationsSection />
           {piConfig?.uses_ble === "yes" && (
@@ -1349,8 +1377,8 @@ export default function Settings() {
         </div>
       )}
 
-      {/* ── Updates Tab ────────────────────────────────────────────── */}
-      {activeTab === "updates" && (
+      {/* ── Advanced Tab ───────────────────────────────────────────── */}
+      {activeTab === "advanced" && (
         <div className="space-y-5">
           {/* Stable update banner */}
           {stableUpdate && updateStatus === "idle" && (
@@ -1515,44 +1543,10 @@ export default function Settings() {
               </div>
             )}
           </div>
-        </div>
-      )}
-
-      {/* ── System Tab ─────────────────────────────────────────────── */}
-      {activeTab === "system" && (
-        <div className="space-y-5">
-          {/* Quick Actions */}
-          <div>
-            <p className="section-label mb-3 px-1">Quick Actions</p>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <ActionButton
-                icon={Unplug}
-                label="Toggle USB Drives"
-                description="Connect or disconnect drives from the host"
-                successMessage="Drives toggled successfully"
-                onClick={async () => {
-                  const res = await fetch("/api/system/toggle-drives", { method: "POST" })
-                  if (!res.ok) throw new Error("Failed to toggle drives")
-                }}
-              />
-              <ActionButton
-                icon={RefreshCw}
-                label="Trigger Archive Sync"
-                description="Start archiving recorded clips now"
-                successMessage="Archive sync started"
-                onClick={async () => {
-                  const res = await fetch("/api/system/trigger-sync", { method: "POST" })
-                  if (!res.ok) throw new Error("Failed to trigger sync")
-                }}
-              />
-              <SpeedTestButton />
-              <HealthCheckButton />
-            </div>
-          </div>
 
           {/* System management */}
           <div>
-            <p className="section-label mb-3 px-1">Management</p>
+            <p className="section-label mb-3 px-1">System</p>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <ActionButton
                 icon={RotateCcw}
@@ -1567,7 +1561,7 @@ export default function Settings() {
               />
               <ActionButton
                 icon={SettingsIcon}
-                label="Advanced Settings"
+                label="Raw Configuration"
                 description="View and edit raw configuration file"
                 onClick={async () => {
                   const res = await fetch("/api/setup/config")
@@ -1593,37 +1587,37 @@ export default function Settings() {
               </div>
             </div>
             <div className="p-5">
-              <div className="space-y-2 text-sm">
-                <div className="flex items-center justify-between rounded-xl bg-white/[0.02] px-3 py-2.5">
-                  <span className="text-slate-500">Version</span>
-                  <span className="font-mono text-xs font-medium text-slate-300">{version || "loading..."}</span>
-                </div>
-                <div className="flex items-center justify-between rounded-xl bg-white/[0.02] px-3 py-2.5">
-                  <span className="text-slate-500">Project</span>
+              <div className="space-y-1.5 text-sm max-w-md">
+                <p className="text-slate-300">
+                  <span className="text-slate-500">Version:</span>{" "}
+                  <span className="font-mono text-xs">{version || "loading..."}</span>
+                </p>
+                <p className="text-slate-300">
+                  <span className="text-slate-500">Project:</span>{" "}
                   <a
                     href="https://github.com/Scottmg1/Sentry-USB"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                    className="text-blue-400 hover:text-blue-300 transition-colors"
                   >
                     Sentry USB
                   </a>
-                </div>
-                <div className="flex items-center justify-between rounded-xl bg-white/[0.02] px-3 py-2.5">
-                  <span className="text-slate-500">Based on</span>
+                </p>
+                <p className="text-slate-300">
+                  <span className="text-slate-500">Based on:</span>{" "}
                   <a
                     href="https://github.com/marcone/teslausb"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                    className="text-blue-400 hover:text-blue-300 transition-colors"
                   >
-                    TeslaUSB (MIT)
-                  </a>
-                </div>
-                <div className="flex items-center justify-between rounded-xl bg-white/[0.02] px-3 py-2.5">
-                  <span className="text-slate-500">License</span>
-                  <span className="text-xs text-slate-300">MIT</span>
-                </div>
+                    TeslaUSB (original)
+                  </a>{" "}
+                  (MIT License)
+                </p>
+                <p className="text-slate-300">
+                  <span className="text-slate-500">License:</span> MIT
+                </p>
               </div>
               <a
                 href="https://discord.gg/9QZEzVwdnt"
