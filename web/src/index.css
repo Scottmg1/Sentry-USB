@@ -140,6 +140,16 @@ code, pre, .font-mono {
   color: rgba(148, 163, 184, 0.5);
 }
 
+/* ── Progress bar animation ────────────────────────────────────── */
+@keyframes progress-stripe {
+  0% { background-position: 200% 0; }
+  100% { background-position: 0% 0; }
+}
+
+.animate-progress-stripe {
+  animation: progress-stripe 2s linear infinite;
+}
+
 /* Safe-area bottom padding for iOS notch devices */
 .pb-safe {
   padding-bottom: env(safe-area-inset-bottom, 0px);

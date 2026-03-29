@@ -686,44 +686,42 @@ function KeepAwakeTile() {
           <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
             Keep Awake
           </p>
-          <p className="mt-1 text-lg font-semibold text-slate-100">{value}</p>
-          <p className="mt-0.5 text-xs text-slate-500">{sub}</p>
-        </div>
-      </div>
-
-      {/* Action buttons */}
-      <div className="mt-3">
-        {mode === "manual" && isIdle && (
-          <div className="relative">
-            <button
-              onClick={() => setShowDurations(!showDurations)}
-              className="w-full rounded-lg bg-blue-500/20 px-3 py-1.5 text-xs font-medium text-blue-400 transition-colors hover:bg-blue-500/30"
-            >
-              Keep Awake
-            </button>
-            {showDurations && (
-              <div className="absolute left-0 right-0 top-full z-10 mt-1 rounded-lg border border-white/10 bg-slate-900 p-1 shadow-xl">
-                {DURATION_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.value}
-                    onClick={() => { start(opt.value); setShowDurations(false) }}
-                    className="w-full rounded-md px-3 py-1.5 text-left text-xs text-slate-300 hover:bg-white/5"
-                  >
-                    {opt.label}
-                  </button>
-                ))}
+          <div className="mt-1 flex items-center gap-2">
+            <p className="text-lg font-semibold text-slate-100">{value}</p>
+            {mode === "manual" && isIdle && (
+              <div className="relative ml-auto">
+                <button
+                  onClick={() => setShowDurations(!showDurations)}
+                  className="rounded-lg bg-blue-500/20 px-2.5 py-1 text-[11px] font-medium text-blue-400 transition-colors hover:bg-blue-500/30"
+                >
+                  Start
+                </button>
+                {showDurations && (
+                  <div className="absolute right-0 top-full z-10 mt-1 w-28 rounded-lg border border-white/10 bg-slate-900 p-1 shadow-xl">
+                    {DURATION_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.value}
+                        onClick={() => { start(opt.value); setShowDurations(false) }}
+                        className="w-full rounded-md px-3 py-1.5 text-left text-xs text-slate-300 hover:bg-white/5"
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
+            {(isActive || isPending) && (
+              <button
+                onClick={stop}
+                className="ml-auto rounded-lg bg-red-500/15 px-2.5 py-1 text-[11px] font-medium text-red-400 transition-colors hover:bg-red-500/25"
+              >
+                Stop
+              </button>
+            )}
           </div>
-        )}
-        {(isActive || isPending) && (
-          <button
-            onClick={stop}
-            className="w-full rounded-lg bg-red-500/15 px-3 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/25"
-          >
-            Stop
-          </button>
-        )}
+          <p className="mt-0.5 text-xs text-slate-500">{sub}</p>
+        </div>
       </div>
     </div>
   )
