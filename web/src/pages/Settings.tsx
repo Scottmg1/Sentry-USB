@@ -20,12 +20,18 @@ import {
   Wifi,
   WifiOff,
   Clock,
+  Bell,
+  Shield,
+  Cpu,
+  Sliders,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { SetupWizard } from "@/components/setup/SetupWizard"
 import { wsClient } from "@/lib/ws"
 import { useKeepAwake } from "@/hooks/useKeepAwake"
 import { useAwayMode } from "@/hooks/useAwayMode"
+
+// ─── Shared primitives ──────────────────────────────────────────────────────
 
 type ActionState = "idle" | "loading" | "success" | "error"
 
@@ -56,7 +62,6 @@ function ActionButton({
     try {
       const result = await onClick()
       if (result === "confirm") {
-        // Special case: action needs confirmation, don't show success
         setState("idle")
         setMsg("")
         return
@@ -75,11 +80,11 @@ function ActionButton({
     <button
       onClick={handleClick}
       disabled={state === "loading"}
-      className="glass-card glass-card-hover flex items-start gap-3 p-4 text-left transition-colors disabled:opacity-70"
+      className="glass-card glass-card-hover flex items-start gap-3 p-4 text-left transition-all disabled:opacity-70"
     >
       <div
         className={cn(
-          "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-colors",
+          "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors",
           state === "loading" ? "bg-blue-500/15 text-blue-400" :
             state === "success" ? "bg-emerald-500/15 text-emerald-400" :
               state === "error" ? "bg-red-500/15 text-red-400" :
@@ -113,6 +118,8 @@ function ActionButton({
   )
 }
 
+// ─── BLE Pairing ────────────────────────────────────────────────────────────
+
 type BleState = "idle" | "initiating" | "waiting" | "polling" | "paired" | "error"
 
 function BlePairButton() {
@@ -121,7 +128,6 @@ function BlePairButton() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Check if already paired on mount (quick check, no BLE probe)
   useEffect(() => {
     fetch("/api/system/ble-status?quick=true")
       .then(r => r.json())
@@ -130,8 +136,6 @@ function BlePairButton() {
           setBleState("paired")
           setBleMsg("Paired — click to re-pair")
         } else if (data.status === "keys_generated") {
-          // Keys exist and VIN is set but pairing with the car has not been
-          // confirmed yet — show idle so the user knows to pair.
           setBleState("idle")
           setBleMsg("")
         }
@@ -139,7 +143,6 @@ function BlePairButton() {
       .catch(() => { })
   }, [])
 
-  // Subscribe to WebSocket ble_status messages
   useEffect(() => {
     const unsub = wsClient.subscribe("ble_status", (data: unknown) => {
       const d = data as { status: string; error?: string; output?: string }
@@ -229,7 +232,6 @@ function BlePairButton() {
   }
 
   function handlePairedClick() {
-    // Allow re-pairing from paired state
     handlePair()
   }
 
@@ -239,11 +241,11 @@ function BlePairButton() {
     <button
       onClick={bleState === "idle" ? handlePair : bleState === "paired" ? handlePairedClick : bleState === "error" ? handleReset : undefined}
       disabled={isActive}
-      className="glass-card glass-card-hover flex items-start gap-3 p-4 text-left transition-colors disabled:opacity-70"
+      className="glass-card glass-card-hover flex items-start gap-3 p-4 text-left transition-all disabled:opacity-70"
     >
       <div
         className={cn(
-          "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-colors",
+          "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors",
           bleState === "paired" ? "bg-emerald-500/15 text-emerald-400" :
             bleState === "error" ? "bg-red-500/15 text-red-400" :
               isActive ? "bg-amber-500/15 text-amber-400" :
@@ -277,6 +279,8 @@ function BlePairButton() {
     </button>
   )
 }
+
+// ─── Mobile Notifications ───────────────────────────────────────────────────
 
 type PairedDevice = { pairing_id: string; device_name: string; platform: string; paired_at: string }
 
@@ -361,15 +365,17 @@ function MobileNotificationsSection() {
   }
 
   return (
-    <div>
-      <h2 className="mb-3 text-sm font-medium uppercase tracking-wider text-slate-500">
-        Mobile Notifications
-      </h2>
-      <div className="glass-card p-5 space-y-4">
-        <p className="text-sm text-slate-400">
-          Pair your phone with the Sentry USB mobile app to receive push notifications.
-        </p>
-
+    <div className="glass-card overflow-hidden">
+      <div className="flex items-center gap-3 border-b border-white/5 px-5 py-4">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-500/15">
+          <Bell className="h-4.5 w-4.5 text-violet-400" />
+        </div>
+        <div>
+          <h3 className="text-sm font-semibold text-slate-200">Mobile Notifications</h3>
+          <p className="text-xs text-slate-500">Pair your phone to receive push notifications</p>
+        </div>
+      </div>
+      <div className="p-5 space-y-4">
         {/* Generate Code */}
         <div className="flex items-center gap-3">
           {pairingCode ? (
@@ -383,7 +389,7 @@ function MobileNotificationsSection() {
             <button
               onClick={generateCode}
               disabled={loading}
-              className="rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-600 disabled:opacity-50"
+              className="rounded-xl bg-blue-500 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-600 disabled:opacity-50"
             >
               {loading ? (
                 <Loader2 className="inline h-4 w-4 animate-spin mr-1.5" />
@@ -408,11 +414,11 @@ function MobileNotificationsSection() {
           <p className="text-xs text-slate-600">Loading paired devices...</p>
         ) : pairedDevices.length > 0 ? (
           <div className="space-y-2">
-            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Paired Devices</p>
+            <p className="section-label">Paired Devices</p>
             {pairedDevices.map(device => (
-              <div key={device.pairing_id} className="flex items-center gap-3 rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2">
+              <div key={device.pairing_id} className="flex items-center gap-3 rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2.5">
                 <span className="text-sm text-slate-300">{device.device_name}</span>
-                <span className="text-xs text-slate-600">{device.platform.toUpperCase()}</span>
+                <span className="rounded-md bg-white/5 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">{device.platform.toUpperCase()}</span>
                 <span className="flex-1" />
                 <button
                   onClick={() => removeDevice(device.pairing_id)}
@@ -425,7 +431,7 @@ function MobileNotificationsSection() {
             <button
               onClick={sendTest}
               disabled={testState === "loading"}
-              className="mt-1 w-full rounded-lg border border-white/5 bg-white/[0.03] px-3 py-2 text-xs text-slate-400 hover:bg-white/[0.06] hover:text-slate-300 transition-colors disabled:opacity-50"
+              className="mt-1 w-full rounded-xl border border-white/5 bg-white/[0.03] px-3 py-2.5 text-xs text-slate-400 hover:bg-white/[0.06] hover:text-slate-300 transition-colors disabled:opacity-50"
             >
               {testState === "loading" ? "Sending..." : testState === "success" ? "✓ Test sent!" : testState === "error" ? "Failed to send" : "Send Test Notification"}
             </button>
@@ -437,6 +443,8 @@ function MobileNotificationsSection() {
     </div>
   )
 }
+
+// ─── Health Check ───────────────────────────────────────────────────────────
 
 type HealthItem = { name: string; status: "pass" | "warn" | "fail"; detail?: string }
 type HealthCategory = { name: string; items: HealthItem[] }
@@ -455,7 +463,6 @@ function HealthCheckButton() {
       if (!res.ok) throw new Error("Health check failed")
       const data = await res.json()
       setReport(data)
-      // Auto-expand categories with issues
       const exp: Record<string, boolean> = {}
       for (const cat of data.categories) {
         if (cat.items.some((i: HealthItem) => i.status !== "pass")) exp[cat.name] = true
@@ -476,9 +483,9 @@ function HealthCheckButton() {
       <button
         onClick={runCheck}
         disabled={loading}
-        className="glass-card glass-card-hover flex items-start gap-3 p-4 text-left transition-colors disabled:opacity-70"
+        className="glass-card glass-card-hover flex items-start gap-3 p-4 text-left transition-all disabled:opacity-70"
       >
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-500/15 text-blue-400">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/15 text-blue-400">
           {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Stethoscope className="h-5 w-5" />}
         </div>
         <div className="min-w-0 flex-1">
@@ -497,7 +504,7 @@ function HealthCheckButton() {
       <div className="flex items-center justify-between border-b border-white/5 px-4 py-3">
         <div className="flex items-center gap-2">
           <Stethoscope className={cn("h-5 w-5", failCount > 0 ? "text-red-400" : warnCount > 0 ? "text-amber-400" : "text-emerald-400")} />
-          <span className="text-sm font-medium text-slate-200">Health Check</span>
+          <span className="text-sm font-semibold text-slate-200">Health Check</span>
           <span className={cn(
             "rounded-full px-2 py-0.5 text-xs font-medium",
             failCount > 0 ? "bg-red-500/15 text-red-400" : warnCount > 0 ? "bg-amber-500/15 text-amber-400" : "bg-emerald-500/15 text-emerald-400"
@@ -521,13 +528,13 @@ function HealthCheckButton() {
             <div key={cat.name} className="border-b border-white/5 last:border-0">
               <button
                 onClick={() => setExpanded(p => ({ ...p, [cat.name]: !isOpen }))}
-                className="flex w-full items-center gap-2 py-2 text-left"
+                className="flex w-full items-center gap-2 py-2.5 text-left"
               >
                 {isOpen ? <ChevronDown className="h-3.5 w-3.5 text-slate-500" /> : <ChevronRight className="h-3.5 w-3.5 text-slate-500" />}
                 <span className="flex-1 text-xs font-medium text-slate-300">{cat.name}</span>
-                {catFails > 0 && <span className="rounded bg-red-500/15 px-1.5 py-0.5 text-[10px] text-red-400">{catFails} fail</span>}
-                {catWarns > 0 && <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-400">{catWarns} warn</span>}
-                {catFails === 0 && catWarns === 0 && <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] text-emerald-400">all pass</span>}
+                {catFails > 0 && <span className="rounded-md bg-red-500/15 px-1.5 py-0.5 text-[10px] text-red-400">{catFails} fail</span>}
+                {catWarns > 0 && <span className="rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-400">{catWarns} warn</span>}
+                {catFails === 0 && catWarns === 0 && <span className="rounded-md bg-emerald-500/15 px-1.5 py-0.5 text-[10px] text-emerald-400">all pass</span>}
               </button>
               {isOpen && (
                 <div className="mb-2 space-y-0.5 pl-5">
@@ -547,6 +554,8 @@ function HealthCheckButton() {
     </div>
   )
 }
+
+// ─── Speed Test ─────────────────────────────────────────────────────────────
 
 function SpeedTestButton() {
   const [running, setRunning] = useState(false)
@@ -617,10 +626,10 @@ function SpeedTestButton() {
   return (
     <button
       onClick={running ? stopTest : startTest}
-      className="glass-card glass-card-hover flex items-start gap-3 p-4 text-left transition-colors"
+      className="glass-card glass-card-hover flex items-start gap-3 p-4 text-left transition-all"
     >
       <div className={cn(
-        "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-colors",
+        "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors",
         running ? "bg-amber-500/15 text-amber-400" : "bg-blue-500/15 text-blue-400"
       )}>
         {running ? <Loader2 className="h-5 w-5 animate-spin" /> : <Gauge className="h-5 w-5" />}
@@ -630,7 +639,7 @@ function SpeedTestButton() {
           {running ? "Stop Speed Test" : "Network Speed Test"}
         </p>
         {mbps ? (
-          <p className="mt-1 text-lg font-bold text-blue-400">{mbps} Mbps</p>
+          <p className="mt-1 text-lg font-bold text-blue-400">{mbps} <span className="text-sm font-normal text-slate-500">Mbps</span></p>
         ) : (
           <p className="mt-0.5 text-xs text-slate-500">
             {error ? "Speed test failed" : running ? "Starting..." : "Runs continuously until stopped"}
@@ -640,6 +649,8 @@ function SpeedTestButton() {
     </button>
   )
 }
+
+// ─── Raw Config Editor ──────────────────────────────────────────────────────
 
 type UpdateStatus = "idle" | "checking_internet" | "checking" | "downloading" | "installing" | "updating_scripts" | "restarting" | "reconnecting" | "done" | "error"
 
@@ -701,36 +712,36 @@ function RawConfigEditor({ config, onClose }: { config: Record<string, RawConfig
           <div className="flex gap-2">
             {saveMsg && <span className={cn("text-xs self-center", saveMsg.includes("success") ? "text-emerald-400" : "text-red-400")}>{saveMsg}</span>}
             <button onClick={handleSave} disabled={saving}
-              className="rounded-lg bg-blue-500 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-600 disabled:opacity-50">
+              className="rounded-xl bg-blue-500 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-600 disabled:opacity-50">
               {saving ? "Saving..." : "Save"}
             </button>
             <button onClick={onClose}
-              className="rounded-lg px-3 py-1.5 text-sm text-slate-500 hover:bg-white/5 hover:text-slate-300">Close</button>
+              className="rounded-xl px-3 py-1.5 text-sm text-slate-500 hover:bg-white/5 hover:text-slate-300">Close</button>
           </div>
         </div>
         <div className="flex-1 overflow-y-auto px-6 py-4">
           <div className="space-y-1">
             {sortedKeys.map(key => (
-              <div key={key} className="flex items-center gap-2 rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2">
+              <div key={key} className="flex items-center gap-2 rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2.5">
                 <input type="checkbox" checked={entries[key].active}
                   onChange={e => setEntries(prev => ({ ...prev, [key]: { ...prev[key], active: e.target.checked } }))}
-                  className="accent-blue-500" />
+                  className="toggle-switch" />
                 <span className={cn("w-28 shrink-0 truncate font-mono text-xs sm:w-48", entries[key].active ? "text-blue-400" : "text-slate-600")}>{key}</span>
                 <input type="text" value={entries[key].value}
                   onChange={e => setEntries(prev => ({ ...prev, [key]: { ...prev[key], value: e.target.value } }))}
-                  className="flex-1 rounded border border-white/10 bg-white/5 px-2 py-1 font-mono text-xs text-slate-200 outline-none focus:border-blue-500/50" />
+                  className="flex-1 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 font-mono text-xs text-slate-200 outline-none focus:border-blue-500/50" />
                 <button onClick={() => setEntries(prev => { const n = { ...prev }; delete n[key]; return n })}
-                  className="text-xs text-slate-600 hover:text-red-400">✕</button>
+                  className="text-xs text-slate-600 hover:text-red-400 transition-colors">✕</button>
               </div>
             ))}
           </div>
           <div className="mt-4 flex items-center gap-2">
             <input type="text" value={newKey} onChange={e => setNewKey(e.target.value)}
-              placeholder="NEW_KEY" className="w-48 rounded border border-white/10 bg-white/5 px-2 py-1 font-mono text-xs text-slate-200 placeholder-slate-600 outline-none focus:border-blue-500/50" />
+              placeholder="NEW_KEY" className="w-48 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 font-mono text-xs text-slate-200 placeholder-slate-600 outline-none focus:border-blue-500/50" />
             <input type="text" value={newVal} onChange={e => setNewVal(e.target.value)}
-              placeholder="value" className="flex-1 rounded border border-white/10 bg-white/5 px-2 py-1 font-mono text-xs text-slate-200 placeholder-slate-600 outline-none focus:border-blue-500/50" />
+              placeholder="value" className="flex-1 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 font-mono text-xs text-slate-200 placeholder-slate-600 outline-none focus:border-blue-500/50" />
             <button onClick={addEntry}
-              className="rounded bg-blue-500/20 px-3 py-1 text-xs font-medium text-blue-400 hover:bg-blue-500/30">Add</button>
+              className="rounded-lg bg-blue-500/20 px-3 py-1.5 text-xs font-medium text-blue-400 hover:bg-blue-500/30">Add</button>
           </div>
         </div>
       </div>
@@ -738,11 +749,53 @@ function RawConfigEditor({ config, onClose }: { config: Record<string, RawConfig
   )
 }
 
+// ─── Preferences: Keep Awake ────────────────────────────────────────────────
+
 const KEEP_AWAKE_MODES = [
   { value: "", label: "Off", desc: "Keep-awake disabled" },
   { value: "manual", label: "Manual", desc: "Button on Dashboard with duration picker" },
   { value: "auto", label: "Automatic", desc: "Stays awake while you're browsing" },
 ]
+
+function KeepAwakePreference() {
+  const { mode, updateMode } = useKeepAwake()
+
+  return (
+    <div className="glass-card overflow-hidden">
+      <div className="flex items-center gap-3 border-b border-white/5 px-5 py-4">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-rose-500/15">
+          <HeartPulse className="h-4.5 w-4.5 text-rose-400" />
+        </div>
+        <div>
+          <h3 className="text-sm font-semibold text-slate-200">Keep Awake Mode</h3>
+          <p className="text-xs text-slate-500">Keep the car awake after archiving so you can browse files, update, etc.</p>
+        </div>
+      </div>
+      <div className="p-5">
+        <div className="grid grid-cols-3 gap-2">
+          {KEEP_AWAKE_MODES.map((m) => (
+            <button
+              key={m.value}
+              onClick={() => updateMode(m.value)}
+              className={cn(
+                "rounded-xl border px-3 py-3 text-left text-xs transition-all",
+                (mode ?? "") === m.value
+                  ? "border-blue-500/40 bg-blue-500/10 text-blue-400 shadow-[0_0_12px_rgba(59,130,246,0.1)]"
+                  : "border-white/5 bg-white/[0.02] text-slate-400 hover:bg-white/[0.05] hover:border-white/10"
+              )}
+            >
+              <span className="font-semibold">{m.label}</span>
+              <br />
+              <span className="text-[10px] opacity-60 leading-relaxed">{m.desc}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Preferences: Away Mode ─────────────────────────────────────────────────
 
 const AWAY_MODE_PRESETS = [
   { value: 60, label: "1h" },
@@ -797,198 +850,195 @@ function AwayModeControl() {
   }
 
   return (
-    <div className="glass-card p-4">
-      <div className="flex items-center gap-2 mb-3">
-        {isActive ? (
-          <Wifi className="h-4 w-4 text-blue-400" />
-        ) : (
-          <WifiOff className="h-4 w-4 text-slate-400" />
+    <div className="glass-card overflow-hidden">
+      <div className="flex items-center gap-3 border-b border-white/5 px-5 py-4">
+        <div className={cn(
+          "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl",
+          isActive ? "bg-blue-500/15" : "bg-slate-500/10"
+        )}>
+          {isActive ? (
+            <Wifi className="h-4.5 w-4.5 text-blue-400" />
+          ) : (
+            <WifiOff className="h-4.5 w-4.5 text-slate-500" />
+          )}
+        </div>
+        <div>
+          <h3 className="text-sm font-semibold text-slate-200">Away Mode</h3>
+          <p className="text-xs text-slate-500">Enable WiFi AP for a set duration when away from home</p>
+        </div>
+        {isActive && (
+          <span className="ml-auto rounded-full bg-blue-500/15 px-2.5 py-0.5 text-[10px] font-semibold text-blue-400">
+            Active
+          </span>
         )}
-        <span className="text-sm font-medium text-slate-200">Away Mode</span>
-      </div>
-      <p className="mb-3 text-xs text-slate-500">
-        Enable the WiFi Access Point for a set duration. While active, the AP stays up without interruption for devices to connect.
-      </p>
-
-      {/* Info box — what Away Mode does */}
-      <div className="mb-3 rounded-lg border border-white/5 bg-white/[0.02] p-3 text-[11px] leading-relaxed text-slate-500 space-y-1">
-        <p><span className="text-slate-400 font-medium">What it does:</span> Turns on the Pi's WiFi hotspot so you can connect to the web UI when away from your home network.</p>
-        <p><span className="text-slate-400 font-medium">WiFi scanning paused:</span> While active, the Pi stops scanning for your home WiFi so the AP stays up without interruption.</p>
-        <p><span className="text-slate-400 font-medium">Auto-disable:</span> The AP automatically turns off when the timer expires, resuming normal WiFi operation.</p>
-        <p><span className="text-slate-400 font-medium">Max duration:</span> 24 hours. Archiving is unavailable while Away Mode is active.</p>
       </div>
 
-      {/* Non-RTC warning */}
-      {status.has_rtc === false && (
-        <div className="mb-3 flex gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-[11px] text-amber-400/80">
-          <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-          <p>
-            <span className="font-medium">No RTC detected.</span> Your Pi does not have a hardware clock, so the timer uses a countdown that is saved every 30 seconds. If the Pi reboots while in Away Mode, up to 30 seconds of timer accuracy may be lost.
-          </p>
-        </div>
-      )}
+      <div className="p-5 space-y-4">
+        {/* Collapsible info */}
+        <details className="group">
+          <summary className="cursor-pointer text-[11px] text-slate-600 hover:text-slate-400 transition-colors select-none">
+            <span className="ml-1">How does Away Mode work?</span>
+          </summary>
+          <div className="mt-2 rounded-xl border border-white/5 bg-white/[0.02] p-3 text-[11px] leading-relaxed text-slate-500 space-y-1">
+            <p><span className="text-slate-400 font-medium">What it does:</span> Turns on the Pi's WiFi hotspot so you can connect to the web UI when away from your home network.</p>
+            <p><span className="text-slate-400 font-medium">WiFi scanning paused:</span> While active, the Pi stops scanning for your home WiFi so the AP stays up without interruption.</p>
+            <p><span className="text-slate-400 font-medium">Auto-disable:</span> The AP automatically turns off when the timer expires, resuming normal WiFi operation.</p>
+            <p><span className="text-slate-400 font-medium">Max duration:</span> 24 hours. Archiving is unavailable while Away Mode is active.</p>
+          </div>
+        </details>
 
-      {isActive ? (
-        <div className="space-y-3">
-          <div className="flex items-center gap-2 text-sm text-blue-400">
-            <Clock className="h-3.5 w-3.5" />
-            <span>{formatRemaining(status.remaining_sec ?? 0)}</span>
+        {/* Non-RTC warning */}
+        {status.has_rtc === false && (
+          <div className="flex gap-2 rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-[11px] text-amber-400/80">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+            <p>
+              <span className="font-medium">No RTC detected.</span> Your Pi does not have a hardware clock, so the timer uses a countdown that is saved every 30 seconds. If the Pi reboots while in Away Mode, up to 30 seconds of timer accuracy may be lost.
+            </p>
           </div>
-          <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
-            <div
-              className="h-full rounded-full bg-blue-500/60 transition-all duration-1000"
-              style={{ width: `${getProgress()}%` }}
-            />
+        )}
+
+        {isActive ? (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-sm text-blue-400">
+              <Clock className="h-3.5 w-3.5" />
+              <span className="font-medium">{formatRemaining(status.remaining_sec ?? 0)}</span>
+            </div>
+            <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
+              <div
+                className="h-full rounded-full bg-blue-500/60 transition-all duration-1000"
+                style={{ width: `${getProgress()}%` }}
+              />
+            </div>
+            <p className="text-[11px] text-slate-600">
+              Disabling will immediately turn off the AP and disconnect any connected devices.
+            </p>
+            <button
+              onClick={disable}
+              className="w-full rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/20"
+            >
+              Disable Away Mode
+            </button>
           </div>
-          <p className="text-[11px] text-slate-600">
-            Disabling will immediately turn off the AP and disconnect any connected devices.
-          </p>
-          <button
-            onClick={disable}
-            className="w-full rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/20"
-          >
-            Disable Away Mode
-          </button>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          <div className="grid grid-cols-5 gap-2">
-            {AWAY_MODE_PRESETS.map((p) => (
+        ) : (
+          <div className="space-y-3">
+            <div className="grid grid-cols-5 gap-2">
+              {AWAY_MODE_PRESETS.map((p) => (
+                <button
+                  key={p.value}
+                  onClick={() => { setSelectedDuration(p.value); setUseCustom(false) }}
+                  className={cn(
+                    "rounded-xl border px-2 py-2 text-xs font-medium transition-all",
+                    !useCustom && selectedDuration === p.value
+                      ? "border-blue-500/40 bg-blue-500/10 text-blue-400 shadow-[0_0_12px_rgba(59,130,246,0.1)]"
+                      : "border-white/5 bg-white/[0.02] text-slate-400 hover:bg-white/[0.05]"
+                  )}
+                >
+                  {p.label}
+                </button>
+              ))}
               <button
-                key={p.value}
-                onClick={() => { setSelectedDuration(p.value); setUseCustom(false) }}
+                onClick={() => setUseCustom(true)}
                 className={cn(
-                  "rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors",
-                  !useCustom && selectedDuration === p.value
-                    ? "border-blue-500/40 bg-blue-500/10 text-blue-400"
+                  "rounded-xl border px-2 py-2 text-xs font-medium transition-all",
+                  useCustom
+                    ? "border-blue-500/40 bg-blue-500/10 text-blue-400 shadow-[0_0_12px_rgba(59,130,246,0.1)]"
                     : "border-white/5 bg-white/[0.02] text-slate-400 hover:bg-white/[0.05]"
                 )}
               >
-                {p.label}
+                Custom
               </button>
-            ))}
-            <button
-              onClick={() => setUseCustom(true)}
-              className={cn(
-                "rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors",
-                useCustom
-                  ? "border-blue-500/40 bg-blue-500/10 text-blue-400"
-                  : "border-white/5 bg-white/[0.02] text-slate-400 hover:bg-white/[0.05]"
-              )}
-            >
-              Custom
-            </button>
-          </div>
-          {useCustom && (
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                min="0"
-                max="24"
-                step="1"
-                placeholder="0"
-                value={customHours}
-                onChange={(e) => setCustomHours(e.target.value)}
-                className="w-16 rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-xs text-slate-200 placeholder:text-slate-600 focus:border-blue-500/40 focus:outline-none"
-              />
-              <span className="text-xs text-slate-500">hrs</span>
-              <input
-                type="number"
-                min="0"
-                max="59"
-                step="1"
-                placeholder="0"
-                value={customMinutes}
-                onChange={(e) => setCustomMinutes(e.target.value)}
-                className="w-16 rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-xs text-slate-200 placeholder:text-slate-600 focus:border-blue-500/40 focus:outline-none"
-              />
-              <span className="text-xs text-slate-500">min</span>
             </div>
-          )}
-          <button
-            onClick={handleEnableClick}
-            disabled={enabling || (useCustom && getCustomMinutes() <= 0)}
-            className="w-full rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-xs font-medium text-blue-400 transition-colors hover:bg-blue-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {enabling ? "Enabling..." : "Enable Away Mode"}
-          </button>
+            {useCustom && (
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min="0"
+                  max="24"
+                  step="1"
+                  placeholder="0"
+                  value={customHours}
+                  onChange={(e) => setCustomHours(e.target.value)}
+                  className="w-16 rounded-xl border border-white/10 bg-white/5 px-2.5 py-2 text-xs text-slate-200 placeholder:text-slate-600 focus:border-blue-500/40 focus:outline-none"
+                />
+                <span className="text-xs text-slate-500">hrs</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="59"
+                  step="1"
+                  placeholder="0"
+                  value={customMinutes}
+                  onChange={(e) => setCustomMinutes(e.target.value)}
+                  className="w-16 rounded-xl border border-white/10 bg-white/5 px-2.5 py-2 text-xs text-slate-200 placeholder:text-slate-600 focus:border-blue-500/40 focus:outline-none"
+                />
+                <span className="text-xs text-slate-500">min</span>
+              </div>
+            )}
+            <button
+              onClick={handleEnableClick}
+              disabled={enabling || (useCustom && getCustomMinutes() <= 0)}
+              className="w-full rounded-xl border border-blue-500/30 bg-blue-500/10 px-3 py-2.5 text-xs font-medium text-blue-400 transition-colors hover:bg-blue-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {enabling ? "Enabling..." : "Enable Away Mode"}
+            </button>
 
-          {/* Confirmation dialog */}
-          {confirmOpen && (
-            <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 space-y-2">
-              <div className="flex items-start gap-2">
-                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-400" />
-                <div className="text-xs text-amber-300/90 space-y-1">
-                  <p className="font-medium">You may lose connection to this page</p>
-                  <p className="text-amber-400/70">
-                    Enabling Away Mode will start the WiFi hotspot and disconnect from your home network.
-                    {status.ap_ssid && (
-                      <> To continue using the web UI, connect your device to <span className="font-medium text-amber-300">"{status.ap_ssid}"</span></>
-                    )}
-                    {status.ap_ip && (
-                      <> and navigate to <span className="font-medium text-amber-300">http://{status.ap_ip}</span></>
-                    )}
-                    .
-                  </p>
+            {/* Confirmation dialog */}
+            {confirmOpen && (
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 space-y-3">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-400" />
+                  <div className="text-xs text-amber-300/90 space-y-1">
+                    <p className="font-semibold">You may lose connection to this page</p>
+                    <p className="text-amber-400/70">
+                      Enabling Away Mode will start the WiFi hotspot and disconnect from your home network.
+                      {status.ap_ssid && (
+                        <> To continue using the web UI, connect your device to <span className="font-medium text-amber-300">"{status.ap_ssid}"</span></>
+                      )}
+                      {status.ap_ip && (
+                        <> and navigate to <span className="font-medium text-amber-300">http://{status.ap_ip}</span></>
+                      )}
+                      .
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleConfirmEnable}
+                    className="flex-1 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-400 transition-colors hover:bg-amber-500/20"
+                  >
+                    Enable Away Mode
+                  </button>
+                  <button
+                    onClick={() => setConfirmOpen(false)}
+                    className="flex-1 rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2 text-xs font-medium text-slate-400 transition-colors hover:bg-white/[0.05]"
+                  >
+                    Cancel
+                  </button>
                 </div>
               </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={handleConfirmEnable}
-                  className="flex-1 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-400 transition-colors hover:bg-amber-500/20"
-                >
-                  Enable Away Mode
-                </button>
-                <button
-                  onClick={() => setConfirmOpen(false)}
-                  className="flex-1 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-1.5 text-xs font-medium text-slate-400 transition-colors hover:bg-white/[0.05]"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function KeepAwakePreference() {
-  const { mode, updateMode } = useKeepAwake()
-
-  return (
-    <div className="glass-card p-4">
-      <div className="flex items-center gap-2 mb-3">
-        <HeartPulse className="h-4 w-4 text-rose-400" />
-        <span className="text-sm font-medium text-slate-200">Keep Awake Mode</span>
-      </div>
-      <p className="mb-3 text-xs text-slate-500">
-        Keep the car awake from the web UI after archiving finishes so you can browse files, update, etc.
-      </p>
-      <div className="grid grid-cols-3 gap-2">
-        {KEEP_AWAKE_MODES.map((m) => (
-          <button
-            key={m.value}
-            onClick={() => updateMode(m.value)}
-            className={cn(
-              "rounded-lg border px-3 py-2 text-left text-xs transition-colors",
-              (mode ?? "") === m.value
-                ? "border-blue-500/40 bg-blue-500/10 text-blue-400"
-                : "border-white/5 bg-white/[0.02] text-slate-400 hover:bg-white/[0.05]"
             )}
-          >
-            <span className="font-medium">{m.label}</span>
-            <br />
-            <span className="text-[10px] opacity-60">{m.desc}</span>
-          </button>
-        ))}
+          </div>
+        )}
       </div>
     </div>
   )
 }
+
+// ─── Tab definitions ────────────────────────────────────────────────────────
+
+const TABS = [
+  { id: "general", label: "General", icon: Sliders },
+  { id: "notifications", label: "Notifications", icon: Bell },
+  { id: "updates", label: "Updates", icon: Download },
+  { id: "system", label: "System", icon: Cpu },
+] as const
+
+type TabId = typeof TABS[number]["id"]
+
+// ─── Main Settings page ────────────────────────────────────────────────────
 
 export default function Settings() {
+  const [activeTab, setActiveTab] = useState<TabId>("general")
   const [confirmReboot, setConfirmReboot] = useState(false)
   const [wizardOpen, setWizardOpen] = useState(false)
   const [wizardInitialData, setWizardInitialData] = useState<Record<string, string> | undefined>(undefined)
@@ -1017,14 +1067,12 @@ export default function Settings() {
       .then(r => r.json())
       .then(data => setPiConfig(data))
       .catch(() => { })
-    // Check for cached update status
     fetch("/api/system/update-status")
       .then(r => r.json())
       .then(data => {
         if (data.stable?.available) {
           setStableUpdate({ version: data.stable.version, release_url: data.stable.release_url, release_notes: data.stable.release_notes })
         } else if (data.update_available) {
-          // Backward compat with old cache format
           setStableUpdate({ version: data.latest_version, release_url: data.release_url, release_notes: data.release_notes })
         }
         if (data.prerelease?.available) {
@@ -1032,7 +1080,6 @@ export default function Settings() {
         }
       })
       .catch(() => { })
-    // Load preferences
     fetch("/api/config/preference?key=auto_update_check")
       .then(r => r.json())
       .then(data => setAutoUpdateEnabled(data.value !== "disabled"))
@@ -1062,7 +1109,6 @@ export default function Settings() {
           setStableUpdate({ version: data.stable.version, release_url: data.stable.release_url, release_notes: data.stable.release_notes })
           foundAny = true
         } else if (data.update_available) {
-          // Backward compat
           setStableUpdate({ version: data.latest_version, release_url: data.release_url, release_notes: data.release_notes })
           foundAny = true
         }
@@ -1088,7 +1134,6 @@ export default function Settings() {
     setUpdateError(null)
     setUpdateMessage("Checking internet connection...")
 
-    // Subscribe to real-time progress from the Go server via WebSocket
     const unsubscribe = wsClient.subscribe("update_status", (data: unknown) => {
       const msg = data as { status?: string; message?: string; error?: string }
       if (msg.error) {
@@ -1115,7 +1160,6 @@ export default function Settings() {
     })
 
     try {
-      // Check internet first
       const checkRes = await fetch("/api/system/check-internet")
       const checkData = await checkRes.json()
       if (!checkData.connected) {
@@ -1126,7 +1170,6 @@ export default function Settings() {
         return
       }
 
-      // Trigger the update — the backend broadcasts real-time progress over WebSocket
       const res = await fetch("/api/system/update", {
         method: "POST",
         headers: targetVersion ? { "Content-Type": "application/json" } : {},
@@ -1134,8 +1177,6 @@ export default function Settings() {
       })
       if (!res.ok) throw new Error("Failed to start update")
 
-      // The server will restart itself as the last step, killing our WebSocket.
-      // After a delay, start polling until it comes back.
       let reconnected = false
       setTimeout(() => {
         unsubscribe()
@@ -1160,7 +1201,6 @@ export default function Settings() {
             // Still restarting, keep polling
           }
         }, 3000)
-        // Give up after 3 minutes
         setTimeout(() => {
           if (!reconnected) {
             clearInterval(pollInterval)
@@ -1191,374 +1231,415 @@ export default function Settings() {
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-slate-100">Settings</h1>
         <p className="mt-1 text-sm text-slate-500">
-          System actions and configuration
+          Configure and manage your Sentry USB device
         </p>
       </div>
 
-      {/* Setup Wizard CTA */}
-      <div className="glass-card overflow-hidden">
-        <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-500/20">
-            <Wand2 className="h-6 w-6 text-blue-400" />
-          </div>
-          <div className="flex-1">
-            <h2 className="text-lg font-semibold text-slate-100">
-              Setup Wizard
-            </h2>
-            <p className="mt-0.5 text-sm text-slate-400">
-              Configure WiFi, archive, notifications, and more through a guided
-              setup experience.
-            </p>
-          </div>
-          <div className="flex shrink-0 flex-wrap gap-2">
-            <button
-              onClick={async () => {
-                try {
-                  const res = await fetch("/api/setup/config")
-                  if (!res.ok) throw new Error("Failed")
-                  const data = await res.json()
-                  // Build conf file content
-                  let content = "# sentryusb.conf - exported from Sentry USB UI\n"
-                  for (const [k, v] of Object.entries(data)) {
-                    const entry = v as { value: string; active: boolean }
-                    if (entry.active) {
-                      content += `export ${k}='${entry.value}'\n`
-                    } else {
-                      content += `# export ${k}='${entry.value}'\n`
-                    }
-                  }
-                  const blob = new Blob([content], { type: "text/plain" })
-                  const url = URL.createObjectURL(blob)
-                  const a = document.createElement("a")
-                  a.href = url
-                  a.download = "sentryusb.conf"
-                  a.click()
-                  URL.revokeObjectURL(url)
-                } catch { /* ignore */ }
-              }}
-              className="shrink-0 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-slate-300 transition-colors hover:bg-white/10"
-            >
-              <Download className="mr-1.5 inline h-3.5 w-3.5" />
-              Export Config
-            </button>
-            <button
-              onClick={async () => {
-                try {
-                  const res = await fetch("/api/setup/config")
-                  if (res.ok) {
-                    const data = await res.json()
-                    const flat: Record<string, string> = {}
-                    for (const [k, v] of Object.entries(data)) {
-                      const entry = v as { value: string; active: boolean }
-                      if (entry.active) flat[k] = entry.value
-                    }
-                    setWizardInitialData(flat)
-                  }
-                } catch { /* use empty data */ }
-                setWizardOpen(true)
-              }}
-              className="shrink-0 rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-600"
-            >
-              Open Wizard
-            </button>
-          </div>
-        </div>
+      {/* Tab bar */}
+      <div className="tab-bar">
+        {TABS.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={cn("tab-item flex items-center justify-center gap-2", activeTab === tab.id && "active")}
+          >
+            <tab.icon className="h-3.5 w-3.5 hidden sm:block" />
+            {tab.label}
+          </button>
+        ))}
       </div>
 
-      {/* Mobile Notifications */}
-      <MobileNotificationsSection />
-
-      {/* Quick Actions */}
-      <div>
-        <h2 className="mb-3 text-sm font-medium uppercase tracking-wider text-slate-500">
-          Quick Actions
-        </h2>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <ActionButton
-            icon={Unplug}
-            label="Toggle USB Drives"
-            description="Connect or disconnect drives from the host"
-            successMessage="Drives toggled successfully"
-            onClick={async () => {
-              const res = await fetch("/api/system/toggle-drives", { method: "POST" })
-              if (!res.ok) throw new Error("Failed to toggle drives")
-            }}
-          />
-          <ActionButton
-            icon={RefreshCw}
-            label="Trigger Archive Sync"
-            description="Start archiving recorded clips now"
-            successMessage="Archive sync started"
-            onClick={async () => {
-              const res = await fetch("/api/system/trigger-sync", { method: "POST" })
-              if (!res.ok) throw new Error("Failed to trigger sync")
-            }}
-          />
-          <SpeedTestButton />
-          {piConfig?.uses_ble === "yes" && <BlePairButton />}
-          <HealthCheckButton />
-        </div>
-      </div>
-
-      {/* Stable update banner */}
-      {stableUpdate && updateStatus === "idle" && (
-        <div className="glass-card overflow-hidden border border-emerald-500/20 bg-emerald-500/5">
-          <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20">
-              <Download className="h-6 w-6 text-emerald-400" />
+      {/* ── General Tab ────────────────────────────────────────────── */}
+      {activeTab === "general" && (
+        <div className="space-y-5">
+          {/* Setup Wizard CTA */}
+          <div className="glass-card overflow-hidden">
+            <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-500/20">
+                <Wand2 className="h-6 w-6 text-blue-400" />
+              </div>
+              <div className="flex-1">
+                <h2 className="text-lg font-semibold text-slate-100">
+                  Setup Wizard
+                </h2>
+                <p className="mt-0.5 text-sm text-slate-400">
+                  Configure WiFi, archive, notifications, and more through a guided
+                  setup experience.
+                </p>
+              </div>
+              <div className="flex shrink-0 flex-wrap gap-2">
+                <button
+                  onClick={async () => {
+                    try {
+                      const res = await fetch("/api/setup/config")
+                      if (!res.ok) throw new Error("Failed")
+                      const data = await res.json()
+                      let content = "# sentryusb.conf - exported from Sentry USB UI\n"
+                      for (const [k, v] of Object.entries(data)) {
+                        const entry = v as { value: string; active: boolean }
+                        if (entry.active) {
+                          content += `export ${k}='${entry.value}'\n`
+                        } else {
+                          content += `# export ${k}='${entry.value}'\n`
+                        }
+                      }
+                      const blob = new Blob([content], { type: "text/plain" })
+                      const url = URL.createObjectURL(blob)
+                      const a = document.createElement("a")
+                      a.href = url
+                      a.download = "sentryusb.conf"
+                      a.click()
+                      URL.revokeObjectURL(url)
+                    } catch { /* ignore */ }
+                  }}
+                  className="shrink-0 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-medium text-slate-300 transition-colors hover:bg-white/10"
+                >
+                  <Download className="mr-1.5 inline h-3.5 w-3.5" />
+                  Export Config
+                </button>
+                <button
+                  onClick={async () => {
+                    try {
+                      const res = await fetch("/api/setup/config")
+                      if (res.ok) {
+                        const data = await res.json()
+                        const flat: Record<string, string> = {}
+                        for (const [k, v] of Object.entries(data)) {
+                          const entry = v as { value: string; active: boolean }
+                          if (entry.active) flat[k] = entry.value
+                        }
+                        setWizardInitialData(flat)
+                      }
+                    } catch { /* use empty data */ }
+                    setWizardOpen(true)
+                  }}
+                  className="shrink-0 rounded-xl bg-blue-500 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-600"
+                >
+                  Open Wizard
+                </button>
+              </div>
             </div>
-            <div className="flex-1">
-              <h2 className="text-lg font-semibold text-emerald-200">
-                Stable Update: {stableUpdate.version}
-              </h2>
-              <p className="mt-0.5 text-sm text-slate-400">
-                Updates the server, shell scripts, and BLE daemon. No setup changes are made.
-                {" "}
-                <a href={stableUpdate.release_url} target="_blank" rel="noopener noreferrer"
-                  className="text-blue-400 hover:text-blue-300 underline">View release notes</a>
-              </p>
-              {stableUpdate.release_notes && (
-                <pre className="mt-2 max-h-32 overflow-y-auto whitespace-pre-wrap rounded-lg bg-black/20 p-3 text-xs text-slate-400">
-                  {stableUpdate.release_notes}
-                </pre>
-              )}
+          </div>
+
+          {/* Preferences */}
+          <div>
+            <p className="section-label mb-3 px-1">Preferences</p>
+            <div className="space-y-4">
+              <KeepAwakePreference />
+              <AwayModeControl />
             </div>
-            <button
-              onClick={() => handleInstallUpdate(stableUpdate.version)}
-              className="shrink-0 self-start rounded-lg bg-emerald-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-600"
-            >
-              Install Stable
-            </button>
           </div>
         </div>
       )}
 
-      {/* Prerelease update banner */}
-      {prereleaseUpdate && updateStatus === "idle" && (
-        <div className="glass-card overflow-hidden border border-amber-500/20 bg-amber-500/5">
-          <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-amber-500/20">
-              <Download className="h-6 w-6 text-amber-400" />
+      {/* ── Notifications Tab ──────────────────────────────────────── */}
+      {activeTab === "notifications" && (
+        <div className="space-y-5">
+          <MobileNotificationsSection />
+          {piConfig?.uses_ble === "yes" && (
+            <div>
+              <p className="section-label mb-3 px-1">Car Connectivity</p>
+              <BlePairButton />
             </div>
-            <div className="flex-1">
-              <h2 className="text-lg font-semibold text-amber-200">
-                Pre-release: {prereleaseUpdate.version}
-              </h2>
-              <p className="mt-0.5 text-sm text-slate-400">
-                This is a test build and may contain bugs. You can always switch back to the latest stable release.
-                {" "}
-                <a href={prereleaseUpdate.release_url} target="_blank" rel="noopener noreferrer"
-                  className="text-blue-400 hover:text-blue-300 underline">View release notes</a>
-              </p>
-              {prereleaseUpdate.release_notes && (
-                <pre className="mt-2 max-h-32 overflow-y-auto whitespace-pre-wrap rounded-lg bg-black/20 p-3 text-xs text-slate-400">
-                  {prereleaseUpdate.release_notes}
-                </pre>
-              )}
-            </div>
-            <button
-              onClick={() => handleInstallUpdate(prereleaseUpdate.version)}
-              className="shrink-0 self-start rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-600"
-            >
-              Install Pre-release
-            </button>
-          </div>
+          )}
         </div>
       )}
 
-      {/* Update Sentry USB */}
-      <div className="glass-card overflow-hidden">
-        <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20">
-            {updateStatus === "error" ? (
-              <AlertCircle className="h-6 w-6 text-red-400" />
-            ) : updateStatus === "done" ? (
-              <CheckCircle className="h-6 w-6 text-emerald-400" />
-            ) : updateStatus !== "idle" ? (
-              <Loader2 className="h-6 w-6 animate-spin text-blue-400" />
-            ) : (
-              <Download className="h-6 w-6 text-emerald-400" />
+      {/* ── Updates Tab ────────────────────────────────────────────── */}
+      {activeTab === "updates" && (
+        <div className="space-y-5">
+          {/* Stable update banner */}
+          {stableUpdate && updateStatus === "idle" && (
+            <div className="glass-card overflow-hidden border border-emerald-500/20 bg-emerald-500/5">
+              <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-500/20">
+                  <Download className="h-6 w-6 text-emerald-400" />
+                </div>
+                <div className="flex-1">
+                  <h2 className="text-lg font-semibold text-emerald-200">
+                    Stable Update: {stableUpdate.version}
+                  </h2>
+                  <p className="mt-0.5 text-sm text-slate-400">
+                    Updates the server, shell scripts, and BLE daemon. No setup changes are made.
+                    {" "}
+                    <a href={stableUpdate.release_url} target="_blank" rel="noopener noreferrer"
+                      className="text-blue-400 hover:text-blue-300 underline">View release notes</a>
+                  </p>
+                  {stableUpdate.release_notes && (
+                    <pre className="mt-2 max-h-32 overflow-y-auto whitespace-pre-wrap rounded-xl bg-black/20 p-3 text-xs text-slate-400">
+                      {stableUpdate.release_notes}
+                    </pre>
+                  )}
+                </div>
+                <button
+                  onClick={() => handleInstallUpdate(stableUpdate.version)}
+                  className="shrink-0 self-start rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-emerald-600"
+                >
+                  Install Stable
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Prerelease update banner */}
+          {prereleaseUpdate && updateStatus === "idle" && (
+            <div className="glass-card overflow-hidden border border-amber-500/20 bg-amber-500/5">
+              <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-amber-500/20">
+                  <Download className="h-6 w-6 text-amber-400" />
+                </div>
+                <div className="flex-1">
+                  <h2 className="text-lg font-semibold text-amber-200">
+                    Pre-release: {prereleaseUpdate.version}
+                  </h2>
+                  <p className="mt-0.5 text-sm text-slate-400">
+                    This is a test build and may contain bugs. You can always switch back to the latest stable release.
+                    {" "}
+                    <a href={prereleaseUpdate.release_url} target="_blank" rel="noopener noreferrer"
+                      className="text-blue-400 hover:text-blue-300 underline">View release notes</a>
+                  </p>
+                  {prereleaseUpdate.release_notes && (
+                    <pre className="mt-2 max-h-32 overflow-y-auto whitespace-pre-wrap rounded-xl bg-black/20 p-3 text-xs text-slate-400">
+                      {prereleaseUpdate.release_notes}
+                    </pre>
+                  )}
+                </div>
+                <button
+                  onClick={() => handleInstallUpdate(prereleaseUpdate.version)}
+                  className="shrink-0 self-start rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-amber-600"
+                >
+                  Install Pre-release
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Update check */}
+          <div className="glass-card overflow-hidden">
+            <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-500/20">
+                {updateStatus === "error" ? (
+                  <AlertCircle className="h-6 w-6 text-red-400" />
+                ) : updateStatus === "done" ? (
+                  <CheckCircle className="h-6 w-6 text-emerald-400" />
+                ) : updateStatus !== "idle" ? (
+                  <Loader2 className="h-6 w-6 animate-spin text-blue-400" />
+                ) : (
+                  <Download className="h-6 w-6 text-emerald-400" />
+                )}
+              </div>
+              <div className="flex-1">
+                <h2 className="text-lg font-semibold text-slate-100">
+                  Update Sentry USB
+                </h2>
+                <p className="mt-0.5 text-sm text-slate-400">
+                  {updateStatus === "idle" && !updateError && "Check for and install the latest version."}
+                  {updateStatus === "idle" && updateError && <span className="text-red-400">{updateError}</span>}
+                  {updateStatus === "error" && <span className="text-red-400">{updateError || "Update failed."}</span>}
+                  {updateStatus === "done" && <span className="text-emerald-400">{updateMessage || "Update complete!"}</span>}
+                  {updateStatus !== "idle" && updateStatus !== "error" && updateStatus !== "done" && (
+                    updateMessage || "Working..."
+                  )}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  onClick={() => handleCheckForUpdate()}
+                  disabled={isCheckingUpdate || (updateStatus !== "idle" && updateStatus !== "error" && updateStatus !== "done")}
+                  className="rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-emerald-600 disabled:opacity-50"
+                >
+                  {isCheckingUpdate ? (
+                    <span className="flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" /> Checking...
+                    </span>
+                  ) : "Check for Updates"}
+                </button>
+              </div>
+            </div>
+
+            {/* Update preferences */}
+            <div className="border-t border-white/5 px-5 py-4">
+              <label className="flex cursor-pointer items-center justify-between">
+                <span className="text-sm text-slate-400">Automatically check for updates after each archive</span>
+                <input
+                  type="checkbox"
+                  checked={autoUpdateEnabled}
+                  onChange={async (e) => {
+                    const enabled = e.target.checked
+                    setAutoUpdateEnabled(enabled)
+                    await fetch("/api/config/preference", {
+                      method: "PUT",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ key: "auto_update_check", value: enabled ? "enabled" : "disabled" }),
+                    }).catch(() => { })
+                  }}
+                  className="toggle-switch"
+                />
+              </label>
+            </div>
+            <div className="border-t border-white/5 px-5 py-4">
+              <label className="flex cursor-pointer items-center justify-between gap-4">
+                <div>
+                  <span className="text-sm text-slate-400">Always include pre-releases when checking</span>
+                  <span className="block text-xs text-slate-600 mt-0.5">Test builds may contain bugs. Auto-check notifications are always stable-only.</span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={includePrerelease}
+                  onChange={async (e) => {
+                    const enabled = e.target.checked
+                    setIncludePrerelease(enabled)
+                    await fetch("/api/config/preference", {
+                      method: "PUT",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ key: "update_channel", value: enabled ? "prerelease" : "stable" }),
+                    }).catch(() => { })
+                  }}
+                  className="toggle-switch"
+                />
+              </label>
+            </div>
+            {!includePrerelease && (
+              <div className="border-t border-white/5 px-5 py-4">
+                <button
+                  onClick={() => handleCheckForUpdate(true)}
+                  disabled={isCheckingUpdate}
+                  className="text-sm text-slate-500 transition-colors hover:text-slate-300"
+                >
+                  {isCheckingUpdate ? "Checking..." : "One-time check for pre-releases"}
+                </button>
+              </div>
             )}
           </div>
-          <div className="flex-1">
-            <h2 className="text-lg font-semibold text-slate-100">
-              Update Sentry USB
-            </h2>
-            <p className="mt-0.5 text-sm text-slate-400">
-              {updateStatus === "idle" && !updateError && "Check for and install the latest version."}
-              {updateStatus === "idle" && updateError && <span className="text-red-400">{updateError}</span>}
-              {updateStatus === "error" && <span className="text-red-400">{updateError || "Update failed."}</span>}
-              {updateStatus === "done" && <span className="text-emerald-400">{updateMessage || "Update complete!"}</span>}
-              {updateStatus !== "idle" && updateStatus !== "error" && updateStatus !== "done" && (
-                updateMessage || "Working..."
-              )}
-            </p>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <button
-              onClick={() => handleCheckForUpdate()}
-              disabled={isCheckingUpdate || (updateStatus !== "idle" && updateStatus !== "error" && updateStatus !== "done")}
-              className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-600 disabled:opacity-50"
-            >
-              {isCheckingUpdate ? (
-                <span className="flex items-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Checking...
-                </span>
-              ) : "Check for Updates"}
-            </button>
-          </div>
         </div>
-        {/* Auto-update check toggle */}
-        <div className="border-t border-white/5 px-5 py-3">
-          <label className="flex cursor-pointer items-center justify-between">
-            <span className="text-sm text-slate-400">Automatically check for updates after each archive</span>
-            <input
-              type="checkbox"
-              checked={autoUpdateEnabled}
-              onChange={async (e) => {
-                const enabled = e.target.checked
-                setAutoUpdateEnabled(enabled)
-                await fetch("/api/config/preference", {
-                  method: "PUT",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ key: "auto_update_check", value: enabled ? "enabled" : "disabled" }),
-                }).catch(() => { })
-              }}
-              className="h-4 w-4 rounded border-white/20 bg-white/5 accent-blue-500"
-            />
-          </label>
-        </div>
-        {/* Include pre-releases toggle */}
-        <div className="border-t border-white/5 px-5 py-3">
-          <label className="flex cursor-pointer items-center justify-between">
-            <div>
-              <span className="text-sm text-slate-400">Always include pre-releases when checking for updates</span>
-              <span className="block text-xs text-slate-600">Test builds may contain bugs. Auto-check notifications are always stable-only.</span>
+      )}
+
+      {/* ── System Tab ─────────────────────────────────────────────── */}
+      {activeTab === "system" && (
+        <div className="space-y-5">
+          {/* Quick Actions */}
+          <div>
+            <p className="section-label mb-3 px-1">Quick Actions</p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <ActionButton
+                icon={Unplug}
+                label="Toggle USB Drives"
+                description="Connect or disconnect drives from the host"
+                successMessage="Drives toggled successfully"
+                onClick={async () => {
+                  const res = await fetch("/api/system/toggle-drives", { method: "POST" })
+                  if (!res.ok) throw new Error("Failed to toggle drives")
+                }}
+              />
+              <ActionButton
+                icon={RefreshCw}
+                label="Trigger Archive Sync"
+                description="Start archiving recorded clips now"
+                successMessage="Archive sync started"
+                onClick={async () => {
+                  const res = await fetch("/api/system/trigger-sync", { method: "POST" })
+                  if (!res.ok) throw new Error("Failed to trigger sync")
+                }}
+              />
+              <SpeedTestButton />
+              <HealthCheckButton />
             </div>
-            <input
-              type="checkbox"
-              checked={includePrerelease}
-              onChange={async (e) => {
-                const enabled = e.target.checked
-                setIncludePrerelease(enabled)
-                await fetch("/api/config/preference", {
-                  method: "PUT",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ key: "update_channel", value: enabled ? "prerelease" : "stable" }),
-                }).catch(() => { })
-              }}
-              className="h-4 w-4 rounded border-white/20 bg-white/5 accent-blue-500"
-            />
-          </label>
-        </div>
-        {/* One-time prerelease check */}
-        {!includePrerelease && (
-          <div className="border-t border-white/5 px-5 py-3">
-            <button
-              onClick={() => handleCheckForUpdate(true)}
-              disabled={isCheckingUpdate}
-              className="text-sm text-slate-500 transition-colors hover:text-slate-300"
-            >
-              {isCheckingUpdate ? "Checking..." : "One-time check for pre-releases"}
-            </button>
           </div>
-        )}
-      </div>
 
-      {/* Preferences */}
-      <div>
-        <h2 className="mb-3 text-sm font-medium uppercase tracking-wider text-slate-500">
-          Preferences
-        </h2>
-        <AwayModeControl />
-        <KeepAwakePreference />
-      </div>
+          {/* System management */}
+          <div>
+            <p className="section-label mb-3 px-1">Management</p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <ActionButton
+                icon={RotateCcw}
+                label={confirmReboot ? "Press again to confirm" : "Restart Raspberry Pi"}
+                description={
+                  confirmReboot
+                    ? "This will reboot the device immediately"
+                    : "Reboot the Sentry USB device"
+                }
+                variant={confirmReboot ? "danger" : "default"}
+                onClick={handleReboot}
+              />
+              <ActionButton
+                icon={SettingsIcon}
+                label="Advanced Settings"
+                description="View and edit raw configuration file"
+                onClick={async () => {
+                  const res = await fetch("/api/setup/config")
+                  if (!res.ok) throw new Error("Failed to load config")
+                  const data = await res.json()
+                  setRawConfig(data)
+                  setRawConfigOpen(true)
+                  return "confirm"
+                }}
+              />
+            </div>
+          </div>
 
-      {/* System */}
-      <div>
-        <h2 className="mb-3 text-sm font-medium uppercase tracking-wider text-slate-500">
-          System
-        </h2>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <ActionButton
-            icon={RotateCcw}
-            label={confirmReboot ? "Press again to confirm" : "Restart Raspberry Pi"}
-            description={
-              confirmReboot
-                ? "This will reboot the device immediately"
-                : "Reboot the Sentry USB device"
-            }
-            variant={confirmReboot ? "danger" : "default"}
-            onClick={handleReboot}
-          />
-          <ActionButton
-            icon={SettingsIcon}
-            label="Advanced Settings"
-            description="View and edit raw configuration file"
-            onClick={async () => {
-              const res = await fetch("/api/setup/config")
-              if (!res.ok) throw new Error("Failed to load config")
-              const data = await res.json()
-              setRawConfig(data)
-              setRawConfigOpen(true)
-              return "confirm"
-            }}
-          />
+          {/* About */}
+          <div className="glass-card overflow-hidden">
+            <div className="flex items-center gap-3 border-b border-white/5 px-5 py-4">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-500/10">
+                <Shield className="h-4.5 w-4.5 text-slate-400" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-slate-200">About</h3>
+                <p className="text-xs text-slate-500">Version and project info</p>
+              </div>
+            </div>
+            <div className="p-5">
+              <div className="space-y-2 text-sm">
+                <div className="flex items-center justify-between rounded-xl bg-white/[0.02] px-3 py-2.5">
+                  <span className="text-slate-500">Version</span>
+                  <span className="font-mono text-xs font-medium text-slate-300">{version || "loading..."}</span>
+                </div>
+                <div className="flex items-center justify-between rounded-xl bg-white/[0.02] px-3 py-2.5">
+                  <span className="text-slate-500">Project</span>
+                  <a
+                    href="https://github.com/Scottmg1/Sentry-USB"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                  >
+                    Sentry USB
+                  </a>
+                </div>
+                <div className="flex items-center justify-between rounded-xl bg-white/[0.02] px-3 py-2.5">
+                  <span className="text-slate-500">Based on</span>
+                  <a
+                    href="https://github.com/marcone/teslausb"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                  >
+                    TeslaUSB (MIT)
+                  </a>
+                </div>
+                <div className="flex items-center justify-between rounded-xl bg-white/[0.02] px-3 py-2.5">
+                  <span className="text-slate-500">License</span>
+                  <span className="text-xs text-slate-300">MIT</span>
+                </div>
+              </div>
+              <a
+                href="https://discord.gg/9QZEzVwdnt"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-4 inline-flex items-center gap-2 rounded-xl bg-[#5865F2] px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-[#4752c4] hover:shadow-[0_0_20px_rgba(88,101,242,0.2)]"
+              >
+                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z" />
+                </svg>
+                Join Discord Server
+              </a>
+            </div>
+          </div>
         </div>
-      </div>
-
-      {/* About */}
-      <div className="glass-card p-4">
-        <h2 className="mb-2 text-sm font-medium uppercase tracking-wider text-slate-500">
-          About
-        </h2>
-        <div className="space-y-1 text-sm">
-          <p className="text-slate-300">
-            <span className="text-slate-500">Version:</span>{" "}
-            {version || "loading..."}
-          </p>
-          <p className="text-slate-300">
-            <span className="text-slate-500">Project:</span>{" "}
-            <a
-              href="https://github.com/Scottmg1/Sentry-USB"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-blue-400 hover:text-blue-300"
-            >
-              Sentry USB
-            </a>
-          </p>
-          <p className="text-slate-300">
-            <span className="text-slate-500">Based on:</span>{" "}
-            <a
-              href="https://github.com/marcone/teslausb"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-blue-400 hover:text-blue-300"
-            >
-              TeslaUSB (original)
-            </a>{" "}
-            (MIT License)
-          </p>
-          <p className="text-slate-300">
-            <span className="text-slate-500">License:</span> MIT
-          </p>
-        </div>
-        <a
-          href="https://discord.gg/9QZEzVwdnt"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-4 inline-flex items-center gap-2 rounded-lg bg-[#5865F2] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#4752c4]"
-        >
-          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z" />
-          </svg>
-          Join Discord Server
-        </a>
-      </div>
+      )}
 
       {/* Setup Wizard Modal */}
       {wizardOpen && (

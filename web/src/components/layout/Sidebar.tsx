@@ -62,7 +62,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           <Shield className="h-5 w-5 text-blue-400" />
         </div>
         {!collapsed && (
-          <span className="text-lg font-semibold tracking-tight text-slate-100">
+          <span className="text-lg font-semibold tracking-tight text-slate-100" style={{ fontFamily: '"Sora", "DM Sans", system-ui, sans-serif' }}>
             Sentry USB
           </span>
         )}

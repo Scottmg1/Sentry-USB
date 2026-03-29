@@ -65,7 +65,7 @@ export function MobileNav({ open, onClose }: MobileNavProps) {
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-500/20">
               <Shield className="h-5 w-5 text-blue-400" />
             </div>
-            <span className="text-lg font-semibold tracking-tight text-slate-100">
+            <span className="text-lg font-semibold tracking-tight text-slate-100" style={{ fontFamily: '"Sora", "DM Sans", system-ui, sans-serif' }}>
               Sentry USB
             </span>
           </div>
