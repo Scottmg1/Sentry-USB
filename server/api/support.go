@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const supportServerURL = "https://api.sentry-six.com"
+var supportServerURL = APIBaseURL
 
 func supportProxy(method, path string, payload []byte, authToken string, timeout time.Duration) ([]byte, int, error) {
 	var body io.Reader

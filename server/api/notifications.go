@@ -196,7 +196,7 @@ func registerCodeWithBackend(creds *NotificationCredentials, code string) error 
 		creds.DeviceID, creds.DeviceSecret, code, hostname, fp)
 
 	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest("POST", "https://notifications.sentry-six.com/register-code", strings.NewReader(body))
+	req, err := http.NewRequest("POST", NotificationBaseURL+"/register-code", strings.NewReader(body))
 	if err != nil {
 		log.Printf("[notifications] Failed to create register-code request: %v", err)
 		return fmt.Errorf("failed to create request: %w", err)
@@ -229,7 +229,7 @@ func (h *handlers) listNotificationPairedDevices(w http.ResponseWriter, r *http.
 	}
 
 	client := &http.Client{Timeout: 10 * time.Second}
-	url := fmt.Sprintf("https://notifications.sentry-six.com/devices?device_id=%s", creds.DeviceID)
+	url := fmt.Sprintf("%s/devices?device_id=%s", NotificationBaseURL, creds.DeviceID)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to create request")
@@ -265,7 +265,7 @@ func (h *handlers) removeNotificationPairedDevice(w http.ResponseWriter, r *http
 	}
 
 	client := &http.Client{Timeout: 10 * time.Second}
-	url := fmt.Sprintf("https://notifications.sentry-six.com/devices/%s?device_id=%s", pairingId, creds.DeviceID)
+	url := fmt.Sprintf("%s/devices/%s?device_id=%s", NotificationBaseURL, pairingId, creds.DeviceID)
 	req, err := http.NewRequest("DELETE", url, nil)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to create request")
@@ -299,7 +299,7 @@ func (h *handlers) sendTestNotification(w http.ResponseWriter, r *http.Request) 
 		creds.DeviceID, hostname)
 
 	httpClient := &http.Client{Timeout: 10 * time.Second}
-	testReq, err := http.NewRequest("POST", "https://notifications.sentry-six.com/send", strings.NewReader(payload))
+	testReq, err := http.NewRequest("POST", NotificationBaseURL+"/send", strings.NewReader(payload))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to create request")
 		return

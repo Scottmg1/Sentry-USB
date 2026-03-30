@@ -12,6 +12,7 @@ import {
   Plus,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { BACKEND_BASE_URL } from "@/lib/api"
 
 const POLL_INTERVAL = 3500
 const STORAGE_KEY = "sentryusb_support_ticket"
@@ -370,7 +371,7 @@ export default function Support() {
                 {msg.attachments && msg.attachments.length > 0 && (
                   <div className="mt-2 space-y-2">
                     {msg.attachments.map((a, j) => {
-                      const url = a.url?.startsWith("http") ? a.url : `https://api.sentry-six.com${a.url}`
+                      const url = a.url?.startsWith("http") ? a.url : `${BACKEND_BASE_URL}${a.url}`
                       const isImage = a.type?.startsWith("image/") || /\.(png|jpe?g|gif|webp|svg)$/i.test(a.name)
                       return isImage ? (
                         <a key={j} href={url} target="_blank" rel="noopener noreferrer" className="block">

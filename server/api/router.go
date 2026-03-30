@@ -85,7 +85,7 @@ func RegisterRoutes(mux *http.ServeMux, hub *ws.Hub) {
 	mux.HandleFunc("DELETE /api/notifications/paired-devices/{id}", h.removeNotificationPairedDevice)
 	mux.HandleFunc("POST /api/notifications/test", h.sendTestNotification)
 
-	// Support chat (proxy to api.sentry-six.com)
+	// Support chat (proxy to backend API)
 	mux.HandleFunc("GET /api/support/check", h.checkSupportAvailable)
 	mux.HandleFunc("POST /api/support/ticket", h.createSupportTicket)
 	mux.HandleFunc("POST /api/support/ticket/{id}/message", h.sendSupportMessage)
@@ -96,7 +96,7 @@ func RegisterRoutes(mux *http.ServeMux, hub *ws.Hub) {
 	mux.HandleFunc("POST /api/support/ticket/{id}/register-device", h.registerSupportDevice)
 	mux.HandleFunc("POST /api/support/ticket/{id}/unregister-device", h.unregisterSupportDevice)
 
-	// Community wraps (proxy to api.sentry-six.com)
+	// Community wraps (proxy to backend API)
 	mux.HandleFunc("GET /api/wraps/library", h.communityWrapsLibrary)
 	mux.HandleFunc("GET /api/wraps/thumbnail/{code}", h.communityWrapsThumbnail)
 	mux.HandleFunc("POST /api/wraps/upload", h.communityWrapsUpload)

@@ -18,7 +18,7 @@ import (
 )
 
 const telemetrySalt = "SENTRYUSB_2026_PROD"
-const telemetryURL = "https://api.sentry-six.com/sentryusb/telemetry"
+var telemetryURL = APIBaseURL + "/sentryusb/telemetry"
 
 var (
 	cachedFingerprint string
