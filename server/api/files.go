@@ -40,6 +40,16 @@ var allowedBases = []string{
 
 func isPathAllowed(reqPath string) (string, bool) {
 	clean := filepath.Clean(reqPath)
+
+	// Resolve symlinks to prevent traversal via symlink chains that
+	// escape the allowed base directories. EvalSymlinks may fail if the
+	// path doesn't exist yet (e.g. mkdir for a new directory), so fall
+	// back to the cleaned path in that case.
+	resolved, err := filepath.EvalSymlinks(clean)
+	if err == nil {
+		clean = resolved
+	}
+
 	for _, base := range allowedBases {
 		if strings.HasPrefix(clean, base) || clean == base {
 			return clean, true

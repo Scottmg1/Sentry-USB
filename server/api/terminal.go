@@ -20,6 +20,48 @@ import (
 	"golang.org/x/net/websocket"
 )
 
+// terminalRateLimit tracks failed auth attempts per remote IP to prevent brute
+// force attacks on the PTY endpoint.
+var terminalRateLimit = struct {
+	mu       sync.Mutex
+	failures map[string][]time.Time // IP → timestamps of recent failures
+}{
+	failures: make(map[string][]time.Time),
+}
+
+const (
+	terminalRateWindow   = 5 * time.Minute // sliding window
+	terminalRateMaxFails = 5               // max failures per window
+)
+
+// terminalRateLimited returns true if the given IP has exceeded the failure
+// threshold within the sliding window.
+func terminalRateLimited(ip string) bool {
+	terminalRateLimit.mu.Lock()
+	defer terminalRateLimit.mu.Unlock()
+
+	cutoff := time.Now().Add(-terminalRateWindow)
+	times := terminalRateLimit.failures[ip]
+
+	// Prune expired entries
+	valid := times[:0]
+	for _, t := range times {
+		if t.After(cutoff) {
+			valid = append(valid, t)
+		}
+	}
+	terminalRateLimit.failures[ip] = valid
+
+	return len(valid) >= terminalRateMaxFails
+}
+
+// terminalRecordFailure records a failed auth attempt for the given IP.
+func terminalRecordFailure(ip string) {
+	terminalRateLimit.mu.Lock()
+	defer terminalRateLimit.mu.Unlock()
+	terminalRateLimit.failures[ip] = append(terminalRateLimit.failures[ip], time.Now())
+}
+
 type terminalAuth struct {
 	Type     string `json:"type"`
 	Username string `json:"username"`
@@ -49,6 +91,19 @@ func (h *handlers) handleTerminal(w http.ResponseWriter, r *http.Request) {
 		Handler: func(conn *websocket.Conn) {
 			defer conn.Close()
 
+			remoteIP := conn.Request().RemoteAddr
+			// Strip port from remote address
+			if idx := strings.LastIndex(remoteIP, ":"); idx != -1 {
+				remoteIP = remoteIP[:idx]
+			}
+
+			// Check rate limit before processing auth
+			if terminalRateLimited(remoteIP) {
+				log.Printf("[terminal] Rate limited auth attempt from %s", remoteIP)
+				sendTermMsg(conn, "error", "Too many failed attempts. Try again later.")
+				return
+			}
+
 			// Step 1: Wait for auth message
 			var authMsg terminalAuth
 			if err := websocket.JSON.Receive(conn, &authMsg); err != nil {
@@ -62,6 +117,7 @@ func (h *handlers) handleTerminal(w http.ResponseWriter, r *http.Request) {
 
 			// Step 2: Validate credentials using su
 			if !validateCredentials(authMsg.Username, authMsg.Password) {
+				terminalRecordFailure(remoteIP)
 				sendTermMsg(conn, "auth_failed", "Invalid username or password")
 				return
 			}
