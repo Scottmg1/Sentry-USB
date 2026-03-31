@@ -103,7 +103,7 @@ func RegisterRoutes(mux *http.ServeMux, hub *ws.Hub) {
 	mux.HandleFunc("GET /api/lockchime/list", h.lockChimeList)
 	mux.HandleFunc("POST /api/lockchime/upload", h.lockChimeUpload)
 	mux.HandleFunc("POST /api/lockchime/activate/{filename}", h.lockChimeActivate)
-	mux.HandleFunc("DELETE /api/lockchime/clear", h.lockChimeClear)
+	mux.HandleFunc("POST /api/lockchime/clear-active", h.lockChimeClear)
 	mux.HandleFunc("DELETE /api/lockchime/{filename}", h.lockChimeDelete)
 	mux.HandleFunc("GET /api/lockchime/random-config", h.lockChimeGetRandomConfig)
 	mux.HandleFunc("PUT /api/lockchime/random-config", h.lockChimeSaveRandomConfig)

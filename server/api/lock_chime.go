@@ -430,7 +430,7 @@ func (h *handlers) lockChimeActivate(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// DELETE /api/lockchime/clear — remove active lock sound from Tesla location
+// POST /api/lockchime/clear-active — remove active lock sound from Tesla location
 func (h *handlers) lockChimeClear(w http.ResponseWriter, r *http.Request) {
 	if err := os.Remove(lockChimeTarget); err != nil && !os.IsNotExist(err) {
 		writeError(w, http.StatusInternalServerError, "Failed to clear active sound")
@@ -672,9 +672,25 @@ func (h *handlers) communityLockChimeDownload(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	data, err := io.ReadAll(resp.Body)
+	data, err := io.ReadAll(io.LimitReader(resp.Body, lockChimeMaxBytes+1))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to download sound")
+		return
+	}
+	if len(data) > lockChimeMaxBytes {
+		writeError(w, http.StatusBadRequest, "Downloaded sound exceeds 5 MB size limit")
+		return
+	}
+
+	// Validate WAV format and duration
+	duration, err := parseWAVDuration(data)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Downloaded file is not a valid WAV: "+err.Error())
+		return
+	}
+	if duration > lockChimeMaxSeconds {
+		writeError(w, http.StatusBadRequest,
+			fmt.Sprintf("Sound is %.1f seconds — Tesla requires 7 seconds or less", duration))
 		return
 	}
 
@@ -694,12 +710,18 @@ func (h *handlers) communityLockChimeDownload(w http.ResponseWriter, r *http.Req
 	if _, err := os.Stat(destPath); err == nil {
 		ext := filepath.Ext(soundName)
 		stem := strings.TrimSuffix(soundName, ext)
-		for i := 1; i < 100; i++ {
+		found := false
+		for i := 1; i <= 100; i++ {
 			candidate := filepath.Join(lockChimeDir, fmt.Sprintf("%s_%d%s", stem, i, ext))
 			if _, err := os.Stat(candidate); os.IsNotExist(err) {
 				destPath = candidate
+				found = true
 				break
 			}
+		}
+		if !found {
+			writeError(w, http.StatusConflict, "Too many files with the same name")
+			return
 		}
 	}
 

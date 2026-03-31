@@ -446,7 +446,7 @@ function MyLibraryTab() {
   async function handleClear() {
     setClearing(true)
     try {
-      const res = await fetch(`${API_BASE}/lockchime/clear`, { method: "DELETE" })
+      const res = await fetch(`${API_BASE}/lockchime/clear-active`, { method: "POST" })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         throw new Error(data.error || `HTTP ${res.status}`)
