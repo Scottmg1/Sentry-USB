@@ -30,7 +30,7 @@ Configure how SentryUSB connects to your network.
 |-------|-------------|
 | **Device Hostname** | The `.local` name for your Pi (default: `sentryusb`). Accessible at `hostname.local`. |
 
-**WiFi**: WiFi credentials (SSID/password) are configured during SD card imaging in Raspberry Pi Imager, not in the wizard. The wizard shows an info banner explaining this. If you need to change WiFi later, re-flash or edit `wpa_supplicant.conf` via SSH.
+**WiFi**: WiFi credentials (SSID/password) are configured during SD card imaging in Raspberry Pi Imager, not in the wizard. The wizard shows an info banner explaining this. If you need to change WiFi later, re-flash or use `sudo nmcli device wifi connect "SSID" password "PASS"` via SSH.
 
 **WiFi Access Point** (optional): Create a hotspot so you can access SentryUSB on the road without home WiFi.
 

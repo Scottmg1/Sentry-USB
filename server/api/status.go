@@ -314,7 +314,7 @@ func (h *handlers) getWifiConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 3. Fallback: try wpa_supplicant.conf
+	// 3. Fallback: try wpa_supplicant.conf (legacy, pre-Bookworm)
 	if info.SSID == "" {
 		wpaPaths := []string{
 			"/etc/wpa_supplicant/wpa_supplicant.conf",
@@ -375,7 +375,30 @@ func (h *handlers) getWifiConfig(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	// Fallback: check wpa_supplicant.conf
+	// Fallback: check NetworkManager wifi connection file for country
+	if wlanCountry == "" {
+		if out, err := shell.Run("nmcli", "-t", "-f", "NAME,TYPE", "con", "show", "--active"); err == nil {
+			for _, line := range strings.Split(out, "\n") {
+				if strings.HasSuffix(line, ":802-11-wireless") {
+					connName := strings.TrimSuffix(line, ":802-11-wireless")
+					connPath := "/etc/NetworkManager/system-connections/" + connName + ".nmconnection"
+					if data, fErr := os.ReadFile(connPath); fErr == nil {
+						for _, cl := range strings.Split(string(data), "\n") {
+							cl = strings.TrimSpace(cl)
+							if strings.HasPrefix(cl, "country=") {
+								wlanCountry = strings.TrimPrefix(cl, "country=")
+								break
+							}
+						}
+					}
+					if wlanCountry != "" {
+						break
+					}
+				}
+			}
+		}
+	}
+	// Fallback: check wpa_supplicant.conf (legacy, pre-Bookworm)
 	if wlanCountry == "" {
 		wpaPaths := []string{
 			"/etc/wpa_supplicant/wpa_supplicant.conf",

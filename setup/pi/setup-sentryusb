@@ -124,14 +124,27 @@ function dehumanize () {
 
 REBOOT=false
 
-# wpa_supplicant should have a country code. Use US as the default
+# Ensure a WiFi regulatory country code is set. Use US as the default
 # to avoid using the disallowed channels in the US.
-WPA=/etc/wpa_supplicant/wpa_supplicant.conf
-if [ -e "$WPA" ] && ! grep -q "country=" $WPA && grep -q "network=" $WPA
+if systemctl -q is-enabled NetworkManager.service 2>/dev/null
 then
-  setup_progress "adding country code to wpa_supplicant.conf"
-  echo "country=US" >> $WPA
-  REBOOT=true
+  # Bookworm+ uses NetworkManager — set regulatory domain via iw
+  CURRENT_REG=$(iw reg get 2>/dev/null | grep -oP '(?<=country )\w+' | head -1)
+  if [ -z "$CURRENT_REG" ] || [ "$CURRENT_REG" = "00" ]
+  then
+    setup_progress "setting WiFi regulatory domain to US via iw"
+    iw reg set US
+    REBOOT=true
+  fi
+else
+  # Legacy (pre-Bookworm): set country in wpa_supplicant.conf
+  WPA=/etc/wpa_supplicant/wpa_supplicant.conf
+  if [ -e "$WPA" ] && ! grep -q "country=" $WPA && grep -q "network=" $WPA
+  then
+    setup_progress "adding country code to wpa_supplicant.conf"
+    echo "country=US" >> $WPA
+    REBOOT=true
+  fi
 fi
 
 BOOT_DISK=$(lsblk -dpno pkname "$(findmnt -D -no SOURCE --target /sentryusb)")

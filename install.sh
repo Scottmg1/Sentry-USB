@@ -180,12 +180,14 @@ if [ ! -e /sentryusb/sentryusb.conf ] && [ ! -e /root/sentryusb.conf ]; then
     ok "Config template saved to /root/sentryusb.conf"
 fi
 
-# Download wifi config template
-if [ ! -e /sentryusb/wpa_supplicant.conf.sample ]; then
-    while ! curl -fsSL -o /sentryusb/wpa_supplicant.conf.sample \
-        "https://raw.githubusercontent.com/$REPO/$BRANCH/pi-gen-sources/00-sentryusb-tweaks/files/wpa_supplicant.conf.sample"; do
-        sleep 1
-    done
+# Download wifi config template (only needed for pre-Bookworm systems using wpa_supplicant)
+if ! systemctl -q is-enabled NetworkManager.service 2>/dev/null; then
+    if [ ! -e /sentryusb/wpa_supplicant.conf.sample ]; then
+        while ! curl -fsSL -o /sentryusb/wpa_supplicant.conf.sample \
+            "https://raw.githubusercontent.com/$REPO/$BRANCH/pi-gen-sources/00-sentryusb-tweaks/files/wpa_supplicant.conf.sample"; do
+            sleep 1
+        done
+    fi
 fi
 
 # User configured networking manually, skip wifi setup in rc.local

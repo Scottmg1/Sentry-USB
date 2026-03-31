@@ -9,7 +9,8 @@ Common issues and how to resolve them.
 - **Double-check SSID and password** — case-sensitive, watch for special characters
 - **Connect a monitor + keyboard** to debug directly
 - **Pi Zero**: Creates a USB gadget network interface — plug into your computer and try `ssh pi@169.254.x.x`
-- **Hidden SSID**: Edit `/boot/wpa_supplicant.conf` and uncomment `scan_ssid=1` in the `network={...}` block
+- **Hidden SSID** (Bookworm+): Use `sudo nmcli device wifi connect "SSID" password "PASS" hidden yes` via SSH
+- **Hidden SSID** (legacy): Edit `/boot/wpa_supplicant.conf` and uncomment `scan_ssid=1` in the `network={...}` block
 
 ## Tesla Doesn't See the USB Drive
 

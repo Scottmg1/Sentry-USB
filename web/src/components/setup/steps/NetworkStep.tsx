@@ -74,7 +74,7 @@ export function NetworkStep({ data, onChange, onBatchChange }: StepProps) {
             </p>
             <p className="mt-2 text-xs text-slate-500">
               If you need to change WiFi later, re-flash the SD card with updated settings or
-              edit <code className="rounded bg-white/5 px-1 py-0.5 text-slate-400">wpa_supplicant.conf</code> via SSH.
+              use <code className="rounded bg-white/5 px-1 py-0.5 text-slate-400">sudo nmcli device wifi connect &quot;SSID&quot; password &quot;PASS&quot;</code> via SSH.
             </p>
           </div>
         </div>

@@ -204,13 +204,16 @@ then
   done
 fi
 
-# and the wifi config template
-if [ ! -e /sentryusb/wpa_supplicant.conf.sample ]
+# Download wifi config template (only needed for pre-Bookworm systems using wpa_supplicant)
+if ! systemctl -q is-enabled NetworkManager.service 2>/dev/null
 then
-  while ! curl -o /sentryusb/wpa_supplicant.conf.sample https://raw.githubusercontent.com/Scottmg1/Sentry-USB/main-dev/pi-gen-sources/00-sentryusb-tweaks/files/wpa_supplicant.conf.sample
-  do
-    sleep 1
-  done
+  if [ ! -e /sentryusb/wpa_supplicant.conf.sample ]
+  then
+    while ! curl -o /sentryusb/wpa_supplicant.conf.sample https://raw.githubusercontent.com/Scottmg1/Sentry-USB/main-dev/pi-gen-sources/00-sentryusb-tweaks/files/wpa_supplicant.conf.sample
+    do
+      sleep 1
+    done
+  fi
 fi
 
 # The user should have configured networking manually, so disable wifi setup
