@@ -118,6 +118,72 @@ func sendTelemetrySync(currentVersion string, updateAvailable bool, newVersion s
 
 const updateRepo = "Scottmg1/Sentry-USB"
 
+// parseSemver extracts major, minor, patch from a version string like "v1.2.3" or "v1.2.3-beta.1".
+// Returns (major, minor, patch, prerelease, ok). The prerelease part is everything after the first "-".
+func parseSemver(v string) (int, int, int, string, bool) {
+	v = strings.TrimPrefix(v, "v")
+	pre := ""
+	if idx := strings.IndexByte(v, '-'); idx >= 0 {
+		pre = v[idx+1:]
+		v = v[:idx]
+	}
+	parts := strings.Split(v, ".")
+	if len(parts) < 3 {
+		return 0, 0, 0, "", false
+	}
+	var nums [3]int
+	for i := 0; i < 3; i++ {
+		n := 0
+		for _, c := range parts[i] {
+			if c < '0' || c > '9' {
+				return 0, 0, 0, "", false
+			}
+			n = n*10 + int(c-'0')
+		}
+		nums[i] = n
+	}
+	return nums[0], nums[1], nums[2], pre, true
+}
+
+// isVersionNewer returns true if candidate is a newer version than current.
+// Prerelease versions (e.g. v2.5.0-beta.1) are considered newer than any stable
+// release with a lower base version, but older than the same base version without
+// a prerelease suffix (v2.5.0-beta.1 < v2.5.0).
+func isVersionNewer(candidate, current string) bool {
+	cMaj, cMin, cPat, cPre, cOK := parseSemver(candidate)
+	uMaj, uMin, uPat, uPre, uOK := parseSemver(current)
+	if !cOK || !uOK {
+		// Fallback: if we can't parse either, treat as "different = newer" for safety
+		return candidate != current
+	}
+
+	// Compare base versions
+	if cMaj != uMaj {
+		return cMaj > uMaj
+	}
+	if cMin != uMin {
+		return cMin > uMin
+	}
+	if cPat != uPat {
+		return cPat > uPat
+	}
+
+	// Same base version: stable (no prerelease) beats prerelease
+	if uPre == "" && cPre == "" {
+		return false // same version
+	}
+	if uPre != "" && cPre == "" {
+		// User is on prerelease, candidate is stable with same base → candidate is newer
+		return true
+	}
+	if uPre == "" && cPre != "" {
+		// User is on stable, candidate is prerelease with same base → candidate is older
+		return false
+	}
+	// Both prerelease with same base — simple string compare (beta.1 < beta.2)
+	return cPre > uPre
+}
+
 // releaseInfo mirrors the fields we need from a GitHub release object.
 type releaseInfo struct {
 	TagName    string `json:"tag_name"`
@@ -467,7 +533,7 @@ func (h *handlers) checkForUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if latestStable != nil {
-		stableAvailable := canUpdate && latestStable.TagName != currentVersion
+		stableAvailable := canUpdate && isVersionNewer(latestStable.TagName, currentVersion)
 		result["update_available"] = stableAvailable
 		result["latest_version"] = latestStable.TagName
 		result["release_url"] = latestStable.HTMLURL
@@ -483,7 +549,7 @@ func (h *handlers) checkForUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if includePrerelease && latestPrerelease != nil {
-		preAvailable := canUpdate && latestPrerelease.TagName != currentVersion
+		preAvailable := canUpdate && isVersionNewer(latestPrerelease.TagName, currentVersion)
 		result["prerelease"] = map[string]interface{}{
 			"version":       latestPrerelease.TagName,
 			"release_url":   latestPrerelease.HTMLURL,
@@ -499,7 +565,7 @@ func (h *handlers) checkForUpdate(w http.ResponseWriter, r *http.Request) {
 
 	// Telemetry — only report stable updates, never prereleases
 	newVer := ""
-	if latestStable != nil && canUpdate && latestStable.TagName != currentVersion {
+	if latestStable != nil && canUpdate && isVersionNewer(latestStable.TagName, currentVersion) {
 		newVer = latestStable.TagName
 	}
 	sendTelemetry(currentVersion, newVer != "", newVer)

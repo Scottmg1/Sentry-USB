@@ -230,18 +230,31 @@ if [ "$AUTO_UPDATE_CHECK" != "disabled" ]; then
   log "Checking for SentryUSB updates..."
   UPDATE_RESULT=$(curl -sf -X POST "${API_URL}/api/system/check-update" 2>/dev/null)
   if [ $? -eq 0 ]; then
+    # Determine which version to notify about (stable or prerelease)
+    NOTIFY_VER=""
     UPDATE_AVAILABLE=$(echo "$UPDATE_RESULT" | grep -o '"update_available":true')
     if [ -n "$UPDATE_AVAILABLE" ]; then
-      LATEST_VER=$(echo "$UPDATE_RESULT" | grep -o '"latest_version":"[^"]*"' | cut -d'"' -f4)
+      NOTIFY_VER=$(echo "$UPDATE_RESULT" | grep -o '"latest_version":"[^"]*"' | cut -d'"' -f4)
+    fi
+    # If user is on prerelease channel, also check for prerelease updates
+    UPDATE_CHANNEL=$(curl -sf "${API_URL}/api/config/preference?key=update_channel" 2>/dev/null | grep -o '"value":"[^"]*"' | cut -d'"' -f4)
+    if [ "$UPDATE_CHANNEL" = "prerelease" ] && [ -z "$NOTIFY_VER" ]; then
+      PRE_AVAILABLE=$(echo "$UPDATE_RESULT" | grep -o '"prerelease":{[^}]*"available":true')
+      if [ -n "$PRE_AVAILABLE" ]; then
+        NOTIFY_VER=$(echo "$UPDATE_RESULT" | grep -o '"prerelease":{[^}]*"version":"[^"]*"' | grep -o '"version":"[^"]*"' | cut -d'"' -f4)
+      fi
+    fi
+
+    if [ -n "$NOTIFY_VER" ]; then
       # Only send notification once per version (check marker file)
-      NOTIFIED_FILE="/tmp/sentryusb-update-notified-${LATEST_VER}"
+      NOTIFIED_FILE="/tmp/sentryusb-update-notified-${NOTIFY_VER}"
       if [ ! -f "$NOTIFIED_FILE" ] && [ -x /root/bin/send-push-message ]; then
         /root/bin/send-push-message "${NOTIFICATION_TITLE:-SentryUSB}:" \
-          "Update available: ${LATEST_VER}. Open Settings to install." \
+          "Update available: ${NOTIFY_VER}. Open Settings to install." \
           info update || log "Failed to send update notification"
         touch "$NOTIFIED_FILE"
       fi
-      log "Update available: ${LATEST_VER}"
+      log "Update available: ${NOTIFY_VER}"
     else
       log "SentryUSB is up to date."
     fi
