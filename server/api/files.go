@@ -33,6 +33,7 @@ var allowedBases = []string{
 	"/mutable/TeslaCam",
 	"/mutable/Wraps",
 	"/mutable/LicensePlate",
+	"/mutable/LockChime",
 	"/var/www/html/fs/Music",
 	"/var/www/html/fs/LightShow",
 	"/var/www/html/fs/Boombox",

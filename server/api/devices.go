@@ -125,6 +125,7 @@ func ensureMediaFolders() {
 	dirs := []string{
 		"/mutable/Wraps",
 		"/mutable/LicensePlate",
+		"/mutable/LockChime",
 	}
 	// Only create optional media folders if their backing files exist
 	if fileExists("/backingfiles/music_disk.bin") {

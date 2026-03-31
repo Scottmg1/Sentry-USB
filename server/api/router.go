@@ -96,6 +96,13 @@ func RegisterRoutes(mux *http.ServeMux, hub *ws.Hub) {
 	mux.HandleFunc("POST /api/support/ticket/{id}/register-device", h.registerSupportDevice)
 	mux.HandleFunc("POST /api/support/ticket/{id}/unregister-device", h.unregisterSupportDevice)
 
+	// Lock Chime (local library of .wav lock sounds)
+	mux.HandleFunc("GET /api/lockchime/list", h.lockChimeList)
+	mux.HandleFunc("POST /api/lockchime/upload", h.lockChimeUpload)
+	mux.HandleFunc("POST /api/lockchime/activate/{filename}", h.lockChimeActivate)
+	mux.HandleFunc("DELETE /api/lockchime/clear", h.lockChimeClear)
+	mux.HandleFunc("DELETE /api/lockchime/{filename}", h.lockChimeDelete)
+
 	// Community wraps (proxy to backend API)
 	mux.HandleFunc("GET /api/wraps/library", h.communityWrapsLibrary)
 	mux.HandleFunc("GET /api/wraps/thumbnail/{code}", h.communityWrapsThumbnail)

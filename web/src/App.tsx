@@ -12,6 +12,7 @@ import Support from "@/pages/Support"
 import Terminal from "@/pages/Terminal"
 import FSDAnalytics from "@/pages/FSDAnalytics"
 import CommunityWraps from "@/pages/CommunityWraps"
+import LockChime from "@/pages/LockChime"
 import Login from "@/pages/Login"
 import { SetupWizard } from "@/components/setup/SetupWizard"
 import { SetupProgress } from "@/components/setup/SetupProgress"
@@ -138,6 +139,7 @@ function AppContent() {
           <Route path="/support" element={<Support />} />
           <Route path="/terminal" element={<Terminal />} />
           <Route path="/community-wraps" element={<CommunityWraps />} />
+          <Route path="/lock-chime" element={<LockChime />} />
           <Route path="/settings" element={<Settings />} />
         </Route>
       </Routes>
