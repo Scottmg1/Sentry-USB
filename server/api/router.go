@@ -109,6 +109,14 @@ func RegisterRoutes(mux *http.ServeMux, hub *ws.Hub) {
 	mux.HandleFunc("PUT /api/lockchime/random-config", h.lockChimeSaveRandomConfig)
 	mux.HandleFunc("POST /api/lockchime/randomize", h.lockChimeRandomize)
 
+	// Community lock chimes (proxy to support server)
+	mux.HandleFunc("GET /api/lockchime/community/library", h.communityLockChimeLibrary)
+	mux.HandleFunc("POST /api/lockchime/community/upload", h.communityLockChimeUpload)
+	mux.HandleFunc("POST /api/lockchime/community/download/{code}", h.communityLockChimeDownload)
+	mux.HandleFunc("POST /api/lockchime/community/admin/validate", h.communityLockChimeAdminValidate)
+	mux.HandleFunc("PUT /api/lockchime/community/admin/edit/{code}", h.communityLockChimeAdminEdit)
+	mux.HandleFunc("DELETE /api/lockchime/community/admin/delete/{code}", h.communityLockChimeAdminDelete)
+
 	// Community wraps (proxy to backend API)
 	mux.HandleFunc("GET /api/wraps/library", h.communityWrapsLibrary)
 	mux.HandleFunc("GET /api/wraps/thumbnail/{code}", h.communityWrapsThumbnail)

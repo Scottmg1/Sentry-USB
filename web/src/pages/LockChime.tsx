@@ -13,11 +13,19 @@ import {
   Shuffle,
   Clock,
   Zap,
+  Download,
+  Search,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  Shield,
+  Pencil,
 } from "lucide-react"
 
 const API_BASE = "/api"
 const MAX_DURATION_SECONDS = 7
 const MAX_FILE_BYTES = 5 * 1024 * 1024 // 5 MB
+const COMMUNITY_PAGE_SIZE = 20
 
 interface SoundEntry {
   name: string
@@ -38,10 +46,33 @@ interface RandomConfig {
   has_rtc: boolean
 }
 
+interface CommunitySound {
+  code: string
+  name: string
+  download_count: number
+  duration: number
+  created_at: string
+  fingerprint?: string
+}
+
+interface CommunityLibraryResponse {
+  sounds: CommunitySound[]
+  total: number
+  page: number
+}
+
+type Tab = "library" | "community"
+type CommunitySubTab = "browse" | "upload"
+type SortOption = "newest" | "oldest" | "popular" | "name"
+
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function formatDuration(seconds: number): string {
+  return `${seconds.toFixed(1)}s`
 }
 
 async function getWavDuration(file: File): Promise<number> {
@@ -55,12 +86,230 @@ async function getWavDuration(file: File): Promise<number> {
   }
 }
 
+// ─────────────────────────────────────────────────────────────
+// Main component
+// ─────────────────────────────────────────────────────────────
+
 export default function LockChime() {
+  const [tab, setTab] = useState<Tab>("library")
+  const [adminPasscode, setAdminPasscode] = useState<string | null>(null)
+  const [showPasscodePrompt, setShowPasscodePrompt] = useState(false)
+  const clickCountRef = useRef(0)
+  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const handleHeadingClick = () => {
+    if (adminPasscode) {
+      clickCountRef.current++
+      if (clickTimerRef.current) clearTimeout(clickTimerRef.current)
+      clickTimerRef.current = setTimeout(() => { clickCountRef.current = 0 }, 2000)
+      if (clickCountRef.current >= 5) {
+        clickCountRef.current = 0
+        setAdminPasscode(null)
+      }
+      return
+    }
+
+    clickCountRef.current++
+    if (clickTimerRef.current) clearTimeout(clickTimerRef.current)
+    clickTimerRef.current = setTimeout(() => { clickCountRef.current = 0 }, 2000)
+    if (clickCountRef.current >= 5) {
+      clickCountRef.current = 0
+      setShowPasscodePrompt(true)
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/20">
+            <Bell className="h-5 w-5 text-violet-400" />
+          </div>
+          <div>
+            <h1
+              className="cursor-default select-none text-xl font-semibold text-slate-100"
+              onClick={handleHeadingClick}
+            >
+              Lock Chime
+            </h1>
+            <p className="text-xs text-slate-500">
+              Custom .wav lock sounds for your Tesla — max {MAX_DURATION_SECONDS}s
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => setTab("library")}
+          className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+            tab === "library"
+              ? "bg-violet-500/15 text-violet-400"
+              : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
+          }`}
+        >
+          My Library
+        </button>
+        <button
+          onClick={() => setTab("community")}
+          className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+            tab === "community"
+              ? "bg-violet-500/15 text-violet-400"
+              : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
+          }`}
+        >
+          Community
+        </button>
+
+        {adminPasscode && (
+          <div className="ml-auto flex items-center gap-1.5 rounded bg-red-500/10 border border-red-500/20 px-2.5 py-1 text-xs text-red-400">
+            <Shield className="h-3 w-3" />
+            Admin Mode
+            <button onClick={() => setAdminPasscode(null)} className="ml-1 hover:text-red-300">
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        )}
+      </div>
+
+      {tab === "library" ? (
+        <MyLibraryTab />
+      ) : (
+        <CommunityTab adminPasscode={adminPasscode} />
+      )}
+
+      {/* Passcode modal */}
+      {showPasscodePrompt && (
+        <PasscodeModal
+          onSuccess={(passcode) => {
+            setAdminPasscode(passcode)
+            setShowPasscodePrompt(false)
+          }}
+          onClose={() => setShowPasscodePrompt(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+// Passcode modal (reuses the same pattern as Community Wraps)
+// ─────────────────────────────────────────────────────────────
+
+function PasscodeModal({ onSuccess, onClose }: { onSuccess: (passcode: string) => void; onClose: () => void }) {
+  const [input, setInput] = useState("")
+  const [error, setError] = useState<string | null>(null)
+  const [validating, setValidating] = useState(false)
+
+  const handleValidate = async () => {
+    if (!input.trim()) return
+    setValidating(true)
+    setError(null)
+    try {
+      const res = await fetch(`${API_BASE}/lockchime/community/admin/validate`, {
+        method: "POST",
+        headers: { "x-passcode": input.trim() },
+      })
+      if (res.ok) {
+        onSuccess(input.trim())
+      } else {
+        setError("Invalid passcode")
+        setInput("")
+      }
+    } catch {
+      setError("Connection failed")
+    } finally {
+      setValidating(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+      <div
+        className="w-full max-w-sm overflow-hidden rounded-2xl border border-white/10 bg-slate-900 p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="text-lg font-semibold text-slate-100">Admin Access</h3>
+        <p className="mt-1 text-xs text-slate-500">Enter the admin passcode to continue</p>
+        <input
+          type="password"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleValidate()}
+          placeholder="Passcode"
+          autoFocus
+          className="mt-4 w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:border-violet-500/50 focus:outline-none"
+        />
+        {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
+        <div className="mt-4 flex gap-3">
+          <button
+            onClick={handleValidate}
+            disabled={!input.trim() || validating}
+            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-violet-500 disabled:opacity-50"
+          >
+            {validating && <Loader2 className="h-4 w-4 animate-spin" />}
+            Validate
+          </button>
+          <button
+            onClick={onClose}
+            className="rounded-lg border border-white/10 px-4 py-2.5 text-sm text-slate-400 transition-colors hover:bg-white/5"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+// Toast component (shared)
+// ─────────────────────────────────────────────────────────────
+
+function useToast() {
+  const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null)
+
+  const showToast = useCallback((msg: string, type: "success" | "error") => {
+    setToast({ msg, type })
+  }, [])
+
+  useEffect(() => {
+    if (!toast) return
+    const t = setTimeout(() => setToast(null), 4000)
+    return () => clearTimeout(t)
+  }, [toast])
+
+  const ToastView = toast ? (
+    <div
+      className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-xl px-4 py-3 shadow-xl text-sm font-medium ${
+        toast.type === "success"
+          ? "bg-emerald-500/20 border border-emerald-500/30 text-emerald-300"
+          : "bg-red-500/20 border border-red-500/30 text-red-300"
+      }`}
+    >
+      {toast.type === "success" ? (
+        <CheckCircle2 className="h-4 w-4 shrink-0" />
+      ) : (
+        <AlertCircle className="h-4 w-4 shrink-0" />
+      )}
+      {toast.msg}
+    </div>
+  ) : null
+
+  return { showToast, ToastView }
+}
+
+// ─────────────────────────────────────────────────────────────
+// My Library tab
+// ─────────────────────────────────────────────────────────────
+
+function MyLibraryTab() {
   const [sounds, setSounds] = useState<SoundEntry[]>([])
-  const [activeName, setActiveName] = useState<string>("")
+  const [activeName, setActiveName] = useState("")
   const [activeSet, setActiveSet] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null)
   const [playingName, setPlayingName] = useState<string | null>(null)
   const [uploadDragging, setUploadDragging] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -82,15 +331,7 @@ export default function LockChime() {
   const [savingRandom, setSavingRandom] = useState(false)
   const [randomizing, setRandomizing] = useState(false)
 
-  const showToast = useCallback((msg: string, type: "success" | "error") => {
-    setToast({ msg, type })
-  }, [])
-
-  useEffect(() => {
-    if (!toast) return
-    const t = setTimeout(() => setToast(null), 4000)
-    return () => clearTimeout(t)
-  }, [toast])
+  const { showToast, ToastView } = useToast()
 
   const fetchSounds = useCallback(async () => {
     try {
@@ -114,7 +355,7 @@ export default function LockChime() {
       const data: RandomConfig = await res.json()
       setRandomCfg(data)
     } catch {
-      // Silently fail — random config is optional
+      // Random config is optional — silently fail
     } finally {
       setRandomLoading(false)
     }
@@ -125,11 +366,8 @@ export default function LockChime() {
     fetchRandomConfig()
   }, [fetchSounds, fetchRandomConfig])
 
-  // Stop audio when component unmounts
   useEffect(() => {
-    return () => {
-      audioRef.current?.pause()
-    }
+    return () => { audioRef.current?.pause() }
   }, [])
 
   function togglePlay(name: string) {
@@ -163,21 +401,16 @@ export default function LockChime() {
       showToast("File is too large (max 5 MB)", "error")
       return
     }
-
     try {
       const duration = await getWavDuration(file)
       if (duration > MAX_DURATION_SECONDS) {
-        showToast(
-          `Sound is ${duration.toFixed(1)}s — Tesla requires ${MAX_DURATION_SECONDS}s or less`,
-          "error"
-        )
+        showToast(`Sound is ${duration.toFixed(1)}s — Tesla requires ${MAX_DURATION_SECONDS}s or less`, "error")
         return
       }
     } catch {
       showToast("Could not read WAV file — is it a valid .wav?", "error")
       return
     }
-
     setUploading(true)
     try {
       const form = new FormData()
@@ -198,9 +431,7 @@ export default function LockChime() {
   async function handleActivate(name: string) {
     setActivating(name)
     try {
-      const res = await fetch(`${API_BASE}/lockchime/activate/${encodeURIComponent(name)}`, {
-        method: "POST",
-      })
+      const res = await fetch(`${API_BASE}/lockchime/activate/${encodeURIComponent(name)}`, { method: "POST" })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
       showToast(`"${name}" is now your active lock sound`, "success")
@@ -233,9 +464,7 @@ export default function LockChime() {
     setDeleting(name)
     setDeleteConfirm(null)
     try {
-      const res = await fetch(`${API_BASE}/lockchime/${encodeURIComponent(name)}`, {
-        method: "DELETE",
-      })
+      const res = await fetch(`${API_BASE}/lockchime/${encodeURIComponent(name)}`, { method: "DELETE" })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         throw new Error(data.error || `HTTP ${res.status}`)
@@ -259,19 +488,12 @@ export default function LockChime() {
       const res = await fetch(`${API_BASE}/lockchime/random-config`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          enabled: newCfg.enabled,
-          mode: newCfg.mode,
-          interval: newCfg.interval,
-        }),
+        body: JSON.stringify({ enabled: newCfg.enabled, mode: newCfg.mode, interval: newCfg.interval }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
       setRandomCfg((prev) => ({ ...prev, ...newCfg, enabled: data.enabled }))
-      showToast(
-        newCfg.enabled ? "Random mode enabled" : "Random mode disabled",
-        "success"
-      )
+      showToast(newCfg.enabled ? "Random mode enabled" : "Random mode disabled", "success")
     } catch (e: unknown) {
       showToast(e instanceof Error ? e.message : "Failed to save", "error")
     } finally {
@@ -294,59 +516,29 @@ export default function LockChime() {
     }
   }
 
-  function onDragOver(e: React.DragEvent) {
-    e.preventDefault()
-    setUploadDragging(true)
-  }
-  function onDragLeave() {
-    setUploadDragging(false)
-  }
-  function onDrop(e: React.DragEvent) {
-    e.preventDefault()
-    setUploadDragging(false)
-    const file = e.dataTransfer.files[0]
-    if (file) handleFileSelected(file)
-  }
-
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/20">
-          <Bell className="h-5 w-5 text-violet-400" />
-        </div>
-        <div>
-          <h1 className="text-xl font-semibold text-slate-100">Lock Chime</h1>
-          <p className="text-sm text-slate-400">
-            Custom .wav lock sounds for your Tesla — max {MAX_DURATION_SECONDS}s
-          </p>
-        </div>
-      </div>
-
+    <div className="space-y-5">
       {/* Active Sound Banner */}
       <div
         className={`rounded-xl border p-4 flex items-center justify-between gap-4 ${
-          activeSet
-            ? "border-violet-500/30 bg-violet-500/10"
-            : "border-white/10 bg-white/[0.03]"
+          activeSet ? "border-violet-500/30 bg-violet-500/[0.08]" : "border-white/10 bg-white/[0.03]"
         }`}
       >
         <div className="flex items-center gap-3 min-w-0">
-          <Volume2
-            className={`h-5 w-5 shrink-0 ${activeSet ? "text-violet-400" : "text-slate-600"}`}
-          />
+          <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+            activeSet ? "bg-violet-500/20" : "bg-white/5"
+          }`}>
+            <Volume2 className={`h-4.5 w-4.5 ${activeSet ? "text-violet-400" : "text-slate-600"}`} />
+          </div>
           <div className="min-w-0">
             <p className="text-sm font-medium text-slate-200">
               {activeSet ? "Active lock sound" : "No lock sound set"}
             </p>
-            {activeSet && activeName && (
+            {activeSet && activeName ? (
               <p className="text-xs text-slate-400 truncate">{activeName}</p>
-            )}
-            {!activeSet && (
-              <p className="text-xs text-slate-500">
-                Tesla will use its default chime
-              </p>
-            )}
+            ) : !activeSet ? (
+              <p className="text-xs text-slate-500">Tesla will use its default chime</p>
+            ) : null}
           </div>
         </div>
         {activeSet && (
@@ -361,7 +553,7 @@ export default function LockChime() {
         )}
       </div>
 
-      {/* Random Mode Section */}
+      {/* Random Mode */}
       {!randomLoading && (
         <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 space-y-4">
           <div className="flex items-center justify-between">
@@ -370,40 +562,28 @@ export default function LockChime() {
               <h2 className="text-sm font-medium text-slate-200">Random Mode</h2>
             </div>
             <button
-              onClick={() =>
-                handleSaveRandomConfig({
-                  ...randomCfg,
-                  enabled: !randomCfg.enabled,
-                })
-              }
+              onClick={() => handleSaveRandomConfig({ ...randomCfg, enabled: !randomCfg.enabled })}
               disabled={savingRandom || sounds.length < 2}
               className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                 randomCfg.enabled ? "bg-amber-500" : "bg-white/10"
               } ${sounds.length < 2 ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}`}
               title={sounds.length < 2 ? "Upload at least 2 sounds to use random mode" : ""}
             >
-              <span
-                className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${
-                  randomCfg.enabled ? "translate-x-6" : "translate-x-1"
-                }`}
-              />
+              <span className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${
+                randomCfg.enabled ? "translate-x-6" : "translate-x-1"
+              }`} />
             </button>
           </div>
 
           {sounds.length < 2 && (
-            <p className="text-xs text-slate-500">
-              Upload at least 2 sounds to use random mode.
-            </p>
+            <p className="text-xs text-slate-500">Upload at least 2 sounds to use random mode.</p>
           )}
 
           {randomCfg.enabled && sounds.length >= 2 && (
             <div className="space-y-3">
-              {/* Mode selection */}
               <div className="flex gap-2">
                 <button
-                  onClick={() =>
-                    handleSaveRandomConfig({ ...randomCfg, mode: "on_connect" })
-                  }
+                  onClick={() => handleSaveRandomConfig({ ...randomCfg, mode: "on_connect" })}
                   disabled={savingRandom}
                   className={`flex-1 flex items-center gap-2 rounded-lg border px-3 py-2.5 text-xs transition-colors ${
                     randomCfg.mode === "on_connect"
@@ -414,19 +594,14 @@ export default function LockChime() {
                   <Zap className="h-3.5 w-3.5 shrink-0" />
                   <div className="text-left">
                     <p className="font-medium">On Connect</p>
-                    <p className="mt-0.5 text-[10px] opacity-60">
-                      Random sound each time Tesla connects
-                    </p>
+                    <p className="mt-0.5 text-[10px] opacity-60">Random sound each time Tesla connects</p>
                   </div>
                 </button>
 
                 <button
                   onClick={() => {
                     if (!randomCfg.has_rtc) {
-                      showToast(
-                        "Scheduled mode requires a Pi with RTC (real-time clock)",
-                        "error"
-                      )
+                      showToast("Scheduled mode requires a Pi with RTC (real-time clock)", "error")
                       return
                     }
                     handleSaveRandomConfig({ ...randomCfg, mode: "scheduled" })
@@ -444,24 +619,19 @@ export default function LockChime() {
                   <div className="text-left">
                     <p className="font-medium">Scheduled</p>
                     <p className="mt-0.5 text-[10px] opacity-60">
-                      {randomCfg.has_rtc
-                        ? "Change on a time schedule"
-                        : "Requires RTC hardware"}
+                      {randomCfg.has_rtc ? "Change on a time schedule" : "Requires RTC hardware"}
                     </p>
                   </div>
                 </button>
               </div>
 
-              {/* Schedule interval (only for scheduled mode + RTC) */}
               {randomCfg.mode === "scheduled" && randomCfg.has_rtc && (
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-slate-400">Change every:</span>
                   {(["hourly", "daily", "weekly"] as const).map((int) => (
                     <button
                       key={int}
-                      onClick={() =>
-                        handleSaveRandomConfig({ ...randomCfg, interval: int })
-                      }
+                      onClick={() => handleSaveRandomConfig({ ...randomCfg, interval: int })}
                       disabled={savingRandom}
                       className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
                         randomCfg.interval === int
@@ -475,7 +645,6 @@ export default function LockChime() {
                 </div>
               )}
 
-              {/* Randomize Now button */}
               <button
                 onClick={handleRandomizeNow}
                 disabled={randomizing}
@@ -489,34 +658,35 @@ export default function LockChime() {
         </div>
       )}
 
-      {/* Upload Area */}
+      {/* Upload area */}
       <div
         className={`relative rounded-xl border-2 border-dashed transition-colors cursor-pointer ${
           uploadDragging
             ? "border-violet-500/60 bg-violet-500/10"
             : "border-white/10 hover:border-white/20 bg-white/[0.02]"
         }`}
-        onDragOver={onDragOver}
-        onDragLeave={onDragLeave}
-        onDrop={onDrop}
+        onDragOver={(e) => { e.preventDefault(); setUploadDragging(true) }}
+        onDragLeave={() => setUploadDragging(false)}
+        onDrop={(e) => {
+          e.preventDefault()
+          setUploadDragging(false)
+          const file = e.dataTransfer.files[0]
+          if (file) handleFileSelected(file)
+        }}
         onClick={() => !uploading && fileInputRef.current?.click()}
       >
         <div className="flex flex-col items-center gap-3 py-8 px-4 text-center">
           {uploading ? (
             <>
-              <div className="h-5 w-5 animate-spin rounded-full border-2 border-violet-400 border-t-transparent" />
+              <Loader2 className="h-5 w-5 animate-spin text-violet-400" />
               <p className="text-sm text-slate-400">Uploading...</p>
             </>
           ) : (
             <>
               <Upload className="h-8 w-8 text-slate-600" />
               <div>
-                <p className="text-sm font-medium text-slate-300">
-                  Drop a .wav file or click to browse
-                </p>
-                <p className="mt-1 text-xs text-slate-500">
-                  WAV only · max {MAX_DURATION_SECONDS}s · max 5 MB
-                </p>
+                <p className="text-sm font-medium text-slate-300">Drop a .wav file or click to browse</p>
+                <p className="mt-1 text-xs text-slate-500">WAV only · max {MAX_DURATION_SECONDS}s · max 5 MB</p>
               </div>
             </>
           )}
@@ -533,15 +703,15 @@ export default function LockChime() {
         />
       </div>
 
-      {/* Sound Library */}
+      {/* Sound library */}
       <div>
-        <h2 className="mb-3 text-sm font-medium text-slate-400 uppercase tracking-wider">
-          My Library
-        </h2>
+        <h3 className="mb-3 text-xs font-medium text-slate-500 uppercase tracking-wider">
+          Sounds on this Pi
+        </h3>
 
         {loading && (
           <div className="flex items-center justify-center py-12">
-            <div className="h-5 w-5 animate-spin rounded-full border-2 border-violet-400 border-t-transparent" />
+            <Loader2 className="h-5 w-5 animate-spin text-violet-400" />
           </div>
         )}
 
@@ -550,7 +720,7 @@ export default function LockChime() {
             <Music className="h-10 w-10 text-slate-700" />
             <div>
               <p className="text-sm font-medium text-slate-400">No sounds yet</p>
-              <p className="mt-1 text-xs text-slate-600">Upload a .wav file to get started</p>
+              <p className="mt-1 text-xs text-slate-600">Upload a .wav file or download from the Community tab</p>
             </div>
           </div>
         )}
@@ -566,32 +736,29 @@ export default function LockChime() {
               return (
                 <div
                   key={sound.name}
-                  className={`flex items-center gap-3 rounded-xl border px-4 py-3 transition-colors ${
+                  className={`group flex items-center gap-3 rounded-xl border px-4 py-3 transition-colors ${
                     isActive
-                      ? "border-violet-500/40 bg-violet-500/10"
+                      ? "border-violet-500/40 bg-violet-500/[0.08]"
                       : "border-white/10 bg-white/[0.02] hover:bg-white/[0.04]"
                   }`}
                 >
-                  {/* Play button */}
                   <button
                     onClick={() => togglePlay(sound.name)}
-                    className="shrink-0 flex h-8 w-8 items-center justify-center rounded-full bg-white/5 text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
+                    className={`shrink-0 flex h-9 w-9 items-center justify-center rounded-full transition-colors ${
+                      isPlaying
+                        ? "bg-violet-500/20 text-violet-300"
+                        : "bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white"
+                    }`}
                     title={isPlaying ? "Pause" : "Play"}
                   >
-                    {isPlaying ? (
-                      <Pause className="h-4 w-4" />
-                    ) : (
-                      <Play className="h-4 w-4 translate-x-0.5" />
-                    )}
+                    {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4 translate-x-0.5" />}
                   </button>
 
-                  {/* Name & size */}
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-slate-200">{sound.name}</p>
                     <p className="text-xs text-slate-500">{formatSize(sound.size)}</p>
                   </div>
 
-                  {/* Active badge */}
                   {isActive && (
                     <span className="shrink-0 flex items-center gap-1 rounded-full bg-violet-500/20 px-2 py-0.5 text-xs font-medium text-violet-300">
                       <CheckCircle2 className="h-3 w-3" />
@@ -599,7 +766,6 @@ export default function LockChime() {
                     </span>
                   )}
 
-                  {/* Set as active */}
                   {!isActive && (
                     <button
                       onClick={() => handleActivate(sound.name)}
@@ -610,7 +776,6 @@ export default function LockChime() {
                     </button>
                   )}
 
-                  {/* Delete */}
                   {deleteConfirm === sound.name ? (
                     <div className="shrink-0 flex items-center gap-1">
                       <button
@@ -618,7 +783,7 @@ export default function LockChime() {
                         disabled={isDeleting}
                         className="rounded-lg bg-red-500/20 px-2.5 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/30 disabled:opacity-50"
                       >
-                        {isDeleting ? "Deleting..." : "Confirm"}
+                        {isDeleting ? "..." : "Confirm"}
                       </button>
                       <button
                         onClick={() => setDeleteConfirm(null)}
@@ -644,35 +809,509 @@ export default function LockChime() {
         )}
       </div>
 
-      {/* Info note */}
+      {/* Info */}
       <div className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/[0.02] p-4">
         <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
         <p className="text-xs text-slate-500 leading-relaxed">
-          Tesla reads <code className="text-slate-400">LockChime.wav</code> from the root of the USB
-          drive. Only one lock sound can be active at a time. Setting a new active sound replaces the
-          previous one. Tesla supports WAV format only with a maximum duration of{" "}
-          {MAX_DURATION_SECONDS} seconds. Random mode selects from your library automatically — "On
-          Connect" works on all Pis, "Scheduled" requires a Pi with a real-time clock (RTC).
+          Tesla reads <code className="text-slate-400">LockChime.wav</code> from the root of the USB drive.
+          Only one lock sound can be active at a time. Tesla supports WAV format only, max {MAX_DURATION_SECONDS} seconds.
+          Random mode selects from your library automatically — "On Connect" works on all Pis,
+          "Scheduled" requires a Pi with a real-time clock (RTC).
         </p>
       </div>
 
-      {/* Toast */}
-      {toast && (
-        <div
-          className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-xl px-4 py-3 shadow-xl text-sm font-medium transition-all ${
-            toast.type === "success"
-              ? "bg-emerald-500/20 border border-emerald-500/30 text-emerald-300"
-              : "bg-red-500/20 border border-red-500/30 text-red-300"
+      {ToastView}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+// Community tab
+// ─────────────────────────────────────────────────────────────
+
+function CommunityTab({ adminPasscode }: { adminPasscode: string | null }) {
+  const [subTab, setSubTab] = useState<CommunitySubTab>("browse")
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => setSubTab("browse")}
+          className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+            subTab === "browse"
+              ? "bg-white/10 text-slate-200"
+              : "text-slate-500 hover:text-slate-300"
           }`}
         >
-          {toast.type === "success" ? (
-            <CheckCircle2 className="h-4 w-4 shrink-0" />
-          ) : (
-            <AlertCircle className="h-4 w-4 shrink-0" />
-          )}
-          {toast.msg}
+          Browse
+        </button>
+        <button
+          onClick={() => setSubTab("upload")}
+          className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+            subTab === "upload"
+              ? "bg-white/10 text-slate-200"
+              : "text-slate-500 hover:text-slate-300"
+          }`}
+        >
+          Share a Sound
+        </button>
+      </div>
+
+      {subTab === "browse" ? (
+        <CommunityBrowse adminPasscode={adminPasscode} />
+      ) : (
+        <CommunityUpload adminPasscode={adminPasscode} />
+      )}
+    </div>
+  )
+}
+
+function CommunityBrowse({ adminPasscode }: { adminPasscode: string | null }) {
+  const [sounds, setSounds] = useState<CommunitySound[]>([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [search, setSearch] = useState("")
+  const [sort, setSort] = useState<SortOption>("newest")
+  const [downloadingCode, setDownloadingCode] = useState<string | null>(null)
+  const [editingSound, setEditingSound] = useState<CommunitySound | null>(null)
+  const [deletingSound, setDeletingSound] = useState<CommunitySound | null>(null)
+  const { showToast, ToastView } = useToast()
+
+  const totalPages = Math.ceil(total / COMMUNITY_PAGE_SIZE)
+
+  const fetchSounds = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const params = new URLSearchParams()
+      params.set("page", String(page))
+      params.set("limit", String(COMMUNITY_PAGE_SIZE))
+      if (search) params.set("search", search)
+      if (sort !== "newest") params.set("sort", sort)
+
+      const headers: HeadersInit = {}
+      if (adminPasscode) headers["x-passcode"] = adminPasscode
+
+      const res = await fetch(`${API_BASE}/lockchime/community/library?${params}`, { headers })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data: CommunityLibraryResponse = await res.json()
+      setSounds(data.sounds ?? [])
+      setTotal(data.total ?? 0)
+    } catch {
+      setError("Community lock chimes are not available yet. Check back soon!")
+      setSounds([])
+    } finally {
+      setLoading(false)
+    }
+  }, [page, search, sort, adminPasscode])
+
+  useEffect(() => {
+    const timer = setTimeout(fetchSounds, search ? 300 : 0)
+    return () => clearTimeout(timer)
+  }, [fetchSounds])
+
+  async function handleDownload(sound: CommunitySound) {
+    setDownloadingCode(sound.code)
+    try {
+      const res = await fetch(`${API_BASE}/lockchime/community/download/${sound.code}`, { method: "POST" })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+      showToast(`Downloaded "${sound.name}" to your library`, "success")
+    } catch (e: unknown) {
+      showToast(e instanceof Error ? e.message : "Download failed", "error")
+    } finally {
+      setDownloadingCode(null)
+    }
+  }
+
+  async function handleAdminEdit(code: string, name: string) {
+    if (!adminPasscode) return
+    try {
+      const res = await fetch(`${API_BASE}/lockchime/community/admin/edit/${code}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "x-passcode": adminPasscode },
+        body: JSON.stringify({ name }),
+      })
+      if (!res.ok) throw new Error("Edit failed")
+      showToast("Sound updated", "success")
+      setEditingSound(null)
+      fetchSounds()
+    } catch (e: unknown) {
+      showToast(e instanceof Error ? e.message : "Edit failed", "error")
+    }
+  }
+
+  async function handleAdminDelete(code: string) {
+    if (!adminPasscode) return
+    try {
+      const res = await fetch(`${API_BASE}/lockchime/community/admin/delete/${code}`, {
+        method: "DELETE",
+        headers: { "x-passcode": adminPasscode },
+      })
+      if (!res.ok) throw new Error("Delete failed")
+      showToast("Sound deleted from community", "success")
+      setDeletingSound(null)
+      fetchSounds()
+    } catch (e: unknown) {
+      showToast(e instanceof Error ? e.message : "Delete failed", "error")
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Search & sort */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(1) }}
+            placeholder="Search community sounds..."
+            className="w-full rounded-lg border border-white/10 bg-white/[0.03] py-2 pl-10 pr-3 text-sm text-slate-200 placeholder:text-slate-600 focus:border-violet-500/50 focus:outline-none"
+          />
+        </div>
+        <select
+          value={sort}
+          onChange={(e) => { setSort(e.target.value as SortOption); setPage(1) }}
+          className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-300 focus:border-violet-500/50 focus:outline-none"
+        >
+          <option value="newest">Newest</option>
+          <option value="oldest">Oldest</option>
+          <option value="popular">Most Downloaded</option>
+          <option value="name">Name A–Z</option>
+        </select>
+      </div>
+
+      {/* Grid */}
+      {loading && (
+        <div className="flex items-center justify-center py-16">
+          <Loader2 className="h-6 w-6 animate-spin text-violet-400" />
         </div>
       )}
+
+      {!loading && error && (
+        <div className="flex flex-col items-center gap-3 rounded-xl border border-white/10 bg-white/[0.02] py-16 text-center">
+          <Music className="h-10 w-10 text-slate-700" />
+          <p className="text-sm text-slate-400">{error}</p>
+        </div>
+      )}
+
+      {!loading && !error && sounds.length === 0 && (
+        <div className="flex flex-col items-center gap-3 rounded-xl border border-white/10 bg-white/[0.02] py-16 text-center">
+          <Music className="h-10 w-10 text-slate-700" />
+          <div>
+            <p className="text-sm font-medium text-slate-400">No community sounds yet</p>
+            <p className="mt-1 text-xs text-slate-600">Be the first to share a lock chime!</p>
+          </div>
+        </div>
+      )}
+
+      {!loading && !error && sounds.length > 0 && (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {sounds.map((sound) => (
+            <div
+              key={sound.code}
+              className="group relative rounded-xl border border-white/10 bg-white/[0.02] p-4 transition-colors hover:bg-white/[0.04]"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-slate-200">{sound.name}</p>
+                  <div className="mt-1 flex items-center gap-3 text-xs text-slate-500">
+                    {sound.duration > 0 && <span>{formatDuration(sound.duration)}</span>}
+                    <span>{sound.download_count} downloads</span>
+                  </div>
+                </div>
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-500/10">
+                  <Bell className="h-4 w-4 text-violet-400" />
+                </div>
+              </div>
+
+              <div className="mt-3 flex items-center gap-2">
+                <button
+                  onClick={() => handleDownload(sound)}
+                  disabled={downloadingCode === sound.code}
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-violet-600/80 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-violet-500 disabled:opacity-50"
+                >
+                  {downloadingCode === sound.code ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Download className="h-3.5 w-3.5" />
+                  )}
+                  {downloadingCode === sound.code ? "Downloading..." : "Download to Pi"}
+                </button>
+
+                {adminPasscode && (
+                  <>
+                    <button
+                      onClick={() => setEditingSound(sound)}
+                      className="rounded-lg border border-white/10 p-2 text-slate-500 transition-colors hover:text-slate-300"
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </button>
+                    <button
+                      onClick={() => setDeletingSound(sound)}
+                      className="rounded-lg border border-white/10 p-2 text-slate-500 transition-colors hover:text-red-400"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Pagination */}
+      {!loading && totalPages > 1 && (
+        <div className="flex items-center justify-center gap-3">
+          <button
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page <= 1}
+            className="rounded-lg border border-white/10 p-2 text-slate-400 transition-colors hover:bg-white/5 disabled:opacity-30"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <span className="text-xs text-slate-500">
+            Page {page} of {totalPages}
+          </span>
+          <button
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={page >= totalPages}
+            className="rounded-lg border border-white/10 p-2 text-slate-400 transition-colors hover:bg-white/5 disabled:opacity-30"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Edit modal */}
+      {editingSound && (
+        <EditSoundModal
+          sound={editingSound}
+          onSave={(name) => handleAdminEdit(editingSound.code, name)}
+          onClose={() => setEditingSound(null)}
+        />
+      )}
+
+      {/* Delete confirm modal */}
+      {deletingSound && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setDeletingSound(null)}>
+          <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-slate-900 p-6" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-slate-100">Delete Sound</h3>
+            <p className="mt-2 text-sm text-slate-400">
+              Delete <strong className="text-slate-200">{deletingSound.name}</strong> from the community library?
+              This cannot be undone.
+            </p>
+            <div className="mt-4 flex gap-3">
+              <button
+                onClick={() => handleAdminDelete(deletingSound.code)}
+                className="flex-1 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-red-500"
+              >
+                Delete
+              </button>
+              <button
+                onClick={() => setDeletingSound(null)}
+                className="rounded-lg border border-white/10 px-4 py-2.5 text-sm text-slate-400 transition-colors hover:bg-white/5"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {ToastView}
+    </div>
+  )
+}
+
+function EditSoundModal({ sound, onSave, onClose }: { sound: CommunitySound; onSave: (name: string) => void; onClose: () => void }) {
+  const [name, setName] = useState(sound.name)
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+      <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-slate-900 p-6" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-lg font-semibold text-slate-100">Edit Sound</h3>
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          maxLength={50}
+          className="mt-4 w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-200 focus:border-violet-500/50 focus:outline-none"
+        />
+        <div className="mt-4 flex gap-3">
+          <button
+            onClick={() => onSave(name)}
+            disabled={!name.trim()}
+            className="flex-1 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-violet-500 disabled:opacity-50"
+          >
+            Save
+          </button>
+          <button
+            onClick={onClose}
+            className="rounded-lg border border-white/10 px-4 py-2.5 text-sm text-slate-400 transition-colors hover:bg-white/5"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function CommunityUpload({ adminPasscode }: { adminPasscode: string | null }) {
+  const [file, setFile] = useState<File | null>(null)
+  const [name, setName] = useState("")
+  const [uploading, setUploading] = useState(false)
+  const [duration, setDuration] = useState<number | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const { showToast, ToastView } = useToast()
+
+  async function handleFile(f: File) {
+    if (!f.name.toLowerCase().endsWith(".wav")) {
+      showToast("Only .wav files are supported", "error")
+      return
+    }
+    if (f.size > MAX_FILE_BYTES) {
+      showToast("File is too large (max 5 MB)", "error")
+      return
+    }
+    try {
+      const dur = await getWavDuration(f)
+      if (dur > MAX_DURATION_SECONDS) {
+        showToast(`Sound is ${dur.toFixed(1)}s — Tesla requires ${MAX_DURATION_SECONDS}s or less`, "error")
+        return
+      }
+      setDuration(dur)
+    } catch {
+      showToast("Could not read WAV file", "error")
+      return
+    }
+    setFile(f)
+    setName(f.name.replace(/\.wav$/i, ""))
+  }
+
+  async function handleSubmit() {
+    if (!file || !name.trim()) return
+    setUploading(true)
+    try {
+      const form = new FormData()
+      form.append("sound", file)
+      form.append("name", name.trim())
+
+      const headers: HeadersInit = {}
+      if (adminPasscode) headers["x-passcode"] = adminPasscode
+
+      const res = await fetch(`${API_BASE}/lockchime/community/upload`, {
+        method: "POST",
+        headers,
+        body: form,
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+      showToast("Sound submitted! It will appear in the library after review.", "success")
+      setFile(null)
+      setName("")
+      setDuration(null)
+      if (fileInputRef.current) fileInputRef.current.value = ""
+    } catch (e: unknown) {
+      showToast(e instanceof Error ? e.message : "Upload failed", "error")
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 space-y-4">
+        <h3 className="text-sm font-medium text-slate-200">Share a Lock Sound</h3>
+        <p className="text-xs text-slate-500">
+          Upload a .wav file to share with the Sentry USB community. Submissions are reviewed before appearing in the library.
+        </p>
+
+        {/* File selection */}
+        {!file ? (
+          <div
+            className="rounded-xl border-2 border-dashed border-white/10 hover:border-white/20 bg-white/[0.01] cursor-pointer transition-colors"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <div className="flex flex-col items-center gap-2 py-10 text-center">
+              <Upload className="h-6 w-6 text-slate-600" />
+              <p className="text-sm text-slate-400">Click to select a .wav file</p>
+              <p className="text-xs text-slate-600">Max {MAX_DURATION_SECONDS}s · max 5 MB</p>
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-xl border border-violet-500/30 bg-violet-500/[0.06] p-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-violet-500/20">
+                <Music className="h-5 w-5 text-violet-400" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="truncate text-sm font-medium text-slate-200">{file.name}</p>
+                <p className="text-xs text-slate-500">
+                  {formatSize(file.size)}{duration !== null ? ` · ${formatDuration(duration)}` : ""}
+                </p>
+              </div>
+              <button
+                onClick={() => { setFile(null); setDuration(null); if (fileInputRef.current) fileInputRef.current.value = "" }}
+                className="text-slate-500 hover:text-slate-300"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        )}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".wav,audio/wav,audio/x-wav"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0]
+            if (f) handleFile(f)
+          }}
+        />
+
+        {/* Name */}
+        <div>
+          <label className="text-xs font-medium text-slate-400">Sound name</label>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            maxLength={50}
+            placeholder="e.g. Sci-Fi Beep"
+            className="mt-1 w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:border-violet-500/50 focus:outline-none"
+          />
+          <p className="mt-1 text-xs text-slate-600">{name.length}/50 characters</p>
+        </div>
+
+        {/* Submit */}
+        <button
+          onClick={handleSubmit}
+          disabled={!file || !name.trim() || uploading}
+          className="flex w-full items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-violet-500 disabled:opacity-50"
+        >
+          {uploading ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Submitting...
+            </>
+          ) : (
+            <>
+              <Upload className="h-4 w-4" />
+              Submit Sound
+            </>
+          )}
+        </button>
+      </div>
+
+      {ToastView}
     </div>
   )
 }

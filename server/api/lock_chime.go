@@ -1,12 +1,14 @@
 package api
 
 import (
+	"bytes"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"math/rand"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -526,4 +528,270 @@ func (h *handlers) lockChimeRandomize(w http.ResponseWriter, r *http.Request) {
 		"success": true,
 		"active":  chosen,
 	})
+}
+
+// ──────────────────────────────────────────────────────────────────
+// Community lock chime endpoints (proxy to support server)
+// ──────────────────────────────────────────────────────────────────
+
+var validLockChimeCode = regexp.MustCompile(`^[A-Za-z0-9]{3,10}$`)
+
+// GET /api/lockchime/community/library — proxy browse request to support server
+func (h *handlers) communityLockChimeLibrary(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.RawQuery
+	path := "/lockchime/library"
+	if query != "" {
+		path += "?" + query
+	}
+
+	var headers map[string]string
+	if passcode := r.Header.Get("X-Passcode"); passcode != "" {
+		headers = map[string]string{"X-Passcode": passcode}
+	}
+
+	var respBody []byte
+	var status int
+	var err error
+	if headers != nil {
+		respBody, status, err = supportProxyWithHeaders("GET", path, nil, headers, 15*time.Second)
+	} else {
+		respBody, status, err = supportProxy("GET", path, nil, "", 15*time.Second)
+	}
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "Community lock chime service unreachable")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	w.Write(respBody)
+}
+
+// POST /api/lockchime/community/upload — proxy sound upload to support server with fingerprint
+func (h *handlers) communityLockChimeUpload(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, lockChimeMaxBytes)
+
+	if err := r.ParseMultipartForm(lockChimeMaxBytes); err != nil {
+		writeError(w, http.StatusBadRequest, "Failed to parse upload")
+		return
+	}
+
+	file, header, err := r.FormFile("sound")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Missing sound file")
+		return
+	}
+	defer file.Close()
+
+	name := r.FormValue("name")
+	if name == "" {
+		writeError(w, http.StatusBadRequest, "Missing name")
+		return
+	}
+
+	fileData, err := io.ReadAll(file)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Failed to read file")
+		return
+	}
+
+	// Build multipart request to support server
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+
+	part, err := writer.CreateFormFile("sound", header.Filename)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to create multipart")
+		return
+	}
+	part.Write(fileData)
+
+	writer.WriteField("name", name)
+	writer.Close()
+
+	req, err := http.NewRequest("POST", supportServerURL+"/lockchime/upload", &buf)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to create request")
+		return
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("X-Fingerprint", getFingerprint())
+
+	// Forward passcode if present (admin bypasses rate limiting)
+	if passcode := r.Header.Get("X-Passcode"); passcode != "" {
+		req.Header.Set("X-Passcode", passcode)
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "Community lock chime service unreachable")
+		return
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to read response")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(resp.StatusCode)
+	w.Write(respBody)
+}
+
+// POST /api/lockchime/community/download/{code} — download sound from support server, save to Pi
+func (h *handlers) communityLockChimeDownload(w http.ResponseWriter, r *http.Request) {
+	code := r.PathValue("code")
+	if !validLockChimeCode.MatchString(code) {
+		writeError(w, http.StatusBadRequest, "Invalid code")
+		return
+	}
+
+	req, err := http.NewRequest("GET", supportServerURL+"/lockchime/download/"+code, nil)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to create request")
+		return
+	}
+	req.Header.Set("X-Fingerprint", getFingerprint())
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "Community lock chime service unreachable")
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(resp.StatusCode)
+		w.Write(body)
+		return
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to download sound")
+		return
+	}
+
+	// Determine filename from header or code
+	soundName := resp.Header.Get("X-Sound-Name")
+	if soundName == "" {
+		soundName = code
+	}
+	soundName = sanitizeLockChimeName(soundName)
+
+	if err := os.MkdirAll(lockChimeDir, 0755); err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to prepare lock chime directory")
+		return
+	}
+
+	destPath := filepath.Join(lockChimeDir, soundName)
+	if _, err := os.Stat(destPath); err == nil {
+		ext := filepath.Ext(soundName)
+		stem := strings.TrimSuffix(soundName, ext)
+		for i := 1; i < 100; i++ {
+			candidate := filepath.Join(lockChimeDir, fmt.Sprintf("%s_%d%s", stem, i, ext))
+			if _, err := os.Stat(candidate); os.IsNotExist(err) {
+				destPath = candidate
+				break
+			}
+		}
+	}
+
+	if err := os.WriteFile(destPath, data, 0644); err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to save sound")
+		return
+	}
+
+	log.Printf("[LOCKCHIME] Community sound saved: %s (%d bytes)", filepath.Base(destPath), len(data))
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success":  true,
+		"filename": filepath.Base(destPath),
+		"size":     len(data),
+	})
+}
+
+// POST /api/lockchime/community/admin/validate — proxy admin passcode validation
+func (h *handlers) communityLockChimeAdminValidate(w http.ResponseWriter, r *http.Request) {
+	passcode := r.Header.Get("X-Passcode")
+	if passcode == "" {
+		writeError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	headers := map[string]string{"X-Passcode": passcode}
+	respBody, status, err := supportProxyWithHeaders("POST", "/lockchime/admin/validate", nil, headers, 15*time.Second)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "Community lock chime service unreachable")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	w.Write(respBody)
+}
+
+// PUT /api/lockchime/community/admin/edit/{code} — proxy admin edit
+func (h *handlers) communityLockChimeAdminEdit(w http.ResponseWriter, r *http.Request) {
+	code := r.PathValue("code")
+	if !validLockChimeCode.MatchString(code) {
+		writeError(w, http.StatusBadRequest, "Invalid code")
+		return
+	}
+
+	passcode := r.Header.Get("X-Passcode")
+	if passcode == "" {
+		writeError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Failed to read body")
+		return
+	}
+	defer r.Body.Close()
+
+	headers := map[string]string{"X-Passcode": passcode}
+	respBody, status, err := supportProxyWithHeaders("PUT", "/lockchime/admin/edit/"+code, body, headers, 15*time.Second)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "Community lock chime service unreachable")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	w.Write(respBody)
+}
+
+// DELETE /api/lockchime/community/admin/delete/{code} — proxy admin deletion
+func (h *handlers) communityLockChimeAdminDelete(w http.ResponseWriter, r *http.Request) {
+	code := r.PathValue("code")
+	if !validLockChimeCode.MatchString(code) {
+		writeError(w, http.StatusBadRequest, "Invalid code")
+		return
+	}
+
+	passcode := r.Header.Get("X-Passcode")
+	if passcode == "" {
+		writeError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	headers := map[string]string{"X-Passcode": passcode}
+	respBody, status, err := supportProxyWithHeaders("DELETE", "/lockchime/admin/delete/"+code, nil, headers, 15*time.Second)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "Community lock chime service unreachable")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	w.Write(respBody)
 }
