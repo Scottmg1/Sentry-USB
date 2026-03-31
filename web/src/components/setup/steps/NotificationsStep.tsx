@@ -229,6 +229,14 @@ export function NotificationsStep({ data, onChange }: StepProps) {
           <ProviderCard key={p.id} provider={p} data={data} onChange={onChange} errorFields={missingFields} />
         ))}
       </div>
+
+      <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 px-4 py-3">
+        <p className="text-xs text-blue-300/80">
+          <strong>Tip:</strong> After setup, you can fine-tune which notification types
+          are sent (archive, temperature, updates, etc.) from the{" "}
+          <strong>Notifications</strong> page in the sidebar.
+        </p>
+      </div>
     </div>
   )
 }

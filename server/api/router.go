@@ -88,6 +88,15 @@ func RegisterRoutes(mux *http.ServeMux, hub *ws.Hub) {
 	mux.HandleFunc("DELETE /api/notifications/paired-devices/{id}", h.removeNotificationPairedDevice)
 	mux.HandleFunc("POST /api/notifications/test", h.sendTestNotification)
 
+	// Notification center (history + type settings)
+	mux.HandleFunc("GET /api/notifications/settings", h.getNotificationSettings)
+	mux.HandleFunc("PUT /api/notifications/settings", h.updateNotificationSettings)
+	mux.HandleFunc("GET /api/notifications/history", h.getNotificationHistory)
+	mux.HandleFunc("POST /api/notifications/history", h.appendNotificationHistory)
+	mux.HandleFunc("DELETE /api/notifications/history", h.clearNotificationHistory)
+	mux.HandleFunc("DELETE /api/notifications/history/{id}", h.deleteNotificationHistoryItem)
+	mux.HandleFunc("GET /api/notifications/settings/check", h.checkNotificationType)
+
 	// Support chat (proxy to backend API)
 	mux.HandleFunc("GET /api/support/check", h.checkSupportAvailable)
 	mux.HandleFunc("POST /api/support/ticket", h.createSupportTicket)

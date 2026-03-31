@@ -5,6 +5,21 @@ message="$2"
 type="${3:-}"
 notification_type="${4:-}"
 
+# --- Notification type gate check ---
+# If a notification_type is specified, check if it's enabled in user settings.
+# The API server runs locally and responds to localhost without auth.
+if [ -n "$notification_type" ]; then
+  gate_response=$(curl -sf --connect-timeout 2 --max-time 5 \
+    "http://127.0.0.1:8788/api/notifications/settings/check?type=${notification_type}" 2>/dev/null) || true
+  if [ -n "$gate_response" ]; then
+    gate_enabled=$(echo "$gate_response" | sed -n 's/.*"enabled" *: *\(true\|false\).*/\1/p')
+    if [ "$gate_enabled" = "false" ]; then
+      log "Notification type '$notification_type' is disabled by user settings. Skipping."
+      exit 0
+    fi
+  fi
+fi
+
 # Helper: run curl and check the HTTP status code. Logs errors with response body.
 # Usage: checked_curl "ServiceName" curl_args...
 function checked_curl () {
@@ -188,18 +203,51 @@ function send_shell () {
 
 log "$message"
 
-[ "${SIGNAL_ENABLED:-false}" = "true" ] && send_signal
-[ "${PUSHOVER_ENABLED:-false}" = "true" ] && send_pushover
-[ "${GOTIFY_ENABLED:-false}" = "true" ] && send_gotify
-[ "${DISCORD_ENABLED:-false}" = "true" ] && send_discord
-[ "${IFTTT_ENABLED:-false}" = "true" ] && send_ifttt
-[ "${SNS_ENABLED:-false}" = "true" ] && send_sns
-[ "${WEBHOOK_ENABLED:-false}" = "true" ] && send_webhook
-[ "${TELEGRAM_ENABLED:-false}" = "true" ] && send_telegram
-[ "${MATRIX_ENABLED:-false}" = "true" ] && send_matrix
-[ "${SLACK_ENABLED:-false}" = "true" ] && send_slack
-[ "${NTFY_ENABLED:-false}" = "true" ] && send_ntfy
-[ "${MOBILE_PUSH_ENABLED:-false}" = "true" ] && send_mobile_push
-[ "${NOTIFICATION_COMMAND_ENABLED:-false}" = "true" ] && send_shell
+# --- Track providers and results for history logging ---
+providers_json="[]"
+results_json="{}"
+
+function track_provider() {
+  local name="$1"
+  local status="$2"
+  providers_json=$(echo "$providers_json" | sed "s/\]$/,\"$name\"]/" | sed 's/\[,/[/')
+  results_json=$(echo "$results_json" | sed "s/}$/,\"$name\":\"$status\"}/" | sed 's/{,/{/')
+}
+
+function run_provider() {
+  local name="$1"
+  local func="$2"
+  if $func; then
+    track_provider "$name" "ok"
+  else
+    track_provider "$name" "error"
+  fi
+}
+
+[ "${SIGNAL_ENABLED:-false}" = "true" ] && run_provider "signal" send_signal
+[ "${PUSHOVER_ENABLED:-false}" = "true" ] && run_provider "pushover" send_pushover
+[ "${GOTIFY_ENABLED:-false}" = "true" ] && run_provider "gotify" send_gotify
+[ "${DISCORD_ENABLED:-false}" = "true" ] && run_provider "discord" send_discord
+[ "${IFTTT_ENABLED:-false}" = "true" ] && run_provider "ifttt" send_ifttt
+[ "${SNS_ENABLED:-false}" = "true" ] && run_provider "sns" send_sns
+[ "${WEBHOOK_ENABLED:-false}" = "true" ] && run_provider "webhook" send_webhook
+[ "${TELEGRAM_ENABLED:-false}" = "true" ] && run_provider "telegram" send_telegram
+[ "${MATRIX_ENABLED:-false}" = "true" ] && run_provider "matrix" send_matrix
+[ "${SLACK_ENABLED:-false}" = "true" ] && run_provider "slack" send_slack
+[ "${NTFY_ENABLED:-false}" = "true" ] && run_provider "ntfy" send_ntfy
+[ "${MOBILE_PUSH_ENABLED:-false}" = "true" ] && run_provider "mobile_push" send_mobile_push
+[ "${NOTIFICATION_COMMAND_ENABLED:-false}" = "true" ] && run_provider "shell" send_shell
+
+# --- Log notification event to history ---
+if [ "$providers_json" != "[]" ]; then
+  history_payload=$(cat <<HISTEOF
+{"type":"${notification_type:-general}","title":"${title}","message":"${message}","providers":${providers_json},"results":${results_json}}
+HISTEOF
+)
+  curl -sf --connect-timeout 2 --max-time 5 -X POST \
+    -H "Content-Type: application/json" \
+    -d "$history_payload" \
+    "http://127.0.0.1:8788/api/notifications/history" >/dev/null 2>&1 || true
+fi
 
 exit 0

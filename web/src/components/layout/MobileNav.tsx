@@ -14,6 +14,8 @@ import {
   Timer,
   LogOut,
   Paintbrush,
+  Bell,
+  BellRing,
   Wifi,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -35,6 +37,8 @@ const navItems = [
   { to: "/logs", icon: ScrollText, label: "Logs" },
   { to: "/drives", icon: MapPin, label: "Drives" },
   { to: "/community-wraps", icon: Paintbrush, label: "Community Wraps" },
+  { to: "/lock-chime", icon: Bell, label: "Lock Chime" },
+  { to: "/notifications", icon: BellRing, label: "Notifications" },
   { to: "/support", icon: MessageCircle, label: "Support" },
   { to: "/terminal", icon: TerminalSquare, label: "Terminal" },
   { to: "/settings", icon: Settings, label: "Settings" },
