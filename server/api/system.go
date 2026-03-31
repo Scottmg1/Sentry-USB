@@ -29,6 +29,8 @@ func (h *handlers) toggleDrives(w http.ResponseWriter, r *http.Request) {
 	if _, err := os.Stat("/sys/kernel/config/usb_gadget/sentryusb"); err == nil {
 		shell.Run("bash", "/root/bin/disable_gadget.sh")
 	} else {
+		// Randomize lock chime before enabling gadget (if random on_connect mode is active)
+		RandomizeOnConnect()
 		shell.Run("bash", "/root/bin/enable_gadget.sh")
 	}
 	writeOK(w)

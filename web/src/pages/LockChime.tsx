@@ -10,6 +10,9 @@ import {
   X,
   AlertCircle,
   Bell,
+  Shuffle,
+  Clock,
+  Zap,
 } from "lucide-react"
 
 const API_BASE = "/api"
@@ -26,6 +29,13 @@ interface ListResponse {
   sounds: SoundEntry[]
   active_name: string
   active_set: boolean
+}
+
+interface RandomConfig {
+  enabled: boolean
+  mode: string
+  interval: string
+  has_rtc: boolean
 }
 
 function formatSize(bytes: number): string {
@@ -61,6 +71,17 @@ export default function LockChime() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
+  // Random mode state
+  const [randomCfg, setRandomCfg] = useState<RandomConfig>({
+    enabled: false,
+    mode: "on_connect",
+    interval: "daily",
+    has_rtc: false,
+  })
+  const [randomLoading, setRandomLoading] = useState(true)
+  const [savingRandom, setSavingRandom] = useState(false)
+  const [randomizing, setRandomizing] = useState(false)
+
   const showToast = useCallback((msg: string, type: "success" | "error") => {
     setToast({ msg, type })
   }, [])
@@ -86,9 +107,23 @@ export default function LockChime() {
     }
   }, [showToast])
 
+  const fetchRandomConfig = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/lockchime/random-config`)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data: RandomConfig = await res.json()
+      setRandomCfg(data)
+    } catch {
+      // Silently fail — random config is optional
+    } finally {
+      setRandomLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     fetchSounds()
-  }, [fetchSounds])
+    fetchRandomConfig()
+  }, [fetchSounds, fetchRandomConfig])
 
   // Stop audio when component unmounts
   useEffect(() => {
@@ -104,7 +139,6 @@ export default function LockChime() {
       return
     }
     audioRef.current?.pause()
-    // We can't directly stream from /mutable — use files download API
     const url = `${API_BASE}/files/download?path=/mutable/LockChime/${encodeURIComponent(name)}`
     const audio = new Audio(url)
     audioRef.current = audio
@@ -130,7 +164,6 @@ export default function LockChime() {
       return
     }
 
-    // Client-side duration check
     try {
       const duration = await getWavDuration(file)
       if (duration > MAX_DURATION_SECONDS) {
@@ -220,6 +253,47 @@ export default function LockChime() {
     }
   }
 
+  async function handleSaveRandomConfig(newCfg: RandomConfig) {
+    setSavingRandom(true)
+    try {
+      const res = await fetch(`${API_BASE}/lockchime/random-config`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          enabled: newCfg.enabled,
+          mode: newCfg.mode,
+          interval: newCfg.interval,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+      setRandomCfg((prev) => ({ ...prev, ...newCfg, enabled: data.enabled }))
+      showToast(
+        newCfg.enabled ? "Random mode enabled" : "Random mode disabled",
+        "success"
+      )
+    } catch (e: unknown) {
+      showToast(e instanceof Error ? e.message : "Failed to save", "error")
+    } finally {
+      setSavingRandom(false)
+    }
+  }
+
+  async function handleRandomizeNow() {
+    setRandomizing(true)
+    try {
+      const res = await fetch(`${API_BASE}/lockchime/randomize`, { method: "POST" })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+      showToast(`Randomly selected "${data.active}"`, "success")
+      await fetchSounds()
+    } catch (e: unknown) {
+      showToast(e instanceof Error ? e.message : "Failed to randomize", "error")
+    } finally {
+      setRandomizing(false)
+    }
+  }
+
   function onDragOver(e: React.DragEvent) {
     e.preventDefault()
     setUploadDragging(true)
@@ -282,10 +356,138 @@ export default function LockChime() {
             className="shrink-0 flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-400 transition-colors hover:border-red-500/40 hover:text-red-400 disabled:opacity-50"
           >
             <X className="h-3.5 w-3.5" />
-            {clearing ? "Clearing…" : "Clear"}
+            {clearing ? "Clearing..." : "Clear"}
           </button>
         )}
       </div>
+
+      {/* Random Mode Section */}
+      {!randomLoading && (
+        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <Shuffle className="h-4 w-4 text-amber-400" />
+              <h2 className="text-sm font-medium text-slate-200">Random Mode</h2>
+            </div>
+            <button
+              onClick={() =>
+                handleSaveRandomConfig({
+                  ...randomCfg,
+                  enabled: !randomCfg.enabled,
+                })
+              }
+              disabled={savingRandom || sounds.length < 2}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                randomCfg.enabled ? "bg-amber-500" : "bg-white/10"
+              } ${sounds.length < 2 ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}`}
+              title={sounds.length < 2 ? "Upload at least 2 sounds to use random mode" : ""}
+            >
+              <span
+                className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${
+                  randomCfg.enabled ? "translate-x-6" : "translate-x-1"
+                }`}
+              />
+            </button>
+          </div>
+
+          {sounds.length < 2 && (
+            <p className="text-xs text-slate-500">
+              Upload at least 2 sounds to use random mode.
+            </p>
+          )}
+
+          {randomCfg.enabled && sounds.length >= 2 && (
+            <div className="space-y-3">
+              {/* Mode selection */}
+              <div className="flex gap-2">
+                <button
+                  onClick={() =>
+                    handleSaveRandomConfig({ ...randomCfg, mode: "on_connect" })
+                  }
+                  disabled={savingRandom}
+                  className={`flex-1 flex items-center gap-2 rounded-lg border px-3 py-2.5 text-xs transition-colors ${
+                    randomCfg.mode === "on_connect"
+                      ? "border-amber-500/40 bg-amber-500/10 text-amber-300"
+                      : "border-white/10 text-slate-400 hover:border-white/20"
+                  }`}
+                >
+                  <Zap className="h-3.5 w-3.5 shrink-0" />
+                  <div className="text-left">
+                    <p className="font-medium">On Connect</p>
+                    <p className="mt-0.5 text-[10px] opacity-60">
+                      Random sound each time Tesla connects
+                    </p>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => {
+                    if (!randomCfg.has_rtc) {
+                      showToast(
+                        "Scheduled mode requires a Pi with RTC (real-time clock)",
+                        "error"
+                      )
+                      return
+                    }
+                    handleSaveRandomConfig({ ...randomCfg, mode: "scheduled" })
+                  }}
+                  disabled={savingRandom}
+                  className={`flex-1 flex items-center gap-2 rounded-lg border px-3 py-2.5 text-xs transition-colors ${
+                    randomCfg.mode === "scheduled"
+                      ? "border-amber-500/40 bg-amber-500/10 text-amber-300"
+                      : !randomCfg.has_rtc
+                        ? "border-white/5 text-slate-600 cursor-not-allowed"
+                        : "border-white/10 text-slate-400 hover:border-white/20"
+                  }`}
+                >
+                  <Clock className="h-3.5 w-3.5 shrink-0" />
+                  <div className="text-left">
+                    <p className="font-medium">Scheduled</p>
+                    <p className="mt-0.5 text-[10px] opacity-60">
+                      {randomCfg.has_rtc
+                        ? "Change on a time schedule"
+                        : "Requires RTC hardware"}
+                    </p>
+                  </div>
+                </button>
+              </div>
+
+              {/* Schedule interval (only for scheduled mode + RTC) */}
+              {randomCfg.mode === "scheduled" && randomCfg.has_rtc && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-400">Change every:</span>
+                  {(["hourly", "daily", "weekly"] as const).map((int) => (
+                    <button
+                      key={int}
+                      onClick={() =>
+                        handleSaveRandomConfig({ ...randomCfg, interval: int })
+                      }
+                      disabled={savingRandom}
+                      className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
+                        randomCfg.interval === int
+                          ? "bg-amber-500/20 text-amber-300 font-medium"
+                          : "text-slate-500 hover:text-slate-300"
+                      }`}
+                    >
+                      {int.charAt(0).toUpperCase() + int.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Randomize Now button */}
+              <button
+                onClick={handleRandomizeNow}
+                disabled={randomizing}
+                className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-300 transition-colors hover:bg-amber-500/20 disabled:opacity-50"
+              >
+                <Shuffle className="h-3.5 w-3.5" />
+                {randomizing ? "Randomizing..." : "Randomize Now"}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Upload Area */}
       <div
@@ -303,7 +505,7 @@ export default function LockChime() {
           {uploading ? (
             <>
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-violet-400 border-t-transparent" />
-              <p className="text-sm text-slate-400">Uploading…</p>
+              <p className="text-sm text-slate-400">Uploading...</p>
             </>
           ) : (
             <>
@@ -404,7 +606,7 @@ export default function LockChime() {
                       disabled={isActivating || isDeleting}
                       className="shrink-0 rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-400 transition-colors hover:border-violet-500/40 hover:text-violet-300 disabled:opacity-50"
                     >
-                      {isActivating ? "Setting…" : "Set Active"}
+                      {isActivating ? "Setting..." : "Set Active"}
                     </button>
                   )}
 
@@ -416,7 +618,7 @@ export default function LockChime() {
                         disabled={isDeleting}
                         className="rounded-lg bg-red-500/20 px-2.5 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/30 disabled:opacity-50"
                       >
-                        {isDeleting ? "Deleting…" : "Confirm"}
+                        {isDeleting ? "Deleting..." : "Confirm"}
                       </button>
                       <button
                         onClick={() => setDeleteConfirm(null)}
@@ -449,7 +651,8 @@ export default function LockChime() {
           Tesla reads <code className="text-slate-400">LockChime.wav</code> from the root of the USB
           drive. Only one lock sound can be active at a time. Setting a new active sound replaces the
           previous one. Tesla supports WAV format only with a maximum duration of{" "}
-          {MAX_DURATION_SECONDS} seconds.
+          {MAX_DURATION_SECONDS} seconds. Random mode selects from your library automatically — "On
+          Connect" works on all Pis, "Scheduled" requires a Pi with a real-time clock (RTC).
         </p>
       </div>
 

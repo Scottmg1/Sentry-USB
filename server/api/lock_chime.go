@@ -2,13 +2,18 @@ package api
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"io"
+	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
+	"time"
 )
 
 const lockChimeDir = "/mutable/LockChime"
@@ -22,11 +27,26 @@ const lockChimeMaxBytes = 5 * 1024 * 1024
 // lockChimeMaxSeconds is Tesla's documented maximum lock sound duration.
 const lockChimeMaxSeconds = 7.0
 
-var validLockChimeFile = regexp.MustCompile(`^[a-zA-Z0-9 \-_.]+\.wav$`)
+const lockChimeConfigFile = "/mutable/LockChime/.random_config.json"
+const lockChimeActiveFile = "/mutable/LockChime/.active_name"
+
+var validLockChimeFile = regexp.MustCompile(`^[a-zA-Z0-9 _.-]+\.wav$`)
+
+// RandomConfig stores the random mode settings.
+type lockChimeRandomConfig struct {
+	Enabled  bool   `json:"enabled"`
+	Mode     string `json:"mode"`     // "on_connect" or "scheduled"
+	Interval string `json:"interval"` // "hourly", "daily", "weekly" (scheduled mode only)
+}
+
+var (
+	lockChimeSchedulerOnce sync.Once
+	lockChimeSchedulerStop chan struct{}
+)
 
 // sanitizeLockChimeName returns a safe filename (keeps alphanum, spaces, hyphens, underscores, dots).
 func sanitizeLockChimeName(name string) string {
-	safe := regexp.MustCompile(`[^a-zA-Z0-9 \-_.]`)
+	safe := regexp.MustCompile(`[^a-zA-Z0-9 _.-]`)
 	result := safe.ReplaceAllString(name, "")
 	result = strings.TrimSpace(result)
 	if result == "" {
@@ -90,6 +110,141 @@ func parseWAVDuration(data []byte) (float64, error) {
 	return 0, fmt.Errorf("could not determine WAV duration")
 }
 
+// ──────────────────────────────────────────────────────────────────
+// Random config helpers
+// ──────────────────────────────────────────────────────────────────
+
+func loadLockChimeRandomConfig() lockChimeRandomConfig {
+	var cfg lockChimeRandomConfig
+	data, err := os.ReadFile(lockChimeConfigFile)
+	if err != nil {
+		return cfg
+	}
+	json.Unmarshal(data, &cfg)
+	return cfg
+}
+
+func saveLockChimeRandomConfig(cfg lockChimeRandomConfig) error {
+	// Validate values
+	if cfg.Mode != "on_connect" && cfg.Mode != "scheduled" && cfg.Mode != "" {
+		return fmt.Errorf("invalid mode: must be on_connect or scheduled")
+	}
+	if cfg.Mode == "scheduled" && cfg.Interval != "hourly" && cfg.Interval != "daily" && cfg.Interval != "weekly" {
+		return fmt.Errorf("invalid interval: must be hourly, daily, or weekly")
+	}
+	os.MkdirAll(lockChimeDir, 0755)
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(lockChimeConfigFile, data, 0644)
+}
+
+// listWavFiles returns .wav filenames in the LockChime library.
+func listWavFiles() []string {
+	entries, err := os.ReadDir(lockChimeDir)
+	if err != nil {
+		return nil
+	}
+	var wavs []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if strings.HasSuffix(strings.ToLower(name), ".wav") {
+			wavs = append(wavs, name)
+		}
+	}
+	return wavs
+}
+
+// pickAndActivateRandom selects a random .wav from the library and copies it
+// to the Tesla target path. Returns the chosen filename or empty string.
+func pickAndActivateRandom() string {
+	wavs := listWavFiles()
+	if len(wavs) == 0 {
+		return ""
+	}
+	chosen := wavs[rand.Intn(len(wavs))]
+	srcPath := filepath.Join(lockChimeDir, chosen)
+
+	data, err := os.ReadFile(srcPath)
+	if err != nil {
+		log.Printf("lockchime: failed to read %s: %v", chosen, err)
+		return ""
+	}
+	os.Remove(lockChimeTarget)
+	if err := os.WriteFile(lockChimeTarget, data, 0644); err != nil {
+		log.Printf("lockchime: failed to write target: %v", err)
+		return ""
+	}
+	os.WriteFile(lockChimeActiveFile, []byte(chosen), 0644)
+	log.Printf("lockchime: random mode activated %q", chosen)
+	return chosen
+}
+
+// RandomizeOnConnect is called when the USB gadget is enabled (drive mounted).
+// It randomizes the lock sound if random mode is enabled with on_connect mode.
+func RandomizeOnConnect() {
+	cfg := loadLockChimeRandomConfig()
+	if !cfg.Enabled || cfg.Mode != "on_connect" {
+		return
+	}
+	pickAndActivateRandom()
+}
+
+// StartLockChimeScheduler starts the background goroutine for scheduled
+// random mode. Safe to call multiple times — only starts once.
+func StartLockChimeScheduler() {
+	lockChimeSchedulerOnce.Do(func() {
+		lockChimeSchedulerStop = make(chan struct{})
+		go lockChimeSchedulerLoop(lockChimeSchedulerStop)
+	})
+}
+
+func lockChimeSchedulerLoop(stop chan struct{}) {
+	// Check every minute; only act when the interval has elapsed.
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+
+	var lastRun time.Time
+
+	for {
+		select {
+		case <-stop:
+			return
+		case now := <-ticker.C:
+			cfg := loadLockChimeRandomConfig()
+			if !cfg.Enabled || cfg.Mode != "scheduled" {
+				lastRun = time.Time{} // reset so next enable fires immediately
+				continue
+			}
+
+			var interval time.Duration
+			switch cfg.Interval {
+			case "hourly":
+				interval = 1 * time.Hour
+			case "daily":
+				interval = 24 * time.Hour
+			case "weekly":
+				interval = 7 * 24 * time.Hour
+			default:
+				continue
+			}
+
+			if lastRun.IsZero() || now.Sub(lastRun) >= interval {
+				pickAndActivateRandom()
+				lastRun = now
+			}
+		}
+	}
+}
+
+// ──────────────────────────────────────────────────────────────────
+// HTTP Handlers
+// ──────────────────────────────────────────────────────────────────
+
 // GET /api/lockchime/list — list .wav files in the LockChime library
 func (h *handlers) lockChimeList(w http.ResponseWriter, r *http.Request) {
 	type soundEntry struct {
@@ -109,13 +264,10 @@ func (h *handlers) lockChimeList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Determine which file is currently active by reading the target
+	// Determine which file is currently active from sidecar metadata
 	activeName := ""
-	if linkDest, err := os.Readlink(lockChimeTarget); err == nil {
-		activeName = filepath.Base(linkDest)
-	} else if _, err := os.Stat(lockChimeTarget); err == nil {
-		// Not a symlink — check by comparing contents or just mark unknown
-		activeName = ""
+	if data, err := os.ReadFile(lockChimeActiveFile); err == nil {
+		activeName = strings.TrimSpace(string(data))
 	}
 
 	sounds := make([]soundEntry, 0, len(entries))
@@ -143,9 +295,9 @@ func (h *handlers) lockChimeList(w http.ResponseWriter, r *http.Request) {
 	activeExists := targetErr == nil
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"sounds":       sounds,
-		"active_name":  activeName,
-		"active_set":   activeExists,
+		"sounds":      sounds,
+		"active_name": activeName,
+		"active_set":  activeExists,
 	})
 }
 
@@ -198,16 +350,21 @@ func (h *handlers) lockChimeUpload(w http.ResponseWriter, r *http.Request) {
 	baseName := sanitizeLockChimeName(header.Filename)
 	destPath := filepath.Join(lockChimeDir, baseName)
 	if _, err := os.Stat(destPath); err == nil {
-		// File exists — append suffix
 		ext := filepath.Ext(baseName)
 		stem := strings.TrimSuffix(baseName, ext)
+		found := false
 		for i := 1; i <= 100; i++ {
 			candidate := filepath.Join(lockChimeDir, fmt.Sprintf("%s_%d%s", stem, i, ext))
 			if _, err := os.Stat(candidate); os.IsNotExist(err) {
 				destPath = candidate
 				baseName = filepath.Base(candidate)
+				found = true
 				break
 			}
+		}
+		if !found {
+			writeError(w, http.StatusConflict, "Too many files with the same name")
+			return
 		}
 	}
 
@@ -219,7 +376,6 @@ func (h *handlers) lockChimeUpload(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"success":  true,
 		"name":     baseName,
-		"path":     destPath,
 		"duration": duration,
 		"size":     len(data),
 	})
@@ -263,6 +419,9 @@ func (h *handlers) lockChimeActivate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Record the active filename in sidecar metadata
+	os.WriteFile(lockChimeActiveFile, []byte(filename), 0644)
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
 		"active":  filename,
@@ -275,6 +434,7 @@ func (h *handlers) lockChimeClear(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "Failed to clear active sound")
 		return
 	}
+	os.Remove(lockChimeActiveFile)
 	writeOK(w)
 }
 
@@ -303,4 +463,67 @@ func (h *handlers) lockChimeDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeOK(w)
+}
+
+// ──────────────────────────────────────────────────────────────────
+// Random mode endpoints
+// ──────────────────────────────────────────────────────────────────
+
+// GET /api/lockchime/random-config — get random mode settings
+func (h *handlers) lockChimeGetRandomConfig(w http.ResponseWriter, r *http.Request) {
+	cfg := loadLockChimeRandomConfig()
+
+	// Also return RTC status so the frontend knows which options to show
+	rtcInfo := getRTCInfo()
+	hasRTC := rtcInfo.RTCPresent && rtcInfo.RTCHealthy
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"enabled":  cfg.Enabled,
+		"mode":     cfg.Mode,
+		"interval": cfg.Interval,
+		"has_rtc":  hasRTC,
+	})
+}
+
+// PUT /api/lockchime/random-config — update random mode settings
+func (h *handlers) lockChimeSaveRandomConfig(w http.ResponseWriter, r *http.Request) {
+	var req lockChimeRandomConfig
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid JSON")
+		return
+	}
+
+	// If scheduled mode, verify RTC is available
+	if req.Enabled && req.Mode == "scheduled" {
+		rtcInfo := getRTCInfo()
+		if !rtcInfo.RTCPresent || !rtcInfo.RTCHealthy {
+			writeError(w, http.StatusBadRequest, "Scheduled mode requires a working RTC (Pi 5 with battery)")
+			return
+		}
+	}
+
+	if err := saveLockChimeRandomConfig(req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success":  true,
+		"enabled":  req.Enabled,
+		"mode":     req.Mode,
+		"interval": req.Interval,
+	})
+}
+
+// POST /api/lockchime/randomize — manually trigger a random selection
+func (h *handlers) lockChimeRandomize(w http.ResponseWriter, r *http.Request) {
+	chosen := pickAndActivateRandom()
+	if chosen == "" {
+		writeError(w, http.StatusBadRequest, "No sounds in library to randomize")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"active":  chosen,
+	})
 }

@@ -9,8 +9,11 @@ import (
 )
 
 func RegisterRoutes(mux *http.ServeMux, hub *ws.Hub) {
-	// Ensure Wraps and LicensePlate folders exist on startup
+	// Ensure Wraps, LicensePlate, and LockChime folders exist on startup
 	ensureMediaFolders()
+
+	// Start lock chime scheduled randomization (background goroutine)
+	StartLockChimeScheduler()
 
 	h := &handlers{hub: hub}
 
@@ -102,6 +105,9 @@ func RegisterRoutes(mux *http.ServeMux, hub *ws.Hub) {
 	mux.HandleFunc("POST /api/lockchime/activate/{filename}", h.lockChimeActivate)
 	mux.HandleFunc("DELETE /api/lockchime/clear", h.lockChimeClear)
 	mux.HandleFunc("DELETE /api/lockchime/{filename}", h.lockChimeDelete)
+	mux.HandleFunc("GET /api/lockchime/random-config", h.lockChimeGetRandomConfig)
+	mux.HandleFunc("PUT /api/lockchime/random-config", h.lockChimeSaveRandomConfig)
+	mux.HandleFunc("POST /api/lockchime/randomize", h.lockChimeRandomize)
 
 	// Community wraps (proxy to backend API)
 	mux.HandleFunc("GET /api/wraps/library", h.communityWrapsLibrary)
