@@ -9,7 +9,6 @@ import {
   Volume2,
   X,
   AlertCircle,
-  Bell,
   Shuffle,
   Clock,
   Zap,
@@ -26,6 +25,7 @@ const API_BASE = "/api"
 const MAX_DURATION_SECONDS = 7
 const MAX_FILE_BYTES = 5 * 1024 * 1024 // 5 MB
 const COMMUNITY_PAGE_SIZE = 20
+const LIBRARY_PAGE_SIZE = 15
 
 interface SoundEntry {
   name: string
@@ -133,14 +133,14 @@ export default function LockChime() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/20">
-            <Bell className="h-5 w-5 text-violet-400" />
+            <Volume2 className="h-5 w-5 text-violet-400" />
           </div>
           <div>
             <h1
               className="cursor-default select-none text-xl font-semibold text-slate-100"
               onClick={handleHeadingClick}
             >
-              Lock Chime
+              Chimes
             </h1>
             <p className="text-xs text-slate-500">
               Custom .wav lock sounds for your Tesla — max {MAX_DURATION_SECONDS}s
@@ -342,6 +342,7 @@ function MyLibraryTab({ volume }: { volume: number }) {
   const [deleting, setDeleting] = useState<string | null>(null)
   const [clearing, setClearing] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
+  const [libPage, setLibPage] = useState(1)
   const [pendingFile, setPendingFile] = useState<File | null>(null)
   const [pendingName, setPendingName] = useState("")
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -807,88 +808,119 @@ function MyLibraryTab({ volume }: { volume: number }) {
           </div>
         )}
 
-        {!loading && sounds.length > 0 && (
-          <div className="space-y-2">
-            {sounds.map((sound) => {
-              const isPlaying = playingName === sound.name
-              const isActive = activeSet && activeName === sound.name
-              const isActivating = activating === sound.name
-              const isDeleting = deleting === sound.name
+        {!loading && sounds.length > 0 && (() => {
+          const libTotalPages = Math.ceil(sounds.length / LIBRARY_PAGE_SIZE)
+          const safePage = Math.min(libPage, libTotalPages)
+          const startIdx = (safePage - 1) * LIBRARY_PAGE_SIZE
+          const pageSounds = sounds.slice(startIdx, startIdx + LIBRARY_PAGE_SIZE)
 
-              return (
-                <div
-                  key={sound.name}
-                  className={`group flex items-center gap-3 rounded-xl border px-4 py-3 transition-colors ${
-                    isActive
-                      ? "border-violet-500/40 bg-violet-500/[0.08]"
-                      : "border-white/10 bg-white/[0.02] hover:bg-white/[0.04]"
-                  }`}
-                >
-                  <button
-                    onClick={() => togglePlay(sound.name)}
-                    className={`shrink-0 flex h-9 w-9 items-center justify-center rounded-full transition-colors ${
-                      isPlaying
-                        ? "bg-violet-500/20 text-violet-300"
-                        : "bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white"
-                    }`}
-                    title={isPlaying ? "Pause" : "Play"}
-                  >
-                    {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4 translate-x-0.5" />}
-                  </button>
+          return (
+            <>
+              <div className="space-y-2">
+                {pageSounds.map((sound) => {
+                  const isPlaying = playingName === sound.name
+                  const isActive = activeSet && activeName === sound.name
+                  const isActivating = activating === sound.name
+                  const isDeleting = deleting === sound.name
 
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-slate-200">{sound.name}</p>
-                    <p className="text-xs text-slate-500">{formatSize(sound.size)}</p>
-                  </div>
-
-                  {isActive && (
-                    <span className="shrink-0 flex items-center gap-1 rounded-full bg-violet-500/20 px-2 py-0.5 text-xs font-medium text-violet-300">
-                      <CheckCircle2 className="h-3 w-3" />
-                      Active
-                    </span>
-                  )}
-
-                  {!isActive && (
-                    <button
-                      onClick={() => handleActivate(sound.name)}
-                      disabled={isActivating || isDeleting}
-                      className="shrink-0 rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-400 transition-colors hover:border-violet-500/40 hover:text-violet-300 disabled:opacity-50"
+                  return (
+                    <div
+                      key={sound.name}
+                      className={`group flex items-center gap-3 rounded-xl border px-4 py-3 transition-colors ${
+                        isActive
+                          ? "border-violet-500/40 bg-violet-500/[0.08]"
+                          : "border-white/10 bg-white/[0.02] hover:bg-white/[0.04]"
+                      }`}
                     >
-                      {isActivating ? "Setting..." : "Set Active"}
-                    </button>
-                  )}
+                      <button
+                        onClick={() => togglePlay(sound.name)}
+                        className={`shrink-0 flex h-9 w-9 items-center justify-center rounded-full transition-colors ${
+                          isPlaying
+                            ? "bg-violet-500/20 text-violet-300"
+                            : "bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white"
+                        }`}
+                        title={isPlaying ? "Pause" : "Play"}
+                      >
+                        {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4 translate-x-0.5" />}
+                      </button>
 
-                  {deleteConfirm === sound.name ? (
-                    <div className="shrink-0 flex items-center gap-1">
-                      <button
-                        onClick={() => handleDelete(sound.name)}
-                        disabled={isDeleting}
-                        className="rounded-lg bg-red-500/20 px-2.5 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/30 disabled:opacity-50"
-                      >
-                        {isDeleting ? "..." : "Confirm"}
-                      </button>
-                      <button
-                        onClick={() => setDeleteConfirm(null)}
-                        className="rounded-lg px-2 py-1.5 text-xs text-slate-500 hover:text-slate-300"
-                      >
-                        Cancel
-                      </button>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-slate-200">{sound.name}</p>
+                        <p className="text-xs text-slate-500">{formatSize(sound.size)}</p>
+                      </div>
+
+                      {isActive && (
+                        <span className="shrink-0 flex items-center gap-1 rounded-full bg-violet-500/20 px-2 py-0.5 text-xs font-medium text-violet-300">
+                          <CheckCircle2 className="h-3 w-3" />
+                          Active
+                        </span>
+                      )}
+
+                      {!isActive && (
+                        <button
+                          onClick={() => handleActivate(sound.name)}
+                          disabled={isActivating || isDeleting}
+                          className="shrink-0 rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-400 transition-colors hover:border-violet-500/40 hover:text-violet-300 disabled:opacity-50"
+                        >
+                          {isActivating ? "Setting..." : "Set Active"}
+                        </button>
+                      )}
+
+                      {deleteConfirm === sound.name ? (
+                        <div className="shrink-0 flex items-center gap-1">
+                          <button
+                            onClick={() => handleDelete(sound.name)}
+                            disabled={isDeleting}
+                            className="rounded-lg bg-red-500/20 px-2.5 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/30 disabled:opacity-50"
+                          >
+                            {isDeleting ? "..." : "Confirm"}
+                          </button>
+                          <button
+                            onClick={() => setDeleteConfirm(null)}
+                            className="rounded-lg px-2 py-1.5 text-xs text-slate-500 hover:text-slate-300"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setDeleteConfirm(sound.name)}
+                          disabled={isDeleting}
+                          className="shrink-0 rounded-lg p-1.5 text-slate-600 transition-colors hover:text-red-400 disabled:opacity-50"
+                          title="Delete"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
                     </div>
-                  ) : (
-                    <button
-                      onClick={() => setDeleteConfirm(sound.name)}
-                      disabled={isDeleting}
-                      className="shrink-0 rounded-lg p-1.5 text-slate-600 transition-colors hover:text-red-400 disabled:opacity-50"
-                      title="Delete"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  )}
+                  )
+                })}
+              </div>
+
+              {libTotalPages > 1 && (
+                <div className="flex items-center justify-center gap-3 pt-2">
+                  <button
+                    onClick={() => setLibPage((p) => Math.max(1, p - 1))}
+                    disabled={safePage <= 1}
+                    className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white/5 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-400"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <span className="text-xs tabular-nums text-slate-500">
+                    Page {safePage} of {libTotalPages}
+                  </span>
+                  <button
+                    onClick={() => setLibPage((p) => Math.min(libTotalPages, p + 1))}
+                    disabled={safePage >= libTotalPages}
+                    className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white/5 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-400"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
                 </div>
-              )
-            })}
-          </div>
-        )}
+              )}
+            </>
+          )
+        })()}
       </div>
 
       {/* Info */}
