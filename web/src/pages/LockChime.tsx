@@ -675,50 +675,90 @@ function MyLibraryTab() {
         </div>
       )}
 
-      {/* Upload area */}
-      <div
-        className={`relative rounded-xl border-2 border-dashed transition-colors cursor-pointer ${
-          uploadDragging
-            ? "border-violet-500/60 bg-violet-500/10"
-            : "border-white/10 hover:border-white/20 bg-white/[0.02]"
-        }`}
-        onDragOver={(e) => { e.preventDefault(); setUploadDragging(true) }}
-        onDragLeave={() => setUploadDragging(false)}
-        onDrop={(e) => {
-          e.preventDefault()
-          setUploadDragging(false)
-          const file = e.dataTransfer.files[0]
-          if (file) handleFileSelected(file)
-        }}
-        onClick={() => !uploading && fileInputRef.current?.click()}
-      >
-        <div className="flex flex-col items-center gap-3 py-8 px-4 text-center">
-          {uploading ? (
-            <>
-              <Loader2 className="h-5 w-5 animate-spin text-violet-400" />
-              <p className="text-sm text-slate-400">Uploading...</p>
-            </>
-          ) : (
-            <>
-              <Upload className="h-8 w-8 text-slate-600" />
-              <div>
-                <p className="text-sm font-medium text-slate-300">Drop a .wav file or click to browse</p>
-                <p className="mt-1 text-xs text-slate-500">WAV only · max {MAX_DURATION_SECONDS}s · max 5 MB</p>
-              </div>
-            </>
-          )}
+      {/* Upload area / rename-and-confirm */}
+      {pendingFile ? (
+        <div className="rounded-xl border-2 border-violet-500/40 bg-violet-500/[0.06] p-4 space-y-3">
+          <div className="flex items-start gap-3 rounded-lg bg-white/[0.04] border border-white/10 px-3 py-2.5">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+            <p className="text-xs text-slate-400">
+              This name will be the file name on your Pi and what shows in the community if you share it.
+            </p>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500">Sound Name</label>
+            <input
+              type="text"
+              value={pendingName}
+              onChange={(e) => setPendingName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleUploadConfirm()}
+              maxLength={50}
+              autoFocus
+              className="mt-1 w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:border-violet-500/50 focus:outline-none"
+            />
+            <p className="mt-1 text-xs text-slate-600">Will be saved as <code className="text-slate-400">{pendingName.trim() || "…"}.wav</code></p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={handleUploadConfirm}
+              disabled={!pendingName.trim() || uploading}
+              className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-violet-500 disabled:opacity-50"
+            >
+              {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+              {uploading ? "Uploading..." : "Upload"}
+            </button>
+            <button
+              onClick={() => { setPendingFile(null); setPendingName(""); if (fileInputRef.current) fileInputRef.current.value = "" }}
+              className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-400 transition-colors hover:bg-white/5"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".wav,audio/wav,audio/x-wav"
-          className="hidden"
-          onChange={(e) => {
-            const file = e.target.files?.[0]
+      ) : (
+        <div
+          className={`relative rounded-xl border-2 border-dashed transition-colors cursor-pointer ${
+            uploadDragging
+              ? "border-violet-500/60 bg-violet-500/10"
+              : "border-white/10 hover:border-white/20 bg-white/[0.02]"
+          }`}
+          onDragOver={(e) => { e.preventDefault(); setUploadDragging(true) }}
+          onDragLeave={() => setUploadDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault()
+            setUploadDragging(false)
+            const file = e.dataTransfer.files[0]
             if (file) handleFileSelected(file)
           }}
-        />
-      </div>
+          onClick={() => !uploading && fileInputRef.current?.click()}
+        >
+          <div className="flex flex-col items-center gap-3 py-8 px-4 text-center">
+            {uploading ? (
+              <>
+                <Loader2 className="h-5 w-5 animate-spin text-violet-400" />
+                <p className="text-sm text-slate-400">Uploading...</p>
+              </>
+            ) : (
+              <>
+                <Upload className="h-8 w-8 text-slate-600" />
+                <div>
+                  <p className="text-sm font-medium text-slate-300">Drop a .wav file or click to browse</p>
+                  <p className="mt-1 text-xs text-slate-500">WAV only · max {MAX_DURATION_SECONDS}s · max 5 MB</p>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".wav,audio/wav,audio/x-wav"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          if (file) handleFileSelected(file)
+        }}
+      />
 
       {/* Sound library */}
       <div>
@@ -836,42 +876,6 @@ function MyLibraryTab() {
           "Scheduled" requires a Pi with a real-time clock (RTC).
         </p>
       </div>
-
-      {/* Rename before upload modal */}
-      {pendingFile && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => { setPendingFile(null); setPendingName(""); if (fileInputRef.current) fileInputRef.current.value = "" }}>
-          <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-slate-900 p-6" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-slate-100">Name Your Sound</h3>
-            <p className="mt-1 text-xs text-slate-500">Choose a name for this lock sound before uploading</p>
-            <input
-              type="text"
-              value={pendingName}
-              onChange={(e) => setPendingName(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleUploadConfirm()}
-              maxLength={50}
-              autoFocus
-              className="mt-4 w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:border-violet-500/50 focus:outline-none"
-            />
-            <p className="mt-1.5 text-xs text-slate-600">Will be saved as <code className="text-slate-400">{pendingName.trim() || "…"}.wav</code></p>
-            <div className="mt-4 flex gap-3">
-              <button
-                onClick={handleUploadConfirm}
-                disabled={!pendingName.trim()}
-                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-violet-500 disabled:opacity-50"
-              >
-                <Upload className="h-4 w-4" />
-                Upload
-              </button>
-              <button
-                onClick={() => { setPendingFile(null); setPendingName(""); if (fileInputRef.current) fileInputRef.current.value = "" }}
-                className="rounded-lg border border-white/10 px-4 py-2.5 text-sm text-slate-400 transition-colors hover:bg-white/5"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {ToastView}
     </div>
