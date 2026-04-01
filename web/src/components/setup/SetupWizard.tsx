@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react"
-import { ChevronLeft, ChevronRight, Check, Loader2, AlertCircle, AlertTriangle, CheckCircle } from "lucide-react"
+import { ChevronLeft, ChevronRight, Check, Loader2, AlertCircle, AlertTriangle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { SetupProgress } from "./SetupProgress"
 import { WelcomeStep } from "./steps/WelcomeStep"
