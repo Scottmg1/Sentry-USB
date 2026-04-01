@@ -19,3 +19,4 @@ internal/
 
 cmd/
 internal/
+.claude
