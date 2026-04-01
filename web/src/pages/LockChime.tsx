@@ -202,7 +202,7 @@ export default function LockChime() {
       {tab === "library" ? (
         <MyLibraryTab volume={volume} />
       ) : (
-        <CommunityTab adminPasscode={adminPasscode} volume={volume} />
+        <CommunityTab adminPasscode={adminPasscode} />
       )}
 
       {/* Passcode modal */}
