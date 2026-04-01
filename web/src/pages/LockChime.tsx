@@ -94,8 +94,17 @@ export default function LockChime() {
   const [tab, setTab] = useState<Tab>("library")
   const [adminPasscode, setAdminPasscode] = useState<string | null>(null)
   const [showPasscodePrompt, setShowPasscodePrompt] = useState(false)
+  const [volume, setVolume] = useState(() => {
+    const saved = localStorage.getItem("lockchime-preview-volume")
+    return saved !== null ? Number(saved) : 0.5
+  })
   const clickCountRef = useRef(0)
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  function handleVolumeChange(v: number) {
+    setVolume(v)
+    localStorage.setItem("lockchime-preview-volume", String(v))
+  }
 
   const handleHeadingClick = () => {
     if (adminPasscode) {
@@ -174,10 +183,26 @@ export default function LockChime() {
         )}
       </div>
 
+      {/* Preview Volume */}
+      <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3">
+        <Volume2 className="h-4 w-4 shrink-0 text-slate-400" />
+        <span className="text-xs font-medium text-slate-400 whitespace-nowrap">Preview Volume</span>
+        <input
+          type="range"
+          min={0}
+          max={1}
+          step={0.01}
+          value={volume}
+          onChange={(e) => handleVolumeChange(Number(e.target.value))}
+          className="flex-1 h-1.5 accent-violet-500 cursor-pointer"
+        />
+        <span className="text-xs text-slate-500 tabular-nums w-8 text-right">{Math.round(volume * 100)}%</span>
+      </div>
+
       {tab === "library" ? (
-        <MyLibraryTab />
+        <MyLibraryTab volume={volume} />
       ) : (
-        <CommunityTab adminPasscode={adminPasscode} />
+        <CommunityTab adminPasscode={adminPasscode} volume={volume} />
       )}
 
       {/* Passcode modal */}
@@ -305,7 +330,7 @@ function useToast() {
 // My Library tab
 // ─────────────────────────────────────────────────────────────
 
-function MyLibraryTab() {
+function MyLibraryTab({ volume }: { volume: number }) {
   const [sounds, setSounds] = useState<SoundEntry[]>([])
   const [activeName, setActiveName] = useState("")
   const [activeSet, setActiveSet] = useState(false)
