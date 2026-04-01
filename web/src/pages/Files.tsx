@@ -18,6 +18,7 @@ import {
   Search,
   ArrowUpDown,
   Check,
+  Volume2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -44,11 +45,12 @@ interface FileEntry {
 interface DriveTab {
   id: string
   base: string
-  icon: "cam" | "media" | "wrap" | "plate"
+  icon: "cam" | "media" | "wrap" | "plate" | "lock"
 }
 
 const ALL_DRIVES: DriveTab[] = [
   { id: "TeslaCam", base: "/mutable/TeslaCam", icon: "cam" },
+  { id: "Lock Sounds", base: "/mutable/LockChime", icon: "lock" },
   { id: "Wraps", base: "/mutable/Wraps", icon: "wrap" },
   { id: "License Plates", base: "/mutable/LicensePlate", icon: "plate" },
   { id: "Music", base: "/var/www/html/fs/Music", icon: "media" },
@@ -61,6 +63,7 @@ const TAB_ICONS: Record<DriveTab["icon"], React.ComponentType<{ className?: stri
   media: Music,
   wrap: Paintbrush,
   plate: RectangleHorizontal,
+  lock: Volume2,
 }
 
 function formatSize(bytes: number): string {
@@ -107,7 +110,8 @@ export default function Files() {
         if (cfg.has_cam === "yes") {
           visible.push(ALL_DRIVES.find(d => d.id === "TeslaCam")!)
         }
-        // Always show Wraps and License Plates (they're user-uploadable)
+        // Always show Lock Sounds, Wraps and License Plates (they're user-uploadable)
+        visible.push(ALL_DRIVES.find(d => d.id === "Lock Sounds")!)
         visible.push(ALL_DRIVES.find(d => d.id === "Wraps")!)
         visible.push(ALL_DRIVES.find(d => d.id === "License Plates")!)
         if (cfg.has_music === "yes") visible.push(ALL_DRIVES.find(d => d.id === "Music")!)
