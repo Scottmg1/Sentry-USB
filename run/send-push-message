@@ -146,7 +146,7 @@ function send_mobile_push () {
   # For archive start notifications, include live_activity data so the visible
   # notification also wakes the app to create the Live Activity (more reliable
   # than silent push for terminated apps)
-  if [ "$type" = "start" ] && [ "$notification_type" = "archive" ] && [ -n "${ARCHIVE_TOTAL_COUNT:-}" ]; then
+  if [ "$type" = "start" ] && [ "$notification_type" = "archive_start" ] && [ -n "${ARCHIVE_TOTAL_COUNT:-}" ]; then
     local device_name="${title%:}"
     payload+=",\"live_activity\":{\"action\":\"start\",\"phase\":\"archiving\",\"current\":0,\"total\":${ARCHIVE_TOTAL_COUNT},\"device_name\":\"${device_name}\"}"
   fi
@@ -240,15 +240,15 @@ function run_provider() {
 [ "${NOTIFICATION_COMMAND_ENABLED:-false}" = "true" ] && run_provider "shell" send_shell
 
 # --- Log notification event to history ---
-if [ "$providers_json" != "[]" ]; then
-  history_payload=$(cat <<HISTEOF
+# Always log to history so the user can see what was triggered, even if no
+# providers are configured yet (the history shows provider delivery status).
+history_payload=$(cat <<HISTEOF
 {"type":"${notification_type:-general}","title":"${title}","message":"${message}","providers":${providers_json},"results":${results_json}}
 HISTEOF
 )
-  curl -sf --connect-timeout 2 --max-time 5 -X POST \
-    -H "Content-Type: application/json" \
-    -d "$history_payload" \
-    "http://127.0.0.1:8788/api/notifications/history" >/dev/null 2>&1 || true
-fi
+curl -sf --connect-timeout 2 --max-time 5 -X POST \
+  -H "Content-Type: application/json" \
+  -d "$history_payload" \
+  "http://127.0.0.1:8788/api/notifications/history" >/dev/null 2>&1 || true
 
 exit 0

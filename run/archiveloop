@@ -796,7 +796,7 @@ function archive_teslacam_clips () {
       message+="$trackmode_count track mode file(s)"
     fi
     message+=" starting at $(date)"
-    ARCHIVE_TOTAL_COUNT=$total_count /root/bin/send-push-message "$NOTIFICATION_TITLE:" "$message" start archive || log "failed to send mobile app notification"
+    ARCHIVE_TOTAL_COUNT=$total_count /root/bin/send-push-message "$NOTIFICATION_TITLE:" "$message" start archive_start || log "failed to send mobile app notification"
     /root/bin/send-live-activity start "$total_count" || true
 
     # setup trigger files
@@ -894,7 +894,7 @@ function archive_teslacam_clips () {
     local -r end_ts=$(date --utc --date "now" +%s)
     local -r delta=$((end_ts - start_ts))
     message+=" in $(convert_seconds_to_nice_time $delta)"
-    /root/bin/send-push-message "$NOTIFICATION_TITLE:" "${message}" finish archive
+    /root/bin/send-push-message "$NOTIFICATION_TITLE:" "${message}" finish archive_complete
     /root/bin/send-live-activity end complete || true
 
     # Check RTC battery health (Pi 5 only) — warn on every archive if dead/missing
