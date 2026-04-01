@@ -348,8 +348,12 @@ func (h *handlers) lockChimeUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Sanitize filename and avoid collisions
+	// Sanitize filename and reject reserved "lockchime" name
 	baseName := sanitizeLockChimeName(header.Filename)
+	if strings.EqualFold(strings.TrimSuffix(baseName, filepath.Ext(baseName)), "lockchime") {
+		writeError(w, http.StatusBadRequest, "File cannot be named \"lockchime\" — please rename it before uploading")
+		return
+	}
 	destPath := filepath.Join(lockChimeDir, baseName)
 	if _, err := os.Stat(destPath); err == nil {
 		ext := filepath.Ext(baseName)
@@ -700,6 +704,10 @@ func (h *handlers) communityLockChimeDownload(w http.ResponseWriter, r *http.Req
 		soundName = code
 	}
 	soundName = sanitizeLockChimeName(soundName)
+	// Rename reserved "lockchime" name to avoid collision with Tesla target
+	if strings.EqualFold(strings.TrimSuffix(soundName, filepath.Ext(soundName)), "lockchime") {
+		soundName = code + ".wav"
+	}
 
 	if err := os.MkdirAll(lockChimeDir, 0755); err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to prepare lock chime directory")

@@ -397,6 +397,11 @@ function MyLibraryTab() {
       showToast("Only .wav files are supported", "error")
       return
     }
+    const baseName = file.name.replace(/\.wav$/i, "").trim().toLowerCase()
+    if (baseName === "lockchime") {
+      showToast("File cannot be named \"lockchime\" — please rename it before uploading", "error")
+      return
+    }
     if (file.size > MAX_FILE_BYTES) {
       showToast("File is too large (max 5 MB)", "error")
       return
@@ -1197,6 +1202,10 @@ function CommunityUpload({ adminPasscode }: { adminPasscode: string | null }) {
 
   async function handleSubmit() {
     if (!file || !name.trim()) return
+    if (name.trim().toLowerCase().replace(/\.wav$/i, "") === "lockchime") {
+      showToast("Sound name cannot be \"lockchime\" — please choose a different name", "error")
+      return
+    }
     setUploading(true)
     try {
       const form = new FormData()
