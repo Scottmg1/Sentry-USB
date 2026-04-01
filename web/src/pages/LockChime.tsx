@@ -973,7 +973,7 @@ function CommunityTab({ adminPasscode, volume }: { adminPasscode: string | null;
       </div>
 
       {subTab === "browse" ? (
-        <CommunityBrowse adminPasscode={adminPasscode} />
+        <CommunityBrowse adminPasscode={adminPasscode} volume={volume} />
       ) : (
         <CommunityUpload adminPasscode={adminPasscode} />
       )}
@@ -981,7 +981,7 @@ function CommunityTab({ adminPasscode, volume }: { adminPasscode: string | null;
   )
 }
 
-function CommunityBrowse({ adminPasscode }: { adminPasscode: string | null }) {
+function CommunityBrowse({ adminPasscode, volume }: { adminPasscode: string | null; volume: number }) {
   const [sounds, setSounds] = useState<CommunitySound[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
