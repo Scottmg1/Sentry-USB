@@ -202,7 +202,7 @@ export default function LockChime() {
       {tab === "library" ? (
         <MyLibraryTab volume={volume} />
       ) : (
-        <CommunityTab adminPasscode={adminPasscode} />
+        <CommunityTab adminPasscode={adminPasscode} volume={volume} />
       )}
 
       {/* Passcode modal */}
@@ -407,6 +407,7 @@ function MyLibraryTab({ volume }: { volume: number }) {
     audioRef.current?.pause()
     const url = `${API_BASE}/files/download?path=/mutable/LockChime/${encodeURIComponent(name)}`
     const audio = new Audio(url)
+    audio.volume = volume
     audioRef.current = audio
     audio.onended = () => setPlayingName(null)
     audio.onerror = () => {
@@ -943,7 +944,7 @@ function MyLibraryTab({ volume }: { volume: number }) {
 // Community tab
 // ─────────────────────────────────────────────────────────────
 
-function CommunityTab({ adminPasscode }: { adminPasscode: string | null }) {
+function CommunityTab({ adminPasscode, volume }: { adminPasscode: string | null; volume: number }) {
   const [subTab, setSubTab] = useState<CommunitySubTab>("browse")
 
   return (
@@ -1008,6 +1009,7 @@ function CommunityBrowse({ adminPasscode }: { adminPasscode: string | null }) {
     audioRef.current?.pause()
     const url = `${API_BASE}/lockchime/community/stream/${code}`
     const audio = new Audio(url)
+    audio.volume = volume
     audioRef.current = audio
     audio.onended = () => setPlayingCode(null)
     audio.onerror = () => {
