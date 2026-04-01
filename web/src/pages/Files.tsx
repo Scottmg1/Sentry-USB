@@ -19,6 +19,7 @@ import {
   ArrowUpDown,
   Check,
   Volume2,
+  HardDrive,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -45,10 +46,11 @@ interface FileEntry {
 interface DriveTab {
   id: string
   base: string
-  icon: "cam" | "media" | "wrap" | "plate" | "lock"
+  icon: "cam" | "media" | "wrap" | "plate" | "lock" | "drive"
 }
 
 const ALL_DRIVES: DriveTab[] = [
+  { id: "USB Drive", base: "/mutable", icon: "drive" },
   { id: "TeslaCam", base: "/mutable/TeslaCam", icon: "cam" },
   { id: "Lock Sounds", base: "/mutable/LockChime", icon: "lock" },
   { id: "Wraps", base: "/mutable/Wraps", icon: "wrap" },
@@ -64,6 +66,7 @@ const TAB_ICONS: Record<DriveTab["icon"], React.ComponentType<{ className?: stri
   wrap: Paintbrush,
   plate: RectangleHorizontal,
   lock: Volume2,
+  drive: HardDrive,
 }
 
 function formatSize(bytes: number): string {
@@ -106,6 +109,8 @@ export default function Files() {
         const res = await fetch("/api/config")
         const cfg = await res.json()
         const visible: DriveTab[] = []
+        // Always show USB Drive root (shows LockChime.wav, TeslaCam, etc.)
+        visible.push(ALL_DRIVES.find(d => d.id === "USB Drive")!)
         // Show TeslaCam tab if cam is configured
         if (cfg.has_cam === "yes") {
           visible.push(ALL_DRIVES.find(d => d.id === "TeslaCam")!)

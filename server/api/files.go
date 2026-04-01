@@ -30,6 +30,7 @@ type fileListResponse struct {
 
 // Allowed base paths for file operations (security)
 var allowedBases = []string{
+	"/mutable",
 	"/mutable/TeslaCam",
 	"/mutable/Wraps",
 	"/mutable/LicensePlate",
