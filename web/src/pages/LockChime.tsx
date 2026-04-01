@@ -317,6 +317,8 @@ function MyLibraryTab() {
   const [deleting, setDeleting] = useState<string | null>(null)
   const [clearing, setClearing] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
+  const [pendingFile, setPendingFile] = useState<File | null>(null)
+  const [pendingName, setPendingName] = useState("")
   const fileInputRef = useRef<HTMLInputElement>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
@@ -397,11 +399,6 @@ function MyLibraryTab() {
       showToast("Only .wav files are supported", "error")
       return
     }
-    const baseName = file.name.replace(/\.wav$/i, "").trim().toLowerCase()
-    if (baseName === "lockchime") {
-      showToast("File cannot be named \"lockchime\" — please rename it before uploading", "error")
-      return
-    }
     if (file.size > MAX_FILE_BYTES) {
       showToast("File is too large (max 5 MB)", "error")
       return
@@ -416,10 +413,25 @@ function MyLibraryTab() {
       showToast("Could not read WAV file — is it a valid .wav?", "error")
       return
     }
+    // Show rename dialog before uploading
+    setPendingFile(file)
+    setPendingName(file.name.replace(/\.wav$/i, ""))
+  }
+
+  async function handleUploadConfirm() {
+    if (!pendingFile || !pendingName.trim()) return
+    const cleanName = pendingName.trim()
+    if (cleanName.toLowerCase() === "lockchime") {
+      showToast("Name cannot be \"lockchime\" — please choose a different name", "error")
+      return
+    }
     setUploading(true)
+    setPendingFile(null)
+    setPendingName("")
     try {
+      const renamedFile = new File([pendingFile], cleanName + ".wav", { type: pendingFile.type })
       const form = new FormData()
-      form.append("file", file)
+      form.append("file", renamedFile)
       const res = await fetch(`${API_BASE}/lockchime/upload`, { method: "POST", body: form })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
@@ -825,6 +837,42 @@ function MyLibraryTab() {
         </p>
       </div>
 
+      {/* Rename before upload modal */}
+      {pendingFile && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => { setPendingFile(null); setPendingName(""); if (fileInputRef.current) fileInputRef.current.value = "" }}>
+          <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-slate-900 p-6" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-slate-100">Name Your Sound</h3>
+            <p className="mt-1 text-xs text-slate-500">Choose a name for this lock sound before uploading</p>
+            <input
+              type="text"
+              value={pendingName}
+              onChange={(e) => setPendingName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleUploadConfirm()}
+              maxLength={50}
+              autoFocus
+              className="mt-4 w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:border-violet-500/50 focus:outline-none"
+            />
+            <p className="mt-1.5 text-xs text-slate-600">Will be saved as <code className="text-slate-400">{pendingName.trim() || "…"}.wav</code></p>
+            <div className="mt-4 flex gap-3">
+              <button
+                onClick={handleUploadConfirm}
+                disabled={!pendingName.trim()}
+                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-violet-500 disabled:opacity-50"
+              >
+                <Upload className="h-4 w-4" />
+                Upload
+              </button>
+              <button
+                onClick={() => { setPendingFile(null); setPendingName(""); if (fileInputRef.current) fileInputRef.current.value = "" }}
+                className="rounded-lg border border-white/10 px-4 py-2.5 text-sm text-slate-400 transition-colors hover:bg-white/5"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {ToastView}
     </div>
   )
@@ -880,9 +928,37 @@ function CommunityBrowse({ adminPasscode }: { adminPasscode: string | null }) {
   const [search, setSearch] = useState("")
   const [sort, setSort] = useState<SortOption>("newest")
   const [downloadingCode, setDownloadingCode] = useState<string | null>(null)
+  const [playingCode, setPlayingCode] = useState<string | null>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
   const [editingSound, setEditingSound] = useState<CommunitySound | null>(null)
   const [deletingSound, setDeletingSound] = useState<CommunitySound | null>(null)
   const { showToast, ToastView } = useToast()
+
+  useEffect(() => {
+    return () => { audioRef.current?.pause() }
+  }, [])
+
+  function togglePreview(code: string) {
+    if (playingCode === code) {
+      audioRef.current?.pause()
+      setPlayingCode(null)
+      return
+    }
+    audioRef.current?.pause()
+    const url = `${API_BASE}/lockchime/community/stream/${code}`
+    const audio = new Audio(url)
+    audioRef.current = audio
+    audio.onended = () => setPlayingCode(null)
+    audio.onerror = () => {
+      setPlayingCode(null)
+      showToast("Could not play preview", "error")
+    }
+    audio.play().catch(() => {
+      setPlayingCode(null)
+      showToast("Could not play preview", "error")
+    })
+    setPlayingCode(code)
+  }
 
   const totalPages = Math.ceil(total / COMMUNITY_PAGE_SIZE)
 
@@ -1029,9 +1105,17 @@ function CommunityBrowse({ adminPasscode }: { adminPasscode: string | null }) {
                     <span>{sound.download_count} downloads</span>
                   </div>
                 </div>
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-500/10">
-                  <Bell className="h-4 w-4 text-violet-400" />
-                </div>
+                <button
+                  onClick={() => togglePreview(sound.code)}
+                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors ${
+                    playingCode === sound.code
+                      ? "bg-violet-500/20 text-violet-300"
+                      : "bg-violet-500/10 text-violet-400 hover:bg-violet-500/20"
+                  }`}
+                  title={playingCode === sound.code ? "Stop" : "Preview"}
+                >
+                  {playingCode === sound.code ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4 translate-x-0.5" />}
+                </button>
               </div>
 
               <div className="mt-3 flex items-center gap-2">

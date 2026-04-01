@@ -571,6 +571,33 @@ func (h *handlers) communityLockChimeLibrary(w http.ResponseWriter, r *http.Requ
 	w.Write(respBody)
 }
 
+// GET /api/lockchime/community/stream/{code} — proxy sound stream from support server for in-browser preview
+func (h *handlers) communityLockChimeStream(w http.ResponseWriter, r *http.Request) {
+	code := r.PathValue("code")
+	if !validLockChimeCode.MatchString(code) {
+		writeError(w, http.StatusBadRequest, "Invalid code")
+		return
+	}
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Get(supportServerURL + "/lockchime/download/" + code)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "Failed to fetch sound")
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		w.WriteHeader(resp.StatusCode)
+		io.Copy(w, resp.Body)
+		return
+	}
+
+	w.Header().Set("Content-Type", "audio/wav")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	io.Copy(w, resp.Body)
+}
+
 // POST /api/lockchime/community/upload — proxy sound upload to support server with fingerprint
 func (h *handlers) communityLockChimeUpload(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, lockChimeMaxBytes)

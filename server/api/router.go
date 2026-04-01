@@ -120,6 +120,7 @@ func RegisterRoutes(mux *http.ServeMux, hub *ws.Hub) {
 
 	// Community lock chimes (proxy to support server)
 	mux.HandleFunc("GET /api/lockchime/community/library", h.communityLockChimeLibrary)
+	mux.HandleFunc("GET /api/lockchime/community/stream/{code}", h.communityLockChimeStream)
 	mux.HandleFunc("POST /api/lockchime/community/upload", h.communityLockChimeUpload)
 	mux.HandleFunc("POST /api/lockchime/community/download/{code}", h.communityLockChimeDownload)
 	mux.HandleFunc("POST /api/lockchime/community/admin/validate", h.communityLockChimeAdminValidate)
