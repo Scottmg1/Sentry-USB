@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Archive, Loader2, CheckCircle, XCircle } from "lucide-react"
+import { Archive, Loader2, CheckCircle, XCircle, HardDrive, Save } from "lucide-react"
 import type { StepProps } from "../SetupWizard"
 import { SecretInput } from "../SecretInput"
 import { cn } from "@/lib/utils"
@@ -237,6 +237,52 @@ export function ArchiveStep({ data, onChange }: StepProps) {
           ))}
         </div>
       )}
+
+      {/* Config backup location */}
+      <div className="space-y-2 rounded-lg border border-white/5 bg-white/[0.02] p-4">
+        <div className="flex items-center gap-2">
+          <Save className="h-4 w-4 text-blue-400" />
+          <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
+            Config Backup Location
+          </p>
+        </div>
+        <p className="text-xs text-slate-500">
+          Your configuration is automatically backed up after each archive.
+          Choose where to store backups for easy recovery if the SD card fails.
+        </p>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => onChange("_BACKUP_LOCATION", "archive")}
+            className={cn(
+              "rounded-xl border px-3 py-3 text-left text-xs transition-all",
+              (data._BACKUP_LOCATION ?? "archive") === "archive"
+                ? "border-blue-500/40 bg-blue-500/10 text-blue-400 shadow-[0_0_12px_rgba(59,130,246,0.1)]"
+                : "border-white/5 bg-white/[0.02] text-slate-400 hover:bg-white/[0.05] hover:border-white/10"
+            )}
+          >
+            <Archive className="mb-1 h-4 w-4" />
+            <span className="font-semibold">Archive Server</span>
+            <br />
+            <span className="text-[10px] opacity-60">Same location as footage</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => onChange("_BACKUP_LOCATION", "ssd")}
+            className={cn(
+              "rounded-xl border px-3 py-3 text-left text-xs transition-all",
+              data._BACKUP_LOCATION === "ssd"
+                ? "border-blue-500/40 bg-blue-500/10 text-blue-400 shadow-[0_0_12px_rgba(59,130,246,0.1)]"
+                : "border-white/5 bg-white/[0.02] text-slate-400 hover:bg-white/[0.05] hover:border-white/10"
+            )}
+          >
+            <HardDrive className="mb-1 h-4 w-4" />
+            <span className="font-semibold">Local SSD</span>
+            <br />
+            <span className="text-[10px] opacity-60">On the data drive</span>
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

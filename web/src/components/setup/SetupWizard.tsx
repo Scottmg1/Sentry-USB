@@ -389,6 +389,15 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
       })
       if (!res.ok) throw new Error("Failed to save configuration")
 
+      // Save backup location preference (stored separately from config)
+      if (dataToSave._BACKUP_LOCATION) {
+        await fetch("/api/config/preference", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key: "backup_location", value: dataToSave._BACKUP_LOCATION }),
+        }).catch(() => {}) // best-effort
+      }
+
       setPhase("applying")
       setSetupMessage("Configuration saved. Starting setup...")
 
