@@ -1098,7 +1098,7 @@ function ConfigBackupSection() {
   async function handleBackupNow() {
     setBackupState("loading")
     try {
-      const res = await fetch("/api/system/backup", { method: "POST" })
+      const res = await fetch("/api/system/backup?force=1", { method: "POST" })
       if (!res.ok) throw new Error("Backup failed")
       const result = await res.json()
       setLastBackup({ date: result.date, timestamp: new Date().toISOString() })

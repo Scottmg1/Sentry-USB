@@ -1,6 +1,8 @@
 package api
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -14,6 +16,8 @@ import (
 	"github.com/Scottmg1/Sentry-USB/server/config"
 	"github.com/Scottmg1/Sentry-USB/server/shell"
 )
+
+const lastHashFile = "/mutable/backups/.last_hash"
 
 // BackupData is the JSON structure written to each backup file.
 type BackupData struct {
@@ -92,6 +96,46 @@ func createBackupData() (*BackupData, error) {
 		BLEPublicKey:      readFileIfExists("/root/.ble/key_public.pem"),
 		NotificationCredentials: readFileIfExists("/root/.sentryusb/notification-credentials.json"),
 	}, nil
+}
+
+// computeBackupHash computes a SHA256 hash of all backup-relevant data.
+// This is used to detect whether anything has changed since the last backup.
+// Time-varying fields (date, timestamp) are excluded so the hash is stable.
+func computeBackupHash(data *BackupData) string {
+	h := sha256.New()
+	h.Write([]byte(data.Config))
+	// Sort preference keys for deterministic hashing
+	keys := make([]string, 0, len(data.Preferences))
+	for k := range data.Preferences {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		h.Write([]byte(k))
+		h.Write([]byte(data.Preferences[k]))
+	}
+	h.Write([]byte(data.SSHPrivateKey))
+	h.Write([]byte(data.SSHPublicKey))
+	h.Write([]byte(data.RcloneConfig))
+	h.Write([]byte(data.BLEPrivateKey))
+	h.Write([]byte(data.BLEPublicKey))
+	h.Write([]byte(data.NotificationCredentials))
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// readLastHash reads the last backup hash from disk.
+func readLastHash() string {
+	data, err := os.ReadFile(lastHashFile)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+// writeLastHash stores the backup hash to disk.
+func writeLastHash(hash string) {
+	os.MkdirAll(filepath.Dir(lastHashFile), 0755)
+	os.WriteFile(lastHashFile, []byte(hash+"\n"), 0644)
 }
 
 // writeBackupToDir writes a backup JSON file to the given directory.
@@ -236,10 +280,25 @@ func listBackupsInDir(dir, location string) []BackupEntry {
 }
 
 // POST /api/system/backup — create a config backup
+// Query params: ?force=1 to skip change detection (used by manual "Backup Now")
 func (h *handlers) createBackup(w http.ResponseWriter, r *http.Request) {
 	data, err := createBackupData()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to create backup: %v", err))
+		return
+	}
+
+	// Change detection: skip backup if nothing changed since last time
+	force := r.URL.Query().Get("force") == "1"
+	currentHash := computeBackupHash(data)
+	if !force && currentHash == readLastHash() {
+		log.Printf("[backup] Skipped — no changes detected (hash %s)", currentHash[:12])
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"success":  true,
+			"skipped":  true,
+			"reason":   "no changes detected",
+			"date":     data.Date,
+		})
 		return
 	}
 
@@ -289,6 +348,9 @@ func (h *handlers) createBackup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("Backup failed: %v", backupErr))
 		return
 	}
+
+	// Store the hash so next run can detect changes
+	writeLastHash(currentHash)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"success":  true,
