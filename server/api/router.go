@@ -136,6 +136,12 @@ func RegisterRoutes(mux *http.ServeMux, hub *ws.Hub) {
 	mux.HandleFunc("PUT /api/wraps/admin/edit/{code}", h.communityWrapsAdminEdit)
 	mux.HandleFunc("DELETE /api/wraps/admin/delete/{code}", h.communityWrapsAdminDelete)
 
+	// Config backup & restore
+	mux.HandleFunc("POST /api/system/backup", h.createBackup)
+	mux.HandleFunc("GET /api/system/backups", h.listBackups)
+	mux.HandleFunc("GET /api/system/backup/{date}", h.getBackup)
+	mux.HandleFunc("POST /api/system/restore", h.restoreBackup)
+
 	// Authentication
 	mux.HandleFunc("POST /api/auth/login", h.login)
 	mux.HandleFunc("POST /api/auth/logout", h.logout)

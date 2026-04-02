@@ -224,6 +224,8 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
   // Snapshot of the config as it was when the wizard opened (for detecting destructive changes)
   const originalDataRef = useRef<SetupFormData | undefined>(initialData)
   const [destructiveWarning, setDestructiveWarning] = useState<DestructiveChange[] | null>(null)
+  // Tracks whether the user restored from a backup (affects warning dialog wording)
+  const isRestoreFlow = useRef(false)
 
   const handleChange = useCallback((key: string, value: string) => {
     setFormData((prev) => ({ ...prev, [key]: value }))
@@ -231,6 +233,15 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
 
   const handleBatchChange = useCallback((updates: Record<string, string>) => {
     setFormData((prev) => ({ ...prev, ...updates }))
+    // When restoring from a backup, update the baseline so destructive change
+    // detection compares against the backup values (not the fresh SD card defaults).
+    // The WelcomeStep sets _restore_baseline when a backup restore completes.
+    if (updates._restore_baseline === "true") {
+      const baseline = { ...updates }
+      delete baseline._restore_baseline
+      originalDataRef.current = { ...(originalDataRef.current ?? {}), ...baseline }
+      isRestoreFlow.current = true
+    }
   }, [])
 
   // Poll setup status while running
@@ -451,11 +462,12 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
             </div>
             <div>
               <h2 className="text-lg font-semibold text-slate-100">
-                Data Will Be Deleted
+                {isRestoreFlow.current ? "Drive Sizes Changed From Backup" : "Data Will Be Deleted"}
               </h2>
               <p className="mt-1 text-sm text-slate-400">
-                The following changes require drive images to be recreated.
-                All data on the affected drives will be permanently lost.
+                {isRestoreFlow.current
+                  ? "You changed drive sizes from what was in your backup. This will cause the SSD to be reformatted, which will erase all existing footage and data on the affected drives."
+                  : "The following changes require drive images to be recreated. All data on the affected drives will be permanently lost."}
               </p>
             </div>
           </div>
@@ -482,13 +494,13 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
               onClick={handleSkipDestructive}
               className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-4 py-2 text-sm font-medium text-blue-400 transition-colors hover:bg-blue-500/20"
             >
-              Skip Data-Affecting Changes
+              {isRestoreFlow.current ? "Restore Backup Sizes" : "Skip Data-Affecting Changes"}
             </button>
             <button
               onClick={handleApplyAll}
               className="rounded-lg bg-red-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-600"
             >
-              Delete Data & Apply All
+              {isRestoreFlow.current ? "Continue & Reformat" : "Delete Data & Apply All"}
             </button>
           </div>
         </div>

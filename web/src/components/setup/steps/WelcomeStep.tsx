@@ -1,5 +1,5 @@
-import { useCallback, useRef, useState } from "react"
-import { Shield, Upload, FileText, CheckCircle, X, ChevronDown, ChevronUp } from "lucide-react"
+import { useCallback, useEffect, useRef, useState } from "react"
+import { Shield, Upload, FileText, CheckCircle, X, ChevronDown, ChevronUp, RotateCcw, Loader2, Archive } from "lucide-react"
 import type { StepProps } from "../SetupWizard"
 import { cn } from "@/lib/utils"
 
@@ -120,12 +120,27 @@ function friendlyLabel(key: string): string {
   return labels[key] || key
 }
 
+interface BackupEntry {
+  date: string
+  timestamp: string
+  location: string
+  size: number
+  filename: string
+}
+
 export function WelcomeStep({ data: _data, onChange: _onChange, onBatchChange }: StepProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [imported, setImported] = useState<Record<string, string> | null>(null)
   const [fileName, setFileName] = useState<string | null>(null)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [dragOver, setDragOver] = useState(false)
+
+  // Restore from backup state
+  const [showRestore, setShowRestore] = useState(false)
+  const [backups, setBackups] = useState<BackupEntry[]>([])
+  const [loadingBackups, setLoadingBackups] = useState(false)
+  const [restoringDate, setRestoringDate] = useState<string | null>(null)
+  const [restoreSource, setRestoreSource] = useState<string | null>(null)
 
   const handleFile = useCallback(
     (file: File) => {
@@ -137,6 +152,7 @@ export function WelcomeStep({ data: _data, onChange: _onChange, onBatchChange }:
         const parsed = parseConfFile(text)
         setImported(parsed)
         setFileName(file.name)
+        setRestoreSource(null)
         onBatchChange(parsed)
         // Expand all groups that have keys
         const groups = new Set<string>()
@@ -165,6 +181,7 @@ export function WelcomeStep({ data: _data, onChange: _onChange, onBatchChange }:
   const handleClear = useCallback(() => {
     setImported(null)
     setFileName(null)
+    setRestoreSource(null)
     if (fileInputRef.current) fileInputRef.current.value = ""
   }, [])
 
@@ -175,6 +192,65 @@ export function WelcomeStep({ data: _data, onChange: _onChange, onBatchChange }:
       else next.add(groupId)
       return next
     })
+  }
+
+  // Load available backups when restore panel is opened
+  useEffect(() => {
+    if (!showRestore) return
+    setLoadingBackups(true)
+    fetch("/api/system/backups")
+      .then((r) => r.json())
+      .then((data: BackupEntry[]) => {
+        setBackups(data || [])
+        setLoadingBackups(false)
+      })
+      .catch(() => {
+        setBackups([])
+        setLoadingBackups(false)
+      })
+  }, [showRestore])
+
+  // Handle restoring from a backup
+  async function handleRestore(backup: BackupEntry) {
+    setRestoringDate(backup.date)
+    try {
+      // Fetch the full backup data
+      const backupRes = await fetch(`/api/system/backup/${backup.date}`)
+      if (!backupRes.ok) throw new Error("Failed to fetch backup")
+      const backupData = await backupRes.json()
+
+      // Send to restore endpoint
+      const restoreRes = await fetch("/api/system/restore", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(backupData),
+      })
+      if (!restoreRes.ok) throw new Error("Restore failed")
+      const result = await restoreRes.json()
+
+      // Parse the config to populate wizard fields
+      const parsed = result.config as Record<string, string>
+      setImported(parsed)
+      setFileName(null)
+      setRestoreSource(backup.date)
+      setShowRestore(false)
+      // Signal to SetupWizard that this is a restore — update the destructive
+      // change baseline so drive size comparisons use the backup values.
+      onBatchChange({ ...parsed, _restore_baseline: "true" })
+
+      // Expand all groups that have keys
+      const groups = new Set<string>()
+      for (const [groupId, group] of Object.entries(CONFIG_GROUPS)) {
+        if (group.keys.some((k) => k in parsed)) {
+          groups.add(groupId)
+        }
+      }
+      setExpandedGroups(groups)
+    } catch {
+      // error handled silently, user sees button reset
+    } finally {
+      setRestoringDate(null)
+    }
   }
 
   // Categorize imported keys
@@ -219,40 +295,117 @@ export function WelcomeStep({ data: _data, onChange: _onChange, onBatchChange }:
         in Raspberry Pi Imager before flashing your SD card.
       </p>
 
-      {/* Upload .conf file */}
+      {/* Upload .conf file or Restore from backup */}
       <div className="mt-8 w-full max-w-md">
         {!imported ? (
-          <div
-            onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
-            className={cn(
-              "flex cursor-pointer flex-col items-center gap-3 rounded-xl border-2 border-dashed p-6 transition-colors",
-              dragOver
-                ? "border-blue-400/60 bg-blue-500/10"
-                : "border-white/10 bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]"
-            )}
-          >
-            <Upload className="h-8 w-8 text-slate-500" />
-            <div>
-              <p className="text-sm font-medium text-slate-300">
-                Import existing config
-              </p>
-              <p className="mt-1 text-xs text-slate-500">
-                Drop a <code className="rounded bg-white/5 px-1 py-0.5 text-slate-400">.conf</code> file here or click to browse
-              </p>
+          <div className="space-y-3">
+            {/* Drag-and-drop config import */}
+            <div
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              className={cn(
+                "flex cursor-pointer flex-col items-center gap-3 rounded-xl border-2 border-dashed p-6 transition-colors",
+                dragOver
+                  ? "border-blue-400/60 bg-blue-500/10"
+                  : "border-white/10 bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]"
+              )}
+            >
+              <Upload className="h-8 w-8 text-slate-500" />
+              <div>
+                <p className="text-sm font-medium text-slate-300">
+                  Import existing config
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Drop a <code className="rounded bg-white/5 px-1 py-0.5 text-slate-400">.conf</code> file here or click to browse
+                </p>
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".conf"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file) handleFile(file)
+                }}
+              />
             </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".conf"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0]
-                if (file) handleFile(file)
-              }}
-            />
+
+            {/* Restore from backup button / panel */}
+            {!showRestore ? (
+              <button
+                onClick={() => setShowRestore(true)}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-slate-400 transition-colors hover:border-white/20 hover:bg-white/[0.04] hover:text-slate-300"
+              >
+                <RotateCcw className="h-4 w-4" />
+                Restore from backup
+              </button>
+            ) : (
+              <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Archive className="h-4 w-4 text-blue-400" />
+                    <span className="text-sm font-medium text-blue-300">Available Backups</span>
+                  </div>
+                  <button
+                    onClick={() => setShowRestore(false)}
+                    className="rounded-lg p-1 text-slate-500 transition-colors hover:bg-white/5 hover:text-slate-300"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                {loadingBackups ? (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="h-5 w-5 animate-spin text-blue-400" />
+                    <span className="ml-2 text-xs text-slate-500">Scanning for backups...</span>
+                  </div>
+                ) : backups.length === 0 ? (
+                  <p className="py-3 text-center text-xs text-slate-500">
+                    No backups found. Backups are created automatically after each archive.
+                  </p>
+                ) : (
+                  <div className="max-h-48 space-y-1.5 overflow-y-auto">
+                    {backups.map((b) => (
+                      <button
+                        key={b.date}
+                        onClick={() => handleRestore(b)}
+                        disabled={restoringDate !== null}
+                        className="flex w-full items-center justify-between rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2.5 text-left transition-colors hover:bg-white/[0.05] hover:border-white/10 disabled:opacity-50"
+                      >
+                        <div>
+                          <p className="text-xs font-medium text-slate-300">
+                            {new Date(b.timestamp).toLocaleDateString(undefined, {
+                              weekday: "short",
+                              month: "short",
+                              day: "numeric",
+                              year: "numeric",
+                            })}
+                          </p>
+                          <p className="text-[10px] text-slate-500">
+                            {new Date(b.timestamp).toLocaleTimeString(undefined, {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                            {" · "}
+                            {b.location === "archive" ? "Archive server" : "Local SSD"}
+                            {" · "}
+                            {(b.size / 1024).toFixed(1)} KB
+                          </p>
+                        </div>
+                        {restoringDate === b.date ? (
+                          <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
+                        ) : (
+                          <RotateCcw className="h-3.5 w-3.5 text-slate-500" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         ) : (
           <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
@@ -262,11 +415,20 @@ export function WelcomeStep({ data: _data, onChange: _onChange, onBatchChange }:
                 <CheckCircle className="h-5 w-5 text-emerald-400" />
                 <div className="text-left">
                   <p className="text-sm font-medium text-emerald-300">
-                    Config imported
+                    {restoreSource ? "Backup restored" : "Config imported"}
                   </p>
                   <p className="text-xs text-slate-500">
-                    <FileText className="mr-1 inline h-3 w-3" />
-                    {fileName} — {totalImported} setting{totalImported !== 1 ? "s" : ""} loaded
+                    {restoreSource ? (
+                      <>
+                        <RotateCcw className="mr-1 inline h-3 w-3" />
+                        Backup from {restoreSource} — {totalImported} setting{totalImported !== 1 ? "s" : ""} restored
+                      </>
+                    ) : (
+                      <>
+                        <FileText className="mr-1 inline h-3 w-3" />
+                        {fileName} — {totalImported} setting{totalImported !== 1 ? "s" : ""} loaded
+                      </>
+                    )}
                   </p>
                 </div>
               </div>

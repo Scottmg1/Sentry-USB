@@ -182,6 +182,17 @@ if [ "$ARCHIVE_REACHABLE" = "true" ] && [ -n "${RCLONE_DRIVE:-}" ] && [ -f /muta
   fi
 fi
 
+# Backup config after successful archive
+if [ "$ARCHIVE_REACHABLE" = "true" ]; then
+  log "Creating config backup..."
+  BACKUP_RESULT=$(curl -sf -X POST "${API_URL}/api/system/backup" 2>/dev/null)
+  if [ $? -eq 0 ]; then
+    log "Config backup created successfully."
+  else
+    log "Warning: config backup failed."
+  fi
+fi
+
 # Send notification only if new drives were added
 if [ -x /root/bin/send-push-message ]; then
   STATS=$(curl -sf "${API_URL}/api/drives/stats" 2>/dev/null)

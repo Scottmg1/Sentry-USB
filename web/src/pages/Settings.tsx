@@ -24,6 +24,9 @@ import {
   Shield,
   Cpu,
   Sliders,
+  HardDrive,
+  Archive,
+  Save,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { SetupWizard } from "@/components/setup/SetupWizard"
@@ -1024,6 +1027,355 @@ function AwayModeControl() {
   )
 }
 
+// ─── Config Backup ──────────────────────────────────────────────────────────
+
+interface BackupEntry {
+  date: string
+  timestamp: string
+  location: string
+  size: number
+  filename: string
+}
+
+function ConfigBackupSection() {
+  const [backupLocation, setBackupLocation] = useState<string>("archive")
+  const [lastBackup, setLastBackup] = useState<{ date: string; timestamp: string } | null>(null)
+  const [backupState, setBackupState] = useState<ActionState>("idle")
+  const [loaded, setLoaded] = useState(false)
+
+  // Restore state
+  const [showRestore, setShowRestore] = useState(false)
+  const [backups, setBackups] = useState<BackupEntry[]>([])
+  const [loadingBackups, setLoadingBackups] = useState(false)
+  const [restoreState, setRestoreState] = useState<"idle" | "confirm" | "restoring" | "success" | "error">("idle")
+  const [selectedBackup, setSelectedBackup] = useState<BackupEntry | null>(null)
+  const [restoreResult, setRestoreResult] = useState<{ date: string; hostname: string } | null>(null)
+
+  useEffect(() => {
+    // Load current preference
+    fetch("/api/config/preference?key=backup_location")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.value) setBackupLocation(d.value)
+      })
+      .catch(() => {})
+
+    // Load latest backup info
+    fetch("/api/system/backups")
+      .then((r) => r.json())
+      .then((backups: { date: string; timestamp: string }[]) => {
+        if (backups && backups.length > 0) setLastBackup(backups[0])
+        setLoaded(true)
+      })
+      .catch(() => setLoaded(true))
+  }, [])
+
+  // Load backup list when restore panel opens
+  useEffect(() => {
+    if (!showRestore) return
+    setLoadingBackups(true)
+    fetch("/api/system/backups")
+      .then((r) => r.json())
+      .then((data: BackupEntry[]) => {
+        setBackups(data || [])
+        setLoadingBackups(false)
+      })
+      .catch(() => {
+        setBackups([])
+        setLoadingBackups(false)
+      })
+  }, [showRestore])
+
+  async function handleLocationChange(loc: string) {
+    setBackupLocation(loc)
+    await fetch("/api/config/preference", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: "backup_location", value: loc }),
+    })
+  }
+
+  async function handleBackupNow() {
+    setBackupState("loading")
+    try {
+      const res = await fetch("/api/system/backup", { method: "POST" })
+      if (!res.ok) throw new Error("Backup failed")
+      const result = await res.json()
+      setLastBackup({ date: result.date, timestamp: new Date().toISOString() })
+      setBackupState("success")
+      setTimeout(() => setBackupState("idle"), 3000)
+    } catch {
+      setBackupState("error")
+      setTimeout(() => setBackupState("idle"), 3000)
+    }
+  }
+
+  async function handleRestore() {
+    if (!selectedBackup) return
+    setRestoreState("restoring")
+    try {
+      // Fetch the full backup data
+      const backupRes = await fetch(`/api/system/backup/${selectedBackup.date}`)
+      if (!backupRes.ok) throw new Error("Failed to fetch backup")
+      const backupData = await backupRes.json()
+
+      // Send to restore endpoint
+      const restoreRes = await fetch("/api/system/restore", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(backupData),
+      })
+      if (!restoreRes.ok) throw new Error("Restore failed")
+      const result = await restoreRes.json()
+
+      setRestoreResult({ date: result.date, hostname: result.hostname })
+      setRestoreState("success")
+    } catch {
+      setRestoreState("error")
+      setTimeout(() => {
+        setRestoreState("idle")
+        setSelectedBackup(null)
+      }, 3000)
+    }
+  }
+
+  return (
+    <div className="glass-card overflow-hidden">
+      <div className="flex items-center gap-3 border-b border-white/5 px-5 py-4">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-500/15">
+          <Save className="h-4.5 w-4.5 text-blue-400" />
+        </div>
+        <div>
+          <h3 className="text-sm font-semibold text-slate-200">Config Backup</h3>
+          <p className="text-xs text-slate-500">
+            Automatically backs up your configuration after each archive
+          </p>
+        </div>
+      </div>
+      <div className="p-5 space-y-4">
+        {/* Backup location selector */}
+        <div>
+          <p className="mb-2 text-xs font-medium text-slate-400">Backup Location</p>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => handleLocationChange("archive")}
+              className={cn(
+                "rounded-xl border px-3 py-3 text-left text-xs transition-all",
+                backupLocation === "archive"
+                  ? "border-blue-500/40 bg-blue-500/10 text-blue-400 shadow-[0_0_12px_rgba(59,130,246,0.1)]"
+                  : "border-white/5 bg-white/[0.02] text-slate-400 hover:bg-white/[0.05] hover:border-white/10"
+              )}
+            >
+              <Archive className="mb-1 h-4 w-4" />
+              <span className="font-semibold">Archive Server</span>
+              <br />
+              <span className="text-[10px] opacity-60">Same location as footage</span>
+            </button>
+            <button
+              onClick={() => handleLocationChange("ssd")}
+              className={cn(
+                "rounded-xl border px-3 py-3 text-left text-xs transition-all",
+                backupLocation === "ssd"
+                  ? "border-blue-500/40 bg-blue-500/10 text-blue-400 shadow-[0_0_12px_rgba(59,130,246,0.1)]"
+                  : "border-white/5 bg-white/[0.02] text-slate-400 hover:bg-white/[0.05] hover:border-white/10"
+              )}
+            >
+              <HardDrive className="mb-1 h-4 w-4" />
+              <span className="font-semibold">Local SSD</span>
+              <br />
+              <span className="text-[10px] opacity-60">On the data drive</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Last backup info + manual trigger */}
+        <div className="flex items-center justify-between">
+          <div className="text-xs text-slate-500">
+            {loaded && lastBackup ? (
+              <>
+                Last backup:{" "}
+                <span className="text-slate-300">
+                  {new Date(lastBackup.timestamp).toLocaleDateString(undefined, {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                  })}{" "}
+                  {new Date(lastBackup.timestamp).toLocaleTimeString(undefined, {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </span>
+              </>
+            ) : loaded ? (
+              "No backups yet"
+            ) : (
+              "Loading..."
+            )}
+          </div>
+          <button
+            onClick={handleBackupNow}
+            disabled={backupState === "loading"}
+            className={cn(
+              "rounded-lg px-3 py-1.5 text-xs font-medium transition-all",
+              backupState === "success"
+                ? "bg-emerald-500/20 text-emerald-400"
+                : backupState === "error"
+                ? "bg-red-500/20 text-red-400"
+                : backupState === "loading"
+                ? "bg-blue-500/20 text-blue-400"
+                : "bg-white/5 text-slate-300 hover:bg-white/10"
+            )}
+          >
+            {backupState === "loading" && "Backing up..."}
+            {backupState === "success" && "Backed up!"}
+            {backupState === "error" && "Failed"}
+            {backupState === "idle" && "Backup Now"}
+          </button>
+        </div>
+
+        {/* Restore section */}
+        <div className="border-t border-white/5 pt-4">
+          {restoreState === "success" && restoreResult ? (
+            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+              <div className="flex items-start gap-3">
+                <CheckCircle className="mt-0.5 h-5 w-5 shrink-0 text-emerald-400" />
+                <div>
+                  <p className="text-sm font-medium text-emerald-300">Config Restored</p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    Backup from {restoreResult.date} has been restored
+                    {restoreResult.hostname ? ` (${restoreResult.hostname})` : ""}.
+                    Run setup to apply the restored configuration.
+                  </p>
+                  <button
+                    onClick={() => {
+                      setRestoreState("idle")
+                      setSelectedBackup(null)
+                      setRestoreResult(null)
+                      setShowRestore(false)
+                    }}
+                    className="mt-3 rounded-lg bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-white/10"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : restoreState === "confirm" && selectedBackup ? (
+            <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" />
+                <div>
+                  <p className="text-sm font-medium text-amber-300">Confirm Restore</p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    This will overwrite your current configuration with the backup from{" "}
+                    <span className="text-slate-300">
+                      {new Date(selectedBackup.timestamp).toLocaleDateString(undefined, {
+                        weekday: "short",
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                      })}
+                    </span>
+                    . SSH keys, BLE pairing, and notification credentials will also be restored.
+                    You will need to run setup afterward to apply changes.
+                  </p>
+                  <div className="mt-3 flex gap-2">
+                    <button
+                      onClick={() => { setRestoreState("idle"); setSelectedBackup(null) }}
+                      className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-slate-400 transition-colors hover:bg-white/5"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleRestore}
+                      className="rounded-lg bg-amber-500/20 px-3 py-1.5 text-xs font-medium text-amber-300 transition-colors hover:bg-amber-500/30"
+                    >
+                      Restore Config
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : !showRestore ? (
+            <button
+              onClick={() => setShowRestore(true)}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.02] px-4 py-2.5 text-xs text-slate-400 transition-colors hover:border-white/20 hover:bg-white/[0.04] hover:text-slate-300"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              Restore from Backup
+            </button>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium text-slate-400">Available Backups</p>
+                <button
+                  onClick={() => { setShowRestore(false); setSelectedBackup(null); setRestoreState("idle") }}
+                  className="text-[10px] text-slate-600 transition-colors hover:text-slate-400"
+                >
+                  Close
+                </button>
+              </div>
+              {loadingBackups ? (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
+                  <span className="ml-2 text-xs text-slate-500">Scanning for backups...</span>
+                </div>
+              ) : backups.length === 0 ? (
+                <p className="py-3 text-center text-xs text-slate-500">
+                  No backups found. Backups are created automatically after each archive.
+                </p>
+              ) : (
+                <div className="max-h-48 space-y-1.5 overflow-y-auto">
+                  {backups.map((b) => (
+                    <button
+                      key={b.date}
+                      onClick={() => { setSelectedBackup(b); setRestoreState("confirm") }}
+                      disabled={restoreState === "restoring"}
+                      className="flex w-full items-center justify-between rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2.5 text-left transition-colors hover:bg-white/[0.05] hover:border-white/10 disabled:opacity-50"
+                    >
+                      <div>
+                        <p className="text-xs font-medium text-slate-300">
+                          {new Date(b.timestamp).toLocaleDateString(undefined, {
+                            weekday: "short",
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          })}
+                        </p>
+                        <p className="text-[10px] text-slate-500">
+                          {new Date(b.timestamp).toLocaleTimeString(undefined, {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                          {" · "}
+                          {b.location === "archive" ? "Archive server" : "Local SSD"}
+                          {" · "}
+                          {(b.size / 1024).toFixed(1)} KB
+                        </p>
+                      </div>
+                      {restoreState === "restoring" && selectedBackup?.date === b.date ? (
+                        <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
+                      ) : (
+                        <RotateCcw className="h-3.5 w-3.5 text-slate-500" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          {restoreState === "error" && (
+            <div className="mt-2 flex items-center gap-2 rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-400">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+              Restore failed. Please try again.
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Tab definitions ────────────────────────────────────────────────────────
 
 const TABS = [
@@ -1359,6 +1711,7 @@ export default function Settings() {
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <KeepAwakePreference />
               <AwayModeControl />
+              <ConfigBackupSection />
             </div>
           </div>
         </div>
