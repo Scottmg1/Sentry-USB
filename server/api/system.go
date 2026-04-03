@@ -309,6 +309,13 @@ func (h *handlers) getClips(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Pagination: limit (max clips per category) and before (cursor date string)
+	limit := 0
+	if v := r.URL.Query().Get("limit"); v != "" {
+		fmt.Sscanf(v, "%d", &limit)
+	}
+	before := r.URL.Query().Get("before") // directory name cursor, e.g. "2025-02-22_17-58-00"
+
 	type eventMeta struct {
 		Timestamp string `json:"timestamp,omitempty"`
 		City      string `json:"city,omitempty"`
@@ -325,8 +332,9 @@ func (h *handlers) getClips(w http.ResponseWriter, r *http.Request) {
 		Event *eventMeta `json:"event,omitempty"`
 	}
 	type clipGroup struct {
-		Name  string      `json:"name"`
-		Clips []clipEntry `json:"clips"`
+		Name    string      `json:"name"`
+		Clips   []clipEntry `json:"clips"`
+		HasMore bool        `json:"hasMore"`
 	}
 
 	var groups []clipGroup
@@ -341,14 +349,22 @@ func (h *handlers) getClips(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
+		// Sort descending (newest first)
 		sort.Slice(dirs, func(i, j int) bool {
 			return dirs[i].Name() > dirs[j].Name()
 		})
 
+		collected := 0
 		for _, dir := range dirs {
 			if !dir.IsDir() {
 				continue
 			}
+
+			// Cursor: skip entries at or after the cursor (since sorted desc, skip entries >= before)
+			if before != "" && dir.Name() >= before {
+				continue
+			}
+
 			clipPath := filepath.Join(basePath, dir.Name())
 			files, err := os.ReadDir(clipPath)
 			if err != nil {
@@ -363,6 +379,12 @@ func (h *handlers) getClips(w http.ResponseWriter, r *http.Request) {
 			}
 
 			if len(fileNames) > 0 {
+				// Check if we've hit the limit
+				if limit > 0 && collected >= limit {
+					group.HasMore = true
+					break
+				}
+
 				sort.Strings(fileNames)
 				entry := clipEntry{
 					Date:  dir.Name(),
@@ -399,6 +421,7 @@ func (h *handlers) getClips(w http.ResponseWriter, r *http.Request) {
 				}
 
 				group.Clips = append(group.Clips, entry)
+				collected++
 			}
 		}
 

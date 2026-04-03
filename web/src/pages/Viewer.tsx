@@ -98,6 +98,7 @@ export default function Viewer() {
   const [currentSetIdx, setCurrentSetIdx] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [focusedCamera, setFocusedCamera] = useState<string | null>(null)
+  const [activeCameras, setActiveCameras] = useState<Set<string>>(new Set(["front"]))
   const [playbackSpeed, setPlaybackSpeed] = useState(1)
   const [currentTime, setCurrentTime] = useState(0)
   const [isFullscreen, setIsFullscreen] = useState(false)
@@ -171,10 +172,12 @@ export default function Viewer() {
     return positions
   }, [segmentDurations, totalDuration])
 
+  const CLIPS_PAGE_SIZE = 20
+
   // Fetch clips by category (only active category, not all 3)
   useEffect(() => {
     setLoading(true)
-    fetch(`/api/clips?category=${activeCategory}`)
+    fetch(`/api/clips?category=${activeCategory}&limit=${CLIPS_PAGE_SIZE}`)
       .then((r) => r.json())
       .then((data: ClipGroup[]) => {
         setGroups((prev) => {
@@ -186,6 +189,32 @@ export default function Viewer() {
       .catch(() => setLoading(false))
   }, [activeCategory])
 
+  const [loadingMore, setLoadingMore] = useState(false)
+
+  function loadMoreClips() {
+    const group = groups.find((g) => g.name === activeCategory)
+    if (!group || !group.hasMore) return
+    const lastClip = group.clips[group.clips.length - 1]
+    if (!lastClip) return
+    setLoadingMore(true)
+    fetch(`/api/clips?category=${activeCategory}&limit=${CLIPS_PAGE_SIZE}&before=${lastClip.date}`)
+      .then((r) => r.json())
+      .then((data: ClipGroup[]) => {
+        const newGroup = data.find((g) => g.name === activeCategory)
+        if (newGroup) {
+          setGroups((prev) =>
+            prev.map((g) =>
+              g.name === activeCategory
+                ? { ...g, clips: [...g.clips, ...newGroup.clips], hasMore: newGroup.hasMore }
+                : g
+            )
+          )
+        }
+        setLoadingMore(false)
+      })
+      .catch(() => setLoadingMore(false))
+  }
+
   const activeGroup = groups.find((g) => g.name === activeCategory)
 
   // When clip changes, build clip sets
@@ -196,6 +225,7 @@ export default function Viewer() {
       setCurrentSetIdx(0)
       setPlaying(false)
       setFocusedCamera(null)
+      setActiveCameras(new Set(["front"]))
       pendingSeekRef.current = null
       setCurrentTime(0)
       currentTimeRef.current = 0
@@ -203,7 +233,9 @@ export default function Viewer() {
     }
   }, [selectedClip])
 
-  // Preload segment durations (batched, max 3 concurrent)
+  // Preload segment durations — only probe the first few segments eagerly,
+  // defer the rest until the user navigates near them
+  const EAGER_PROBE_COUNT = 6
   useEffect(() => {
     if (!clipSets.length) { setSegmentDurations([]); return }
     const durations = new Array(clipSets.length).fill(60)
@@ -212,11 +244,11 @@ export default function Viewer() {
     let cancelled = false
     const cleanups: (() => void)[] = []
 
-    async function loadBatched() {
+    async function loadBatched(startIdx: number, endIdx: number) {
       const BATCH = 3
-      for (let start = 0; start < clipSets.length; start += BATCH) {
+      for (let start = startIdx; start < endIdx; start += BATCH) {
         if (cancelled) return
-        const batch = clipSets.slice(start, start + BATCH)
+        const batch = clipSets.slice(start, Math.min(start + BATCH, endIdx))
         await Promise.all(batch.map((set, j) => {
           const i = start + j
           return new Promise<void>((resolve) => {
@@ -239,9 +271,44 @@ export default function Viewer() {
       }
     }
 
-    loadBatched()
+    // Only probe the first EAGER_PROBE_COUNT segments initially
+    loadBatched(0, Math.min(EAGER_PROBE_COUNT, clipSets.length))
     return () => { cancelled = true; cleanups.forEach((c) => c()) }
   }, [clipSets])
+
+  // Lazily probe segment durations as user navigates near un-probed segments
+  useEffect(() => {
+    if (!clipSets.length || currentSetIdx < EAGER_PROBE_COUNT - 2) return
+    // Probe a window around the current segment
+    const probeStart = Math.max(0, currentSetIdx - 1)
+    const probeEnd = Math.min(clipSets.length, currentSetIdx + 4)
+
+    let cancelled = false
+    const cleanups: (() => void)[] = []
+
+    for (let i = probeStart; i < probeEnd; i++) {
+      // Skip already-probed segments (non-default duration)
+      if (segmentDurations[i] !== 60) continue
+      const set = clipSets[i]
+      const url = set.cameras["front"] || Object.values(set.cameras)[0]
+      if (!url) continue
+      const v = document.createElement("video")
+      v.preload = "metadata"
+      v.src = url
+      v.onloadedmetadata = () => {
+        if (!cancelled && Number.isFinite(v.duration)) {
+          setSegmentDurations((prev) => {
+            const next = [...prev]
+            next[i] = v.duration
+            return next
+          })
+        }
+      }
+      cleanups.push(() => { v.src = ""; v.remove() })
+    }
+
+    return () => { cancelled = true; cleanups.forEach((c) => c()) }
+  }, [clipSets, currentSetIdx])
 
   // Set master video ref (front camera preferred)
   useEffect(() => {
@@ -605,6 +672,19 @@ export default function Viewer() {
                   <p className="text-xs text-slate-600">No {categoryLabels[activeCategory]?.toLowerCase()} clips</p>
                 </div>
               )}
+              {activeGroup?.hasMore && (
+                <button
+                  onClick={loadMoreClips}
+                  disabled={loadingMore}
+                  className="mt-1 w-full rounded-lg px-2 py-1.5 text-[11px] font-medium text-slate-400 transition-colors hover:bg-white/5 hover:text-slate-300 disabled:opacity-50"
+                >
+                  {loadingMore ? (
+                    <span className="flex items-center justify-center gap-1.5">
+                      <Loader2 className="h-3 w-3 animate-spin" /> Loading…
+                    </span>
+                  ) : "Load more clips"}
+                </button>
+              )}
             </div>
 
             {/* Sentry Studio promo */}
@@ -656,6 +736,7 @@ export default function Viewer() {
                 {camerasToShow.map((cam) => {
                   const isTriggered = triggeredCamera === cam
                   const hasFocus = focusedCamera === cam
+                  const isCamActive = activeCameras.has(cam)
                   return (
                     <div
                       key={cam}
@@ -664,9 +745,16 @@ export default function Viewer() {
                         hasFocus && "h-full w-full",
                         isTriggered && !hasFocus && "ring-1 ring-amber-500/60",
                       )}
-                      onClick={() => setFocusedCamera(hasFocus ? null : cam)}
+                      onClick={() => {
+                        if (!isCamActive && currentSet.cameras[cam]) {
+                          // Activate this camera stream on click
+                          setActiveCameras((prev) => new Set([...prev, cam]))
+                          return
+                        }
+                        setFocusedCamera(hasFocus ? null : cam)
+                      }}
                     >
-                      {currentSet.cameras[cam] ? (
+                      {currentSet.cameras[cam] && isCamActive ? (
                         <video
                           ref={setVideoRef(cam)}
                           key={`${currentSetIdx}-${cam}`}
@@ -686,6 +774,11 @@ export default function Viewer() {
                             if (playingRef.current) v.play().catch(() => { })
                           }}
                         />
+                      ) : currentSet.cameras[cam] && !isCamActive ? (
+                        <div className="flex h-full flex-col items-center justify-center gap-1.5 bg-slate-900/80">
+                          <Play className="h-5 w-5 text-slate-500" />
+                          <span className="text-[10px] text-slate-500">Click to stream</span>
+                        </div>
                       ) : (
                         <div className="flex h-full items-center justify-center">
                           <Video className="h-6 w-6 text-slate-700" />

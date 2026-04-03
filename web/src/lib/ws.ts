@@ -5,6 +5,7 @@ class WebSocketClient {
   private ws: WebSocket | null = null
   private handlers: Map<string, Set<MessageHandler>> = new Map()
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  private pingTimer: ReturnType<typeof setInterval> | null = null
   private url: string
   private _connected = false
   private statusListeners: Set<StatusListener> = new Set()
@@ -36,6 +37,7 @@ class WebSocketClient {
 
     this.ws.onopen = () => {
       this.setConnected(true)
+      this.startPing()
     }
 
     this.ws.onmessage = (event) => {
@@ -51,12 +53,29 @@ class WebSocketClient {
     }
 
     this.ws.onclose = () => {
+      this.stopPing()
       this.setConnected(false)
       this.scheduleReconnect()
     }
 
     this.ws.onerror = () => {
       this.ws?.close()
+    }
+  }
+
+  private startPing() {
+    this.stopPing()
+    this.pingTimer = setInterval(() => {
+      if (this.ws?.readyState === WebSocket.OPEN) {
+        this.ws.send(JSON.stringify({ type: "ping" }))
+      }
+    }, 25000)
+  }
+
+  private stopPing() {
+    if (this.pingTimer) {
+      clearInterval(this.pingTimer)
+      this.pingTimer = null
     }
   }
 
@@ -89,6 +108,7 @@ class WebSocketClient {
   }
 
   disconnect() {
+    this.stopPing()
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null

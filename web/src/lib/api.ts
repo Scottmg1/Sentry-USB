@@ -75,6 +75,7 @@ export interface EventMeta {
 export interface ClipGroup {
   name: string
   clips: ClipEntry[]
+  hasMore?: boolean
 }
 
 export interface ClipEntry {

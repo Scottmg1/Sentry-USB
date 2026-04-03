@@ -89,16 +89,33 @@ func ServeWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 			}
 			hub.register <- client
 
-			// Writer goroutine
+			done := make(chan struct{})
+
+			// Writer goroutine — also sends pings every 30s
 			go func() {
-				for msg := range client.send {
-					if _, err := conn.Write(msg); err != nil {
-						break
+				ticker := time.NewTicker(30 * time.Second)
+				defer ticker.Stop()
+				for {
+					select {
+					case msg, ok := <-client.send:
+						if !ok {
+							return
+						}
+						if _, err := conn.Write(msg); err != nil {
+							return
+						}
+					case <-ticker.C:
+						ping, _ := json.Marshal(Message{Type: "ping", Data: nil})
+						if _, err := conn.Write(ping); err != nil {
+							return
+						}
+					case <-done:
+						return
 					}
 				}
 			}()
 
-			// Reader goroutine (keep connection alive, read pings)
+			// Reader goroutine — resets 60s read deadline on every message (including pong)
 			buf := make([]byte, 512)
 			for {
 				conn.SetReadDeadline(time.Now().Add(60 * time.Second))
@@ -108,6 +125,7 @@ func ServeWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
+			close(done)
 			hub.unregister <- client
 			conn.Close()
 		},

@@ -35,7 +35,7 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
       }
       httpFailCount.current = 0
       setState("connected")
-    } else if (httpFailCount.current >= 2) {
+    } else if (httpFailCount.current >= 3) {
       // Multiple HTTP failures — truly disconnected
       setState("disconnected")
     } else {
@@ -56,8 +56,11 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
     async function poll() {
       try {
         const controller = new AbortController()
-        const timeout = setTimeout(() => controller.abort(), 5000)
-        const res = await fetch("/api/status", { signal: controller.signal })
+        const timeout = setTimeout(() => controller.abort(), 10000)
+        const res = await fetch("/api/status", {
+          signal: controller.signal,
+          priority: "low",
+        } as RequestInit)
         clearTimeout(timeout)
         if (mounted) {
           httpOk.current = res.ok
