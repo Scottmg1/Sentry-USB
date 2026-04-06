@@ -34,13 +34,25 @@ type Drive struct {
 	FSDStates   []int        `json:"fsdStates,omitempty"` // parallel to Points: 0=manual, >0=FSD engaged
 	FSDEvents   []FSDEvent   `json:"fsdEvents,omitempty"` // locations of disengagements and accel pushes
 	Tags        []string     `json:"tags,omitempty"`
-	// FSD analytics per drive
+	// FSD analytics per drive (state=1 only — Full Self-Driving)
 	FSDEngagedMs      int64   `json:"fsdEngagedMs"`
 	FSDDisengagements int     `json:"fsdDisengagements"`
 	FSDAccelPushes    int     `json:"fsdAccelPushes"`
 	FSDPercent        float64 `json:"fsdPercent"`
 	FSDDistanceKm     float64 `json:"fsdDistanceKm"`
 	FSDDistanceMi     float64 `json:"fsdDistanceMi"`
+	// Autosteer analytics (state=2)
+	AutosteerEngagedMs  int64   `json:"autosteerEngagedMs"`
+	AutosteerPercent    float64 `json:"autosteerPercent"`
+	AutosteerDistanceKm float64 `json:"autosteerDistanceKm"`
+	AutosteerDistanceMi float64 `json:"autosteerDistanceMi"`
+	// TACC analytics (state=3)
+	TACCEngagedMs  int64   `json:"taccEngagedMs"`
+	TACCPercent    float64 `json:"taccPercent"`
+	TACCDistanceKm float64 `json:"taccDistanceKm"`
+	TACCDistanceMi float64 `json:"taccDistanceMi"`
+	// Assisted driving aggregate (any state > 0 — for map/UI)
+	AssistedPercent float64 `json:"assistedPercent"`
 }
 
 // DriveSummary is a lighter version of Drive without full point data (for list views).
@@ -61,13 +73,25 @@ type DriveSummary struct {
 	StartPoint  *[2]float64 `json:"startPoint"`
 	EndPoint    *[2]float64 `json:"endPoint"`
 	Tags        []string    `json:"tags,omitempty"`
-	// FSD analytics summary
+	// FSD analytics summary (state=1 only)
 	FSDEngagedMs      int64   `json:"fsdEngagedMs"`
 	FSDDisengagements int     `json:"fsdDisengagements"`
 	FSDAccelPushes    int     `json:"fsdAccelPushes"`
 	FSDPercent        float64 `json:"fsdPercent"`
 	FSDDistanceKm     float64 `json:"fsdDistanceKm"`
 	FSDDistanceMi     float64 `json:"fsdDistanceMi"`
+	// Autosteer (state=2)
+	AutosteerEngagedMs  int64   `json:"autosteerEngagedMs"`
+	AutosteerPercent    float64 `json:"autosteerPercent"`
+	AutosteerDistanceKm float64 `json:"autosteerDistanceKm"`
+	AutosteerDistanceMi float64 `json:"autosteerDistanceMi"`
+	// TACC (state=3)
+	TACCEngagedMs  int64   `json:"taccEngagedMs"`
+	TACCPercent    float64 `json:"taccPercent"`
+	TACCDistanceKm float64 `json:"taccDistanceKm"`
+	TACCDistanceMi float64 `json:"taccDistanceMi"`
+	// Assisted aggregate (any > 0)
+	AssistedPercent float64 `json:"assistedPercent"`
 }
 
 // driveGapMs is the time gap threshold to split clips into separate drives (5 minutes).
@@ -446,12 +470,21 @@ func GroupSummaries(routes []Route) []DriveSummary {
 			MaxSpeedKmh:       d.MaxSpeedKmh,
 			ClipCount:         d.ClipCount,
 			PointCount:        d.PointCount,
-			FSDEngagedMs:      d.FSDEngagedMs,
-			FSDDisengagements: d.FSDDisengagements,
-			FSDAccelPushes:    d.FSDAccelPushes,
-			FSDPercent:        d.FSDPercent,
-			FSDDistanceKm:     d.FSDDistanceKm,
-			FSDDistanceMi:     d.FSDDistanceMi,
+			FSDEngagedMs:        d.FSDEngagedMs,
+			FSDDisengagements:   d.FSDDisengagements,
+			FSDAccelPushes:      d.FSDAccelPushes,
+			FSDPercent:          d.FSDPercent,
+			FSDDistanceKm:       d.FSDDistanceKm,
+			FSDDistanceMi:       d.FSDDistanceMi,
+			AutosteerEngagedMs:  d.AutosteerEngagedMs,
+			AutosteerPercent:    d.AutosteerPercent,
+			AutosteerDistanceKm: d.AutosteerDistanceKm,
+			AutosteerDistanceMi: d.AutosteerDistanceMi,
+			TACCEngagedMs:       d.TACCEngagedMs,
+			TACCPercent:         d.TACCPercent,
+			TACCDistanceKm:      d.TACCDistanceKm,
+			TACCDistanceMi:      d.TACCDistanceMi,
+			AssistedPercent:     d.AssistedPercent,
 		}
 		if len(d.Points) > 0 {
 			start := [2]float64{d.Points[0][0], d.Points[0][1]}
@@ -590,23 +623,29 @@ func buildDriveStats(clips []timedRoute, idx int) Drive {
 		}
 	}
 
-	// Compute FSD analytics
+	// Compute autopilot analytics — split by mode (FSD=1, Autosteer=2, TACC=3)
 	var fsdEngagedMs int64
 	var fsdDisengagements int
 	var fsdAccelPushes int
 	var fsdDistanceM float64
+	var autosteerEngagedMs int64
+	var autosteerDistanceM float64
+	var taccEngagedMs int64
+	var taccDistanceM float64
+	var assistedDistanceM float64
 	var fsdEvents []FSDEvent
 
 	if hasFSDData && len(allPoints) > 1 {
-		// Track FSD engagement transitions.
+		// Track engagement transitions.
 		//
-		// Disengagement: transition from engaged (>0) to off (0), BUT not counted
+		// Disengagement: transition from FSD engaged (state=1) to off (0), BUT not counted
 		// if the car enters Park within 2 seconds — that means FSD completed a
 		// parking maneuver (AutoPark / Smart Summon) and wasn't overridden by the driver.
 		//
 		// Accel press: pedal position rises above 1% while FSD is active, then
 		// returns to 0%. Tesla does not record FSD-commanded pedal input, so any
 		// reading > 0% while autopilot is active is always the human driver.
+		// Disengagements and accel pushes are only tracked for FSD (state=1).
 		var inAccelPress bool
 		var accelPressLat, accelPressLng float64
 		var fsdEngageTimeMs float64 // timestamp when FSD was last engaged (for grace period)
@@ -621,16 +660,17 @@ func buildDriveStats(clips []timedRoute, idx int) Drive {
 			dt := cur.timeMs - prev.timeMs
 			d := haversineM(prev.lat, prev.lng, cur.lat, cur.lng)
 
-			prevEngaged := prev.apState != AutopilotOff
+			prevFSD := prev.apState == AutopilotFSD
+			curFSD := cur.apState == AutopilotFSD
 			curEngaged := cur.apState != AutopilotOff
 
-			// Resolve any pending disengagement
+			// Resolve any pending FSD disengagement
 			if pendingDisengage {
 				timeSince := cur.timeMs - pendingDisengageTimeMs
 				if cur.gear == GearPark && timeSince <= 2000.0 {
 					// FSD parked the car — not a driver disengagement
 					pendingDisengage = false
-				} else if timeSince > 2000.0 || curEngaged {
+				} else if timeSince > 2000.0 || curFSD {
 					// 2-second window passed with no Park, or FSD re-engaged — real disengagement
 					fsdDisengagements++
 					fsdEvents = append(fsdEvents, FSDEvent{Lat: pendingDisengageLat, Lng: pendingDisengageLng, Type: "disengagement"})
@@ -638,20 +678,30 @@ func buildDriveStats(clips []timedRoute, idx int) Drive {
 				}
 			}
 
-			// Track FSD engagement
-			if !prevEngaged && curEngaged {
+			// Track FSD engagement start (state=1 only)
+			if !prevFSD && curFSD {
 				inAccelPress = false
 				fsdEngageTimeMs = cur.timeMs
 			}
 
-			// Count engaged time and distance
+			// Count engaged time and distance by mode
 			if curEngaged {
-				fsdEngagedMs += int64(dt)
-				fsdDistanceM += d
+				assistedDistanceM += d
+				switch cur.apState {
+				case AutopilotFSD:
+					fsdEngagedMs += int64(dt)
+					fsdDistanceM += d
+				case AutopilotAutosteer:
+					autosteerEngagedMs += int64(dt)
+					autosteerDistanceM += d
+				case AutopilotTACC:
+					taccEngagedMs += int64(dt)
+					taccDistanceM += d
+				}
 			}
 
-			// Detect disengagement — defer counting until we know if Park follows
-			if prevEngaged && !curEngaged {
+			// Detect FSD disengagement — defer counting until we know if Park follows
+			if prevFSD && !curFSD {
 				pendingDisengage = true
 				pendingDisengageTimeMs = cur.timeMs
 				pendingDisengageLat = cur.lat
@@ -666,10 +716,10 @@ func buildDriveStats(clips []timedRoute, idx int) Drive {
 				accelPct *= 100.0
 			}
 
-			// Detect start of a human accelerator press while FSD is active.
+			// Detect start of a human accelerator press while FSD is active (state=1 only).
 			// Skip presses within 3 seconds of FSD engagement — the driver's
 			// foot is often still on the pedal when they activate autopilot.
-			if curEngaged && !inAccelPress && accelPct > 1.0 && (cur.timeMs-fsdEngageTimeMs) >= 3000.0 {
+			if curFSD && !inAccelPress && accelPct > 1.0 && (cur.timeMs-fsdEngageTimeMs) >= 3000.0 {
 				inAccelPress = true
 				accelPressLat = cur.lat
 				accelPressLng = cur.lng
@@ -683,7 +733,7 @@ func buildDriveStats(clips []timedRoute, idx int) Drive {
 			}
 		}
 
-		// Flush any disengagement still pending at the end of the drive.
+		// Flush any FSD disengagement still pending at the end of the drive.
 		// If the last point is Park the car was parked by FSD; otherwise count it.
 		if pendingDisengage && len(allPoints) > 0 {
 			if allPoints[len(allPoints)-1].gear != GearPark {
@@ -694,9 +744,12 @@ func buildDriveStats(clips []timedRoute, idx int) Drive {
 	}
 
 	durationMs := endTime.Sub(startTime).Milliseconds()
-	var fsdPercent float64
+	var fsdPercent, autosteerPercent, taccPercent, assistedPercent float64
 	if totalDistanceM > 0 {
 		fsdPercent = math.Round(fsdDistanceM/totalDistanceM*1000) / 10
+		autosteerPercent = math.Round(autosteerDistanceM/totalDistanceM*1000) / 10
+		taccPercent = math.Round(taccDistanceM/totalDistanceM*1000) / 10
+		assistedPercent = math.Round(assistedDistanceM/totalDistanceM*1000) / 10
 	}
 
 	var fsdStateResult []int
@@ -705,28 +758,37 @@ func buildDriveStats(clips []timedRoute, idx int) Drive {
 	}
 
 	return Drive{
-		ID:                idx,
-		Date:              firstClip.Date,
-		StartTime:         startTime.Format("2006-01-02T15:04:05"),
-		EndTime:           endTime.Format("2006-01-02T15:04:05"),
-		DurationMs:        durationMs,
-		DistanceMi:        math.Round(totalDistanceM/1609.344*100) / 100,
-		DistanceKm:        math.Round(totalDistanceM/1000*100) / 100,
-		AvgSpeedMph:       math.Round(avgSpeedMps*2.23694*100) / 100,
-		MaxSpeedMph:       math.Round(maxSpeedMps*2.23694*100) / 100,
-		AvgSpeedKmh:       math.Round(avgSpeedMps*3.6*100) / 100,
-		MaxSpeedKmh:       math.Round(maxSpeedMps*3.6*100) / 100,
-		ClipCount:         len(clips),
-		PointCount:        len(allPoints),
-		Points:            pointData,
-		FSDStates:         fsdStateResult,
-		FSDEvents:         fsdEvents,
-		FSDEngagedMs:      fsdEngagedMs,
-		FSDDisengagements: fsdDisengagements,
-		FSDAccelPushes:    fsdAccelPushes,
-		FSDPercent:        fsdPercent,
-		FSDDistanceKm:     math.Round(fsdDistanceM/1000*100) / 100,
-		FSDDistanceMi:     math.Round(fsdDistanceM/1609.344*100) / 100,
+		ID:                  idx,
+		Date:                firstClip.Date,
+		StartTime:           startTime.Format("2006-01-02T15:04:05"),
+		EndTime:             endTime.Format("2006-01-02T15:04:05"),
+		DurationMs:          durationMs,
+		DistanceMi:          math.Round(totalDistanceM/1609.344*100) / 100,
+		DistanceKm:          math.Round(totalDistanceM/1000*100) / 100,
+		AvgSpeedMph:         math.Round(avgSpeedMps*2.23694*100) / 100,
+		MaxSpeedMph:         math.Round(maxSpeedMps*2.23694*100) / 100,
+		AvgSpeedKmh:         math.Round(avgSpeedMps*3.6*100) / 100,
+		MaxSpeedKmh:         math.Round(maxSpeedMps*3.6*100) / 100,
+		ClipCount:           len(clips),
+		PointCount:          len(allPoints),
+		Points:              pointData,
+		FSDStates:           fsdStateResult,
+		FSDEvents:           fsdEvents,
+		FSDEngagedMs:        fsdEngagedMs,
+		FSDDisengagements:   fsdDisengagements,
+		FSDAccelPushes:      fsdAccelPushes,
+		FSDPercent:          fsdPercent,
+		FSDDistanceKm:       math.Round(fsdDistanceM/1000*100) / 100,
+		FSDDistanceMi:       math.Round(fsdDistanceM/1609.344*100) / 100,
+		AutosteerEngagedMs:  autosteerEngagedMs,
+		AutosteerPercent:    autosteerPercent,
+		AutosteerDistanceKm: math.Round(autosteerDistanceM/1000*100) / 100,
+		AutosteerDistanceMi: math.Round(autosteerDistanceM/1609.344*100) / 100,
+		TACCEngagedMs:       taccEngagedMs,
+		TACCPercent:         taccPercent,
+		TACCDistanceKm:      math.Round(taccDistanceM/1000*100) / 100,
+		TACCDistanceMi:      math.Round(taccDistanceM/1609.344*100) / 100,
+		AssistedPercent:     assistedPercent,
 	}
 }
 

@@ -511,6 +511,9 @@ func (dh *DriveHandlers) driveStats(w http.ResponseWriter, r *http.Request) {
 	var totalFSDEngagedMs int64
 	var totalFSDDistKm, totalFSDDistMi float64
 	var totalDisengagements, totalAccelPushes int
+	var totalAutosteerEngagedMs, totalTACCEngagedMs int64
+	var totalAutosteerDistKm, totalAutosteerDistMi float64
+	var totalTACCDistKm, totalTACCDistMi float64
 	for _, d := range allDrives {
 		totalDistKm += d.DistanceKm
 		totalDistMi += d.DistanceMi
@@ -520,6 +523,12 @@ func (dh *DriveHandlers) driveStats(w http.ResponseWriter, r *http.Request) {
 		totalFSDDistMi += d.FSDDistanceMi
 		totalDisengagements += d.FSDDisengagements
 		totalAccelPushes += d.FSDAccelPushes
+		totalAutosteerEngagedMs += d.AutosteerEngagedMs
+		totalAutosteerDistKm += d.AutosteerDistanceKm
+		totalAutosteerDistMi += d.AutosteerDistanceMi
+		totalTACCEngagedMs += d.TACCEngagedMs
+		totalTACCDistKm += d.TACCDistanceKm
+		totalTACCDistMi += d.TACCDistanceMi
 	}
 
 	var fsdPercent float64
@@ -527,19 +536,33 @@ func (dh *DriveHandlers) driveStats(w http.ResponseWriter, r *http.Request) {
 		fsdPercent = math.Round(totalFSDDistKm/totalDistKm*1000) / 10
 	}
 
+	// Assisted = FSD + Autosteer + TACC
+	totalAssistedDistKm := totalFSDDistKm + totalAutosteerDistKm + totalTACCDistKm
+	var assistedPercent float64
+	if totalDistKm > 0 {
+		assistedPercent = math.Round(totalAssistedDistKm/totalDistKm*1000) / 10
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"drives_count":       len(allDrives),
-		"routes_count":       len(routes),
-		"processed_count":    dh.store.ProcessedCount(),
-		"total_distance_km":  math.Round(totalDistKm*100) / 100,
-		"total_distance_mi":  math.Round(totalDistMi*100) / 100,
-		"total_duration_ms":  totalDurationMs,
-		"fsd_engaged_ms":     totalFSDEngagedMs,
-		"fsd_distance_km":    math.Round(totalFSDDistKm*100) / 100,
-		"fsd_distance_mi":    math.Round(totalFSDDistMi*100) / 100,
-		"fsd_percent":        fsdPercent,
-		"fsd_disengagements": totalDisengagements,
-		"fsd_accel_pushes":   totalAccelPushes,
+		"drives_count":            len(allDrives),
+		"routes_count":            len(routes),
+		"processed_count":         dh.store.ProcessedCount(),
+		"total_distance_km":       math.Round(totalDistKm*100) / 100,
+		"total_distance_mi":       math.Round(totalDistMi*100) / 100,
+		"total_duration_ms":       totalDurationMs,
+		"fsd_engaged_ms":          totalFSDEngagedMs,
+		"fsd_distance_km":         math.Round(totalFSDDistKm*100) / 100,
+		"fsd_distance_mi":         math.Round(totalFSDDistMi*100) / 100,
+		"fsd_percent":             fsdPercent,
+		"fsd_disengagements":      totalDisengagements,
+		"fsd_accel_pushes":        totalAccelPushes,
+		"autosteer_engaged_ms":    totalAutosteerEngagedMs,
+		"autosteer_distance_km":   math.Round(totalAutosteerDistKm*100) / 100,
+		"autosteer_distance_mi":   math.Round(totalAutosteerDistMi*100) / 100,
+		"tacc_engaged_ms":         totalTACCEngagedMs,
+		"tacc_distance_km":        math.Round(totalTACCDistKm*100) / 100,
+		"tacc_distance_mi":        math.Round(totalTACCDistMi*100) / 100,
+		"assisted_percent":        assistedPercent,
 	})
 }
 
@@ -579,10 +602,12 @@ func (dh *DriveHandlers) fsdAnalytics(w http.ResponseWriter, r *http.Request) {
 		periodDrives = append(periodDrives, d)
 	}
 
-	// Aggregate stats
+	// Aggregate stats (FSD = state 1 only for analytics)
 	var totalDurationMs, fsdEngagedMs int64
 	var totalDistKm, totalDistMi, fsdDistKm, fsdDistMi float64
 	var disengagements, accelPushes, fsdSessions int
+	var autosteerEngagedMs, taccEngagedMs int64
+	var autosteerDistKm, autosteerDistMi, taccDistKm, taccDistMi float64
 
 	// Daily breakdown
 	type dayStats struct {
@@ -612,6 +637,12 @@ func (dh *DriveHandlers) fsdAnalytics(w http.ResponseWriter, r *http.Request) {
 		fsdDistMi += d.FSDDistanceMi
 		disengagements += d.FSDDisengagements
 		accelPushes += d.FSDAccelPushes
+		autosteerEngagedMs += d.AutosteerEngagedMs
+		autosteerDistKm += d.AutosteerDistanceKm
+		autosteerDistMi += d.AutosteerDistanceMi
+		taccEngagedMs += d.TACCEngagedMs
+		taccDistKm += d.TACCDistanceKm
+		taccDistMi += d.TACCDistanceMi
 		if d.FSDEngagedMs > 0 {
 			fsdSessions++
 		}
@@ -726,6 +757,13 @@ func (dh *DriveHandlers) fsdAnalytics(w http.ResponseWriter, r *http.Request) {
 		avgAccelPushes = math.Round(float64(accelPushes)/float64(fsdSessions)*100) / 100
 	}
 
+	// Assisted totals
+	totalAssistedDistKm := fsdDistKm + autosteerDistKm + taccDistKm
+	var assistedPercent float64
+	if totalDistKm > 0 {
+		assistedPercent = math.Round(totalAssistedDistKm/totalDistKm*1000) / 10
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"period":                       period,
 		"period_start":                 periodStart.Format("2006-01-02"),
@@ -748,5 +786,12 @@ func (dh *DriveHandlers) fsdAnalytics(w http.ResponseWriter, r *http.Request) {
 		"fsd_time_formatted":           fsdTimeFormatted,
 		"avg_disengagements_per_drive":  avgDisengagements,
 		"avg_accel_pushes_per_drive":    avgAccelPushes,
+		"autosteer_engaged_ms":         autosteerEngagedMs,
+		"autosteer_distance_km":        math.Round(autosteerDistKm*100) / 100,
+		"autosteer_distance_mi":        math.Round(autosteerDistMi*100) / 100,
+		"tacc_engaged_ms":              taccEngagedMs,
+		"tacc_distance_km":             math.Round(taccDistKm*100) / 100,
+		"tacc_distance_mi":             math.Round(taccDistMi*100) / 100,
+		"assisted_percent":             assistedPercent,
 	})
 }

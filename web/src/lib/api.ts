@@ -49,6 +49,13 @@ export interface DriveStats {
   fsd_percent: number
   fsd_disengagements: number
   fsd_accel_pushes: number
+  autosteer_engaged_ms: number
+  autosteer_distance_km: number
+  autosteer_distance_mi: number
+  tacc_engaged_ms: number
+  tacc_distance_km: number
+  tacc_distance_mi: number
+  assisted_percent: number
 }
 
 export interface DriveStatus {
@@ -131,6 +138,13 @@ export interface FSDAnalytics {
   fsd_time_formatted: string
   avg_disengagements_per_drive: number
   avg_accel_pushes_per_drive: number
+  autosteer_engaged_ms: number
+  autosteer_distance_km: number
+  autosteer_distance_mi: number
+  tacc_engaged_ms: number
+  tacc_distance_km: number
+  tacc_distance_mi: number
+  assisted_percent: number
 }
 
 export interface TelemetryFrame {

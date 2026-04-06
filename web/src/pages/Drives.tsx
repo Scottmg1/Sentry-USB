@@ -35,6 +35,15 @@ interface DriveSummary {
   fsdPercent: number
   fsdDistanceKm: number
   fsdDistanceMi: number
+  autosteerEngagedMs: number
+  autosteerPercent: number
+  autosteerDistanceKm: number
+  autosteerDistanceMi: number
+  taccEngagedMs: number
+  taccPercent: number
+  taccDistanceKm: number
+  taccDistanceMi: number
+  assistedPercent: number
 }
 
 interface FSDEventPoint {
@@ -68,6 +77,13 @@ interface DriveStats {
   fsd_percent: number
   fsd_disengagements: number
   fsd_accel_pushes: number
+  autosteer_engaged_ms: number
+  autosteer_distance_km: number
+  autosteer_distance_mi: number
+  tacc_engaged_ms: number
+  tacc_distance_km: number
+  tacc_distance_mi: number
+  assisted_percent: number
 }
 
 // ── Helpers ────────────────────────────────────────────────────────
@@ -77,6 +93,19 @@ function formatDuration(ms: number) {
   const h = Math.floor(totalMin / 60)
   const m = totalMin % 60
   return h > 0 ? `${h}h ${m}m` : `${m} min`
+}
+
+/** Returns the label for the dominant assisted-driving mode in a drive */
+function assistedModeLabel(d: { fsdPercent: number; autosteerPercent: number; taccPercent: number }): string {
+  if (d.fsdPercent >= d.autosteerPercent && d.fsdPercent >= d.taccPercent && d.fsdPercent > 0) return "FSD"
+  if (d.autosteerPercent >= d.fsdPercent && d.autosteerPercent >= d.taccPercent && d.autosteerPercent > 0) return "Autopilot"
+  if (d.taccPercent > 0) return "TACC"
+  return ""
+}
+
+/** Returns total assisted percent (FSD + Autopilot + TACC) */
+function totalAssistedPercent(d: { fsdPercent: number; autosteerPercent: number; taccPercent: number; assistedPercent: number }): number {
+  return d.assistedPercent || 0
 }
 
 function formatTime(iso: string) {
@@ -594,7 +623,11 @@ export default function Drives() {
           {/* FSD Analytics */}
           {stats && stats.fsd_engaged_ms > 0 && (
             <Link to="/fsd" className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400 transition-colors hover:bg-emerald-500/20">
-              <Zap className="h-3 w-3" /> FSD {stats.fsd_percent}% <ChevronRight className="h-3 w-3 opacity-50" />
+              <Zap className="h-3 w-3" /> FSD {stats.fsd_percent}%
+              {(stats.autosteer_engaged_ms > 0 || stats.tacc_engaged_ms > 0) && (
+                <span className="text-slate-500 text-[10px] ml-0.5">({stats.assisted_percent}% assisted)</span>
+              )}
+              <ChevronRight className="h-3 w-3 opacity-50" />
             </Link>
           )}
           {/* Process dropdown */}
@@ -731,12 +764,12 @@ export default function Drives() {
                           <p className="text-sm font-medium text-slate-200">
                             {formatTime(d.startTime)} — {formatTime(d.endTime)}
                           </p>
-                          {d.fsdPercent > 0 && (
+                          {totalAssistedPercent(d) > 0 && (
                             <span className={cn(
                               "ml-1 shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold",
                               d.fsdPercent >= 95 ? "bg-emerald-500/15 text-emerald-400" : d.fsdPercent >= 50 ? "bg-blue-500/15 text-blue-400" : "bg-slate-700 text-slate-400"
                             )}>
-                              {d.fsdPercent}% FSD
+                              {totalAssistedPercent(d)}% {assistedModeLabel(d) || "Assisted"}
                             </span>
                           )}
                         </div>
@@ -877,12 +910,12 @@ export default function Drives() {
                         <p className="text-sm font-medium text-slate-200">
                           {formatTime(d.startTime)} — {formatTime(d.endTime)}
                         </p>
-                        {d.fsdPercent > 0 && (
+                        {totalAssistedPercent(d) > 0 && (
                           <span className={cn(
                             "ml-1 shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold",
                             d.fsdPercent >= 95 ? "bg-emerald-500/15 text-emerald-400" : d.fsdPercent >= 50 ? "bg-blue-500/15 text-blue-400" : "bg-slate-700 text-slate-400"
                           )}>
-                            {d.fsdPercent}% FSD
+                            {totalAssistedPercent(d)}% {assistedModeLabel(d) || "Assisted"}
                           </span>
                         )}
                       </div>
@@ -1074,13 +1107,27 @@ export default function Drives() {
                 <Stat label="Max" value={maxSpd(selectedDrive)} highlight />
               </div>
 
-              {/* FSD Stats row */}
-              {selectedDrive.fsdPercent > 0 && (
+              {/* Assisted driving stats row */}
+              {totalAssistedPercent(selectedDrive) > 0 && (
                 <div className="mb-2 flex flex-wrap items-center gap-x-5 gap-y-1 rounded-lg border border-emerald-500/10 bg-emerald-500/5 px-3 py-1.5">
-                  <div className="flex items-center gap-1.5 text-[11px]">
-                    <span className="font-bold text-emerald-400">{selectedDrive.fsdPercent}%</span>
-                    <span className="text-slate-500">FSD</span>
-                  </div>
+                  {selectedDrive.fsdPercent > 0 && (
+                    <div className="flex items-center gap-1.5 text-[11px]">
+                      <span className="font-bold text-emerald-400">{selectedDrive.fsdPercent}%</span>
+                      <span className="text-slate-500">FSD</span>
+                    </div>
+                  )}
+                  {selectedDrive.autosteerPercent > 0 && (
+                    <div className="flex items-center gap-1.5 text-[11px]">
+                      <span className="font-bold text-emerald-400">{selectedDrive.autosteerPercent}%</span>
+                      <span className="text-slate-500">Autopilot</span>
+                    </div>
+                  )}
+                  {selectedDrive.taccPercent > 0 && (
+                    <div className="flex items-center gap-1.5 text-[11px]">
+                      <span className="font-bold text-emerald-400">{selectedDrive.taccPercent}%</span>
+                      <span className="text-slate-500">TACC</span>
+                    </div>
+                  )}
                   {selectedDrive.fsdDisengagements > 0 && (
                     <div className="flex items-center gap-1.5 text-[11px]">
                       <span className="font-bold text-red-400">{selectedDrive.fsdDisengagements}</span>
@@ -1093,10 +1140,15 @@ export default function Drives() {
                       <span className="text-slate-500">Accel Push{selectedDrive.fsdAccelPushes !== 1 ? "es" : ""}</span>
                     </div>
                   )}
-                  <div className="flex items-center gap-1.5 text-[11px]">
-                    <span className="text-slate-500">FSD Dist:</span>
-                    <span className="font-semibold text-emerald-400">{metric ? `${selectedDrive.fsdDistanceKm} km` : `${selectedDrive.fsdDistanceMi} mi`}</span>
-                  </div>
+                  {(selectedDrive.fsdDistanceKm > 0 || selectedDrive.autosteerDistanceKm > 0 || selectedDrive.taccDistanceKm > 0) && (
+                    <div className="flex items-center gap-1.5 text-[11px]">
+                      <span className="text-slate-500">Assisted:</span>
+                      <span className="font-semibold text-emerald-400">{metric
+                        ? `${(selectedDrive.fsdDistanceKm + selectedDrive.autosteerDistanceKm + selectedDrive.taccDistanceKm).toFixed(2)} km`
+                        : `${(selectedDrive.fsdDistanceMi + selectedDrive.autosteerDistanceMi + selectedDrive.taccDistanceMi).toFixed(2)} mi`
+                      }</span>
+                    </div>
+                  )}
                   <div className="ml-auto flex items-center gap-2 text-[10px] text-slate-600">
                     <button
                       onClick={() => setShowFSDMarkers(!showFSDMarkers)}
@@ -1109,7 +1161,7 @@ export default function Drives() {
                       {showFSDMarkers ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
                       Markers
                     </button>
-                    <span className="flex items-center gap-1"><span className="inline-block h-1.5 w-3 rounded-full bg-emerald-500" /> FSD</span>
+                    <span className="flex items-center gap-1"><span className="inline-block h-1.5 w-3 rounded-full bg-emerald-500" /> Assisted</span>
                     <span className="flex items-center gap-1"><span className="inline-block h-1.5 w-3 rounded-full bg-blue-500" /> Manual</span>
                   </div>
                 </div>
