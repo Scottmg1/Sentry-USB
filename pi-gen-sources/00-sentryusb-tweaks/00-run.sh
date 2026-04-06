@@ -43,7 +43,7 @@ echo "dtoverlay=dwc2" >> "${ROOTFS_DIR}/boot/firmware/config.txt"
 REPO="Scottmg1/Sentry-USB"
 case "$(dpkg --print-architecture 2>/dev/null || echo arm64)" in
     arm64|aarch64) BINARY_SUFFIX="linux-arm64" ;;
-    armhf|armv7l)  BINARY_SUFFIX="linux-armv7" ;;
+    armhf)         BINARY_SUFFIX="linux-armv6" ;;
     *)             BINARY_SUFFIX="linux-arm64" ;;
 esac
 BINARY_URL="https://github.com/${REPO}/releases/latest/download/sentryusb-${BINARY_SUFFIX}"

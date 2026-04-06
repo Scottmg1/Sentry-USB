@@ -272,11 +272,7 @@ func (h *handlers) runUpdate(w http.ResponseWriter, r *http.Request) {
 
 		// 2. Build download URL — tag-specific if a version was requested, otherwise latest
 		broadcast("checking", "Checking for release...")
-		arch := runtime.GOARCH
-		suffix := "linux-arm64"
-		if arch == "arm" {
-			suffix = "linux-armv7"
-		}
+		suffix := binarySuffix()
 
 		var downloadURL string
 		if targetVersion != "" {
@@ -605,4 +601,18 @@ func (h *handlers) getVersion(w http.ResponseWriter, r *http.Request) {
 		"arch":    runtime.GOARCH,
 		"os":      runtime.GOOS,
 	})
+}
+
+// binarySuffix returns the release binary suffix for the current platform.
+// On ARM it checks uname -m to distinguish ARMv6 (Pi Zero W) from ARMv7.
+func binarySuffix() string {
+	if runtime.GOARCH == "arm" {
+		if out, err := shell.RunWithTimeout(5*time.Second, "uname", "-m"); err == nil {
+			if strings.TrimSpace(out) == "armv6l" {
+				return "linux-armv6"
+			}
+		}
+		return "linux-armv7"
+	}
+	return "linux-arm64"
 }

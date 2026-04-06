@@ -47,9 +47,9 @@ done
 
 if $BUILD_32BIT; then
     ARCH_LABEL="32-bit (armhf — Pi Zero W)"
-    BINARY_SUFFIX="linux-armv7"
+    BINARY_SUFFIX="linux-armv6"
     GO_ARCH="arm"
-    GO_ARM="7"
+    GO_ARM="6"
     CONFIG_FILE="pi-gen-config-32bit"
 else
     ARCH_LABEL="64-bit (arm64 — Pi 3/4/5/Zero 2)"

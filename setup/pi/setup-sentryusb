@@ -434,7 +434,8 @@ function update_sentryusb_binary () {
 
   case "$(uname -m)" in
     aarch64) BINARY_SUFFIX="linux-arm64" ;;
-    armv7l|armv6l) BINARY_SUFFIX="linux-armv7" ;;
+    armv7l) BINARY_SUFFIX="linux-armv7" ;;
+    armv6l) BINARY_SUFFIX="linux-armv6" ;;
     x86_64) BINARY_SUFFIX="linux-amd64" ;;
     *)
       setup_progress "WARNING: Unsupported architecture $(uname -m), skipping binary update"
@@ -526,7 +527,7 @@ function fix_cmdline_txt_modules_load () {
   if [ ! -f "$CMDLINE_PATH" ]
   then
     setup_progress "cmdline.txt does not exist, skipping"
-    return
+    return 1
   fi
   # Extract the modules-load portion of the command line.
   # Note that this not handle spaces in the argument.
@@ -538,7 +539,7 @@ function fix_cmdline_txt_modules_load () {
   elif [[ "$curparam" == *"dwc2"* ]] && [[ "$curparam" == *"g_ether"* ]]
   then
     setup_progress "cmdline.txt is up to date"
-    return
+    return 1
   fi
 
   # replace the current parameter
@@ -547,6 +548,8 @@ function fix_cmdline_txt_modules_load () {
   sed -i "s/${curparam}/ modules-load=dwc2,g_ether/" "$CMDLINE_PATH"
   setup_progress "to:"
   setup_progress "$(cat "$CMDLINE_PATH")"
+  # return 0 to signal that cmdline.txt was changed and a reboot is needed
+  return 0
 }
 
 # Disable UAS for USB drives known to have issues with the UAS driver on
@@ -1597,6 +1600,16 @@ update_package_index
 # set time zone so we get decent timestamps in the rest of the setup log
 set_timezone
 
+# Ensure modules-load=dwc2,g_ether is in cmdline.txt before verifying
+# the UDC. Without this, the dwc2 kernel module may not load on boot
+# (especially on Pi Zero W) and the UDC check will fail.
+if fix_cmdline_txt_modules_load
+then
+  setup_progress "rebooting to apply cmdline.txt modules-load change"
+  reboot
+  exit 0
+fi
+
 # Flash for stage 2 headless (verify requested configuration)
 headless_setup_progress_flash 2
 
@@ -1618,7 +1631,6 @@ install_avahi_service
 
 pushd ~
 
-fix_cmdline_txt_modules_load
 fix_uas_quirks
 
 # Flash for stage 4 headless (Create backing files)
