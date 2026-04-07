@@ -40,7 +40,6 @@ function ActionButton({
   label,
   description,
   variant = "default",
-  compact = false,
   onClick,
   successMessage = "Done!",
   errorMessage = "Failed",
@@ -49,7 +48,6 @@ function ActionButton({
   label: string
   description: string
   variant?: "default" | "danger"
-  compact?: boolean
   onClick: () => void | string | Promise<void | string>
   successMessage?: string
   errorMessage?: string
@@ -82,15 +80,11 @@ function ActionButton({
     <button
       onClick={handleClick}
       disabled={state === "loading"}
-      className={cn(
-        "glass-card glass-card-hover flex items-start gap-3 text-left transition-all disabled:opacity-70",
-        compact ? "p-3" : "p-4"
-      )}
+      className="glass-card glass-card-hover flex items-start gap-3 p-4 text-left transition-all disabled:opacity-70"
     >
       <div
         className={cn(
-          "flex shrink-0 items-center justify-center rounded-xl transition-colors",
-          compact ? "h-8 w-8" : "h-10 w-10",
+          "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors",
           state === "loading" ? "bg-blue-500/15 text-blue-400" :
             state === "success" ? "bg-emerald-500/15 text-emerald-400" :
               state === "error" ? "bg-red-500/15 text-red-400" :
@@ -100,13 +94,13 @@ function ActionButton({
         )}
       >
         {state === "loading" ? (
-          <Loader2 className={compact ? "h-4 w-4 animate-spin" : "h-5 w-5 animate-spin"} />
+          <Loader2 className="h-5 w-5 animate-spin" />
         ) : state === "success" ? (
-          <CheckCircle className={compact ? "h-4 w-4" : "h-5 w-5"} />
+          <CheckCircle className="h-5 w-5" />
         ) : state === "error" ? (
-          <AlertCircle className={compact ? "h-4 w-4" : "h-5 w-5"} />
+          <AlertCircle className="h-5 w-5" />
         ) : (
-          <Icon className={compact ? "h-4 w-4" : "h-5 w-5"} />
+          <Icon className="h-5 w-5" />
         )}
       </div>
       <div>
@@ -166,23 +160,23 @@ function UsbDriveToggle() {
     <button
       onClick={handleToggle}
       disabled={state === "loading"}
-      className="glass-card glass-card-hover flex items-start gap-3 p-3 text-left transition-all disabled:opacity-70"
+      className="glass-card glass-card-hover flex items-start gap-3 p-4 text-left transition-all disabled:opacity-70"
     >
       <div className={cn(
-        "flex h-8 w-8 shrink-0 items-center justify-center rounded-xl transition-colors",
+        "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors",
         state === "loading" ? "bg-blue-500/15 text-blue-400" :
           state === "success" ? "bg-emerald-500/15 text-emerald-400" :
             state === "error" ? "bg-red-500/15 text-red-400" :
               "bg-blue-500/15 text-blue-400"
       )}>
         {state === "loading" ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
+          <Loader2 className="h-5 w-5 animate-spin" />
         ) : state === "success" ? (
-          <CheckCircle className="h-4 w-4" />
+          <CheckCircle className="h-5 w-5" />
         ) : state === "error" ? (
-          <AlertCircle className="h-4 w-4" />
+          <AlertCircle className="h-5 w-5" />
         ) : (
-          <Unplug className="h-4 w-4" />
+          <Unplug className="h-5 w-5" />
         )}
       </div>
       <div>
@@ -333,7 +327,7 @@ function BlePairButton() {
     <button
       onClick={bleState === "idle" ? handlePair : bleState === "paired" ? handlePairedClick : bleState === "error" ? handleReset : undefined}
       disabled={isActive}
-      className="glass-card glass-card-hover max-w-sm flex items-start gap-3 p-3 text-left transition-all disabled:opacity-70"
+      className="glass-card glass-card-hover flex items-start gap-3 p-4 text-left transition-all disabled:opacity-70"
     >
       <div
         className={cn(
@@ -457,7 +451,7 @@ function MobileNotificationsSection() {
   }
 
   return (
-    <div className="glass-card max-w-sm overflow-hidden">
+    <div className="glass-card overflow-hidden">
       <div className="flex items-center gap-3 border-b border-white/5 px-3 py-2">
         <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-violet-500/15">
           <Bell className="h-3.5 w-3.5 text-violet-400" />
@@ -572,10 +566,10 @@ function HealthCheckButton() {
       <button
         onClick={runCheck}
         disabled={loading}
-        className="glass-card glass-card-hover flex items-start gap-3 p-3 text-left transition-all disabled:opacity-70"
+        className="glass-card glass-card-hover flex items-start gap-3 p-4 text-left transition-all disabled:opacity-70"
       >
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-blue-500/15 text-blue-400">
-          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Stethoscope className="h-4 w-4" />}
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/15 text-blue-400">
+          {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Stethoscope className="h-5 w-5" />}
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-slate-200">{loading ? "Running..." : "Health Check"}</p>
@@ -594,13 +588,13 @@ function HealthCheckButton() {
       <button
         onClick={runCheck}
         disabled={loading}
-        className="glass-card glass-card-hover flex items-start gap-3 p-3 text-left transition-all disabled:opacity-70"
+        className="glass-card glass-card-hover flex items-start gap-3 p-4 text-left transition-all disabled:opacity-70"
       >
         <div className={cn(
-          "flex h-8 w-8 shrink-0 items-center justify-center rounded-xl",
+          "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
           failCount > 0 ? "bg-red-500/15 text-red-400" : warnCount > 0 ? "bg-amber-500/15 text-amber-400" : "bg-emerald-500/15 text-emerald-400"
         )}>
-          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Stethoscope className="h-4 w-4" />}
+          {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Stethoscope className="h-5 w-5" />}
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-slate-200">{loading ? "Running..." : "Health Check"}</p>
@@ -743,13 +737,13 @@ function SpeedTestButton() {
   return (
     <button
       onClick={running ? stopTest : startTest}
-      className="glass-card glass-card-hover flex items-start gap-3 p-3 text-left transition-all"
+      className="glass-card glass-card-hover flex items-start gap-3 p-4 text-left transition-all"
     >
       <div className={cn(
-        "flex h-8 w-8 shrink-0 items-center justify-center rounded-xl transition-colors",
+        "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors",
         running ? "bg-amber-500/15 text-amber-400" : "bg-blue-500/15 text-blue-400"
       )}>
-        {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Gauge className="h-4 w-4" />}
+        {running ? <Loader2 className="h-5 w-5 animate-spin" /> : <Gauge className="h-5 w-5" />}
       </div>
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-slate-200">
@@ -878,7 +872,7 @@ function KeepAwakePreference() {
   const { mode, updateMode } = useKeepAwake()
 
   return (
-    <div className="glass-card w-56 overflow-hidden p-3">
+    <div className="glass-card overflow-hidden p-3">
       <div className="flex items-center gap-3 mb-2">
         <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-rose-500/15">
           <HeartPulse className="h-3.5 w-3.5 text-rose-400" />
@@ -963,7 +957,7 @@ function AwayModeControl() {
   }
 
   return (
-    <div className="glass-card max-w-xs overflow-hidden p-3">
+    <div className="glass-card overflow-hidden p-3">
       <div className="flex items-center gap-3 mb-2">
         <div className={cn(
           "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg",
@@ -1231,7 +1225,7 @@ function ConfigBackupSection() {
   }
 
   return (
-    <div className="glass-card max-w-xs overflow-hidden p-3">
+    <div className="glass-card overflow-hidden p-3">
       <div className="flex items-center gap-3 mb-2">
         <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-500/15">
           <Save className="h-3.5 w-3.5 text-blue-400" />
@@ -1713,14 +1707,13 @@ export default function Settings() {
       {/* Quick Actions — 3x2 */}
       <div>
         <p className="section-label mb-2 px-1">Quick Actions</p>
-        <div className="grid max-w-lg grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           <UsbDriveToggle />
           <ActionButton
             icon={RefreshCw}
             label="Archive Sync"
             description="Start archiving clips now"
             successMessage="Archive sync started"
-            compact
             onClick={async () => {
               const res = await fetch("/api/system/trigger-sync", { method: "POST" })
               if (!res.ok) throw new Error("Failed to trigger sync")
@@ -1733,14 +1726,12 @@ export default function Settings() {
             label={confirmReboot ? "Confirm Reboot" : "Restart Pi"}
             description={confirmReboot ? "Press again to reboot" : "Reboot the device"}
             variant={confirmReboot ? "danger" : "default"}
-            compact
             onClick={handleReboot}
           />
           <ActionButton
             icon={SettingsIcon}
             label="Raw Config"
             description="View/edit config file"
-            compact
             onClick={async () => {
               const res = await fetch("/api/setup/config")
               if (!res.ok) throw new Error("Failed to load config")
@@ -1756,7 +1747,7 @@ export default function Settings() {
       {/* Preferences */}
       <div>
         <p className="section-label mb-2 px-1">Preferences</p>
-        <div className="flex flex-wrap gap-2">
+        <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
           <KeepAwakePreference />
           <AwayModeControl />
           <ConfigBackupSection />
@@ -1766,7 +1757,7 @@ export default function Settings() {
       {/* Connections */}
       <div>
         <p className="section-label mb-2 px-1">Connections</p>
-        <div className="flex flex-wrap gap-2">
+        <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
           <MobileNotificationsSection />
           {piConfig?.uses_ble === "yes" && <BlePairButton />}
         </div>
@@ -1774,7 +1765,7 @@ export default function Settings() {
 
       {/* Update banners */}
       {stableUpdate && updateStatus === "idle" && (
-        <div className="glass-card max-w-lg overflow-hidden border border-emerald-500/20 bg-emerald-500/5">
+        <div className="glass-card overflow-hidden border border-emerald-500/20 bg-emerald-500/5">
           <div className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/20">
               <Download className="h-4 w-4 text-emerald-400" />
@@ -1805,7 +1796,7 @@ export default function Settings() {
       )}
 
       {prereleaseUpdate && updateStatus === "idle" && (
-        <div className="glass-card max-w-lg overflow-hidden border border-amber-500/20 bg-amber-500/5">
+        <div className="glass-card overflow-hidden border border-amber-500/20 bg-amber-500/5">
           <div className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-500/20">
               <Download className="h-4 w-4 text-amber-400" />
@@ -1836,7 +1827,7 @@ export default function Settings() {
       )}
 
       {/* Update check */}
-      <div className="glass-card max-w-lg overflow-hidden">
+      <div className="glass-card overflow-hidden">
         <div className="flex items-center gap-3 p-3">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/20">
             {updateStatus === "error" ? (
@@ -1930,7 +1921,7 @@ export default function Settings() {
       </div>
 
       {/* About */}
-      <div className="glass-card max-w-lg overflow-hidden p-3">
+      <div className="glass-card overflow-hidden p-3">
         <div className="flex items-center gap-3">
           <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-500/10">
             <Shield className="h-3.5 w-3.5 text-slate-400" />
