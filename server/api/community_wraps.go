@@ -78,6 +78,33 @@ func (h *handlers) communityWrapsThumbnail(w http.ResponseWriter, r *http.Reques
 	io.Copy(w, resp.Body)
 }
 
+// GET /api/wraps/preview/{code} — proxy 3D preview image from support server (falls back to thumbnail on server side)
+func (h *handlers) communityWrapsPreview(w http.ResponseWriter, r *http.Request) {
+	code := r.PathValue("code")
+	if !validWrapCode.MatchString(code) {
+		writeError(w, http.StatusBadRequest, "Invalid code")
+		return
+	}
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Get(supportServerURL + "/wraps/preview/" + code)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "Failed to fetch preview")
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		w.WriteHeader(resp.StatusCode)
+		io.Copy(w, resp.Body)
+		return
+	}
+
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	io.Copy(w, resp.Body)
+}
+
 // POST /api/wraps/upload — proxy wrap upload to support server with fingerprint injection
 func (h *handlers) communityWrapsUpload(w http.ResponseWriter, r *http.Request) {
 	// Limit to 2MB to allow for multipart overhead
@@ -123,6 +150,20 @@ func (h *handlers) communityWrapsUpload(w http.ResponseWriter, r *http.Request) 
 
 	writer.WriteField("name", name)
 	writer.WriteField("tesla_model", teslaModel)
+
+	// Forward optional 3D preview image (generated client-side by Godot WASM)
+	previewFile, previewHeader, previewErr := r.FormFile("preview")
+	if previewErr == nil {
+		defer previewFile.Close()
+		previewData, readErr := io.ReadAll(previewFile)
+		if readErr == nil {
+			previewPart, partErr := writer.CreateFormFile("preview", previewHeader.Filename)
+			if partErr == nil {
+				previewPart.Write(previewData)
+			}
+		}
+	}
+
 	writer.Close()
 
 	req, err := http.NewRequest("POST", supportServerURL+"/wraps/upload", &buf)
