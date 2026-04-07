@@ -58,8 +58,6 @@ export function MobileNav({ open, onClose }: MobileNavProps) {
       .catch(() => {})
   }, [])
 
-  const isPrerelease = version ? /[-]/.test(version) : false
-
   if (!open) return null
 
   return (
@@ -84,10 +82,6 @@ export function MobileNav({ open, onClose }: MobileNavProps) {
               {version && (
                 <p className="text-[10px] leading-tight text-slate-600">
                   v{version}
-                  {isPrerelease
-                    ? <span className="ml-1 text-amber-500/70">Pre-release</span>
-                    : <span className="ml-1 text-slate-600">Stable</span>
-                  }
                 </p>
               )}
             </div>
