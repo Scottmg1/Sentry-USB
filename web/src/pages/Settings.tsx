@@ -26,6 +26,7 @@ import {
   Sliders,
   Save,
 } from "lucide-react"
+import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { SetupWizard } from "@/components/setup/SetupWizard"
 import { wsClient } from "@/lib/ws"
@@ -120,6 +121,92 @@ function ActionButton({
         )}>
           {msg || description}
         </p>
+      </div>
+    </button>
+  )
+}
+
+// ─── USB Drive Toggle ──────────────────────────────────────────────────────
+
+function UsbDriveToggle() {
+  const [state, setState] = useState<ActionState>("idle")
+  const [connected, setConnected] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    let mounted = true
+    async function poll() {
+      try {
+        const data = await api.getStatus()
+        if (mounted) setConnected(data.drives_active === "yes")
+      } catch { /* ignore */ }
+    }
+    poll()
+    const id = setInterval(poll, 4000)
+    return () => { mounted = false; clearInterval(id) }
+  }, [])
+
+  async function handleToggle() {
+    if (state === "loading") return
+    setState("loading")
+    try {
+      const res = await fetch("/api/system/toggle-drives", { method: "POST" })
+      if (!res.ok) throw new Error("Failed to toggle drives")
+      setState("success")
+      // Re-fetch status after toggle
+      try {
+        const data = await api.getStatus()
+        setConnected(data.drives_active === "yes")
+      } catch { /* ignore */ }
+      setTimeout(() => setState("idle"), 3000)
+    } catch {
+      setState("error")
+      setTimeout(() => setState("idle"), 3000)
+    }
+  }
+
+  return (
+    <button
+      onClick={handleToggle}
+      disabled={state === "loading"}
+      className="glass-card glass-card-hover flex items-start gap-3 p-3 text-left transition-all disabled:opacity-70"
+    >
+      <div className={cn(
+        "flex h-8 w-8 shrink-0 items-center justify-center rounded-xl transition-colors",
+        state === "loading" ? "bg-blue-500/15 text-blue-400" :
+          state === "success" ? "bg-emerald-500/15 text-emerald-400" :
+            state === "error" ? "bg-red-500/15 text-red-400" :
+              "bg-blue-500/15 text-blue-400"
+      )}>
+        {state === "loading" ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : state === "success" ? (
+          <CheckCircle className="h-4 w-4" />
+        ) : state === "error" ? (
+          <AlertCircle className="h-4 w-4" />
+        ) : (
+          <Unplug className="h-4 w-4" />
+        )}
+      </div>
+      <div>
+        <p className="text-sm font-medium text-slate-200">Toggle USB Drives</p>
+        <div className="mt-0.5 flex items-center gap-1.5">
+          {connected !== null && (
+            <span className={cn(
+              "inline-block h-1.5 w-1.5 rounded-full",
+              connected ? "bg-emerald-400" : "bg-amber-400"
+            )} />
+          )}
+          <p className={cn(
+            "text-xs",
+            state === "success" ? "text-emerald-400" :
+              state === "error" ? "text-red-400" :
+                "text-slate-500"
+          )}>
+            {state === "success" ? "Toggled!" : state === "error" ? "Failed" :
+              connected === null ? "Checking..." :
+                connected ? "Connected" : "Disconnected"}
+          </p>
+        </div>
       </div>
     </button>
   )
@@ -372,22 +459,19 @@ function MobileNotificationsSection() {
   }
 
   return (
-    <div className="glass-card overflow-hidden">
-      <div className="flex items-center gap-3 border-b border-white/5 px-3 py-2.5">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-violet-500/15">
-          <Bell className="h-4 w-4 text-violet-400" />
+    <div className="glass-card max-w-sm overflow-hidden">
+      <div className="flex items-center gap-3 border-b border-white/5 px-3 py-2">
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-violet-500/15">
+          <Bell className="h-3.5 w-3.5 text-violet-400" />
         </div>
-        <div>
-          <h3 className="text-sm font-semibold text-slate-200">Mobile Notifications</h3>
-          <p className="text-xs text-slate-500">Pair your phone for push notifications</p>
-        </div>
+        <h3 className="text-sm font-semibold text-slate-200">Mobile Notifications</h3>
       </div>
-      <div className="p-3 space-y-3">
+      <div className="p-3 space-y-2">
         {/* Generate Code */}
         <div className="flex items-center gap-3">
           {pairingCode ? (
             <div className="flex items-center gap-4">
-              <span className="font-mono text-2xl font-bold tracking-widest text-blue-400">{pairingCode}</span>
+              <span className="font-mono text-xl font-bold tracking-widest text-blue-400">{pairingCode}</span>
               <span className="text-xs text-slate-500">
                 Expires in {Math.floor(countdown / 60)}:{String(countdown % 60).padStart(2, "0")}
               </span>
@@ -396,12 +480,12 @@ function MobileNotificationsSection() {
             <button
               onClick={generateCode}
               disabled={loading}
-              className="rounded-xl bg-blue-500 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-600 disabled:opacity-50"
+              className="rounded-lg bg-blue-500 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-blue-600 disabled:opacity-50"
             >
               {loading ? (
-                <Loader2 className="inline h-4 w-4 animate-spin mr-1.5" />
+                <Loader2 className="inline h-3.5 w-3.5 animate-spin mr-1" />
               ) : null}
-              Generate Pairing Code
+              Generate Code
             </button>
           )}
         </div>
@@ -507,58 +591,86 @@ function HealthCheckButton() {
   const warnCount = report.categories.reduce((n, c) => n + c.items.filter(i => i.status === "warn").length, 0)
 
   return (
-    <div className="glass-card col-span-full overflow-hidden">
-      <div className="flex items-center justify-between border-b border-white/5 px-4 py-3">
-        <div className="flex items-center gap-2">
-          <Stethoscope className={cn("h-5 w-5", failCount > 0 ? "text-red-400" : warnCount > 0 ? "text-amber-400" : "text-emerald-400")} />
-          <span className="text-sm font-semibold text-slate-200">Health Check</span>
-          <span className={cn(
-            "rounded-full px-2 py-0.5 text-xs font-medium",
-            failCount > 0 ? "bg-red-500/15 text-red-400" : warnCount > 0 ? "bg-amber-500/15 text-amber-400" : "bg-emerald-500/15 text-emerald-400"
-          )}>{report.summary}</span>
+    <>
+      {/* Button stays in the grid */}
+      <button
+        onClick={runCheck}
+        disabled={loading}
+        className="glass-card glass-card-hover flex items-start gap-3 p-3 text-left transition-all disabled:opacity-70"
+      >
+        <div className={cn(
+          "flex h-8 w-8 shrink-0 items-center justify-center rounded-xl",
+          failCount > 0 ? "bg-red-500/15 text-red-400" : warnCount > 0 ? "bg-amber-500/15 text-amber-400" : "bg-emerald-500/15 text-emerald-400"
+        )}>
+          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Stethoscope className="h-4 w-4" />}
         </div>
-        <div className="flex gap-2">
-          <button onClick={runCheck} disabled={loading}
-            className="rounded-lg px-3 py-1 text-xs text-slate-400 hover:bg-white/5 hover:text-slate-200 disabled:opacity-50">
-            {loading ? "Running..." : "Re-run"}
-          </button>
-          <button onClick={() => setReport(null)}
-            className="rounded-lg px-3 py-1 text-xs text-slate-500 hover:bg-white/5 hover:text-slate-300">Close</button>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-slate-200">{loading ? "Running..." : "Health Check"}</p>
+          <p className="mt-0.5 text-xs">
+            <span className={cn(
+              failCount > 0 ? "text-red-400" : warnCount > 0 ? "text-amber-400" : "text-emerald-400"
+            )}>{report.summary}</span>
+            <span className="text-slate-600"> — tap to view</span>
+          </p>
         </div>
-      </div>
-      <div className="max-h-[60vh] overflow-y-auto px-4 py-2">
-        {report.categories.map(cat => {
-          const isOpen = expanded[cat.name] ?? false
-          const catFails = cat.items.filter(i => i.status === "fail").length
-          const catWarns = cat.items.filter(i => i.status === "warn").length
-          return (
-            <div key={cat.name} className="border-b border-white/5 last:border-0">
-              <button
-                onClick={() => setExpanded(p => ({ ...p, [cat.name]: !isOpen }))}
-                className="flex w-full items-center gap-2 py-2.5 text-left"
-              >
-                {isOpen ? <ChevronDown className="h-3.5 w-3.5 text-slate-500" /> : <ChevronRight className="h-3.5 w-3.5 text-slate-500" />}
-                <span className="flex-1 text-xs font-medium text-slate-300">{cat.name}</span>
-                {catFails > 0 && <span className="rounded-md bg-red-500/15 px-1.5 py-0.5 text-[10px] text-red-400">{catFails} fail</span>}
-                {catWarns > 0 && <span className="rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-400">{catWarns} warn</span>}
-                {catFails === 0 && catWarns === 0 && <span className="rounded-md bg-emerald-500/15 px-1.5 py-0.5 text-[10px] text-emerald-400">all pass</span>}
-              </button>
-              {isOpen && (
-                <div className="mb-2 space-y-0.5 pl-5">
-                  {cat.items.map((item, i) => (
-                    <div key={i} className="flex items-start gap-2 py-0.5">
-                      {statusIcon(item.status)}
-                      <span className="text-xs text-slate-300">{item.name}</span>
-                      {item.detail && <span className="text-xs text-slate-600">— {item.detail}</span>}
-                    </div>
-                  ))}
-                </div>
-              )}
+      </button>
+
+      {/* Modal overlay */}
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setReport(null)}>
+        <div className="glass-card relative flex max-h-[80vh] w-full max-w-lg flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+          <div className="flex shrink-0 items-center justify-between border-b border-white/5 px-4 py-3">
+            <div className="flex items-center gap-2">
+              <Stethoscope className={cn("h-4 w-4", failCount > 0 ? "text-red-400" : warnCount > 0 ? "text-amber-400" : "text-emerald-400")} />
+              <span className="text-sm font-semibold text-slate-200">Health Check</span>
+              <span className={cn(
+                "rounded-full px-2 py-0.5 text-xs font-medium",
+                failCount > 0 ? "bg-red-500/15 text-red-400" : warnCount > 0 ? "bg-amber-500/15 text-amber-400" : "bg-emerald-500/15 text-emerald-400"
+              )}>{report.summary}</span>
             </div>
-          )
-        })}
+            <div className="flex gap-2">
+              <button onClick={runCheck} disabled={loading}
+                className="rounded-lg px-3 py-1 text-xs text-slate-400 hover:bg-white/5 hover:text-slate-200 disabled:opacity-50">
+                {loading ? "Running..." : "Re-run"}
+              </button>
+              <button onClick={() => setReport(null)}
+                className="rounded-lg px-3 py-1 text-xs text-slate-500 hover:bg-white/5 hover:text-slate-300">Close</button>
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto px-4 py-2">
+            {report.categories.map(cat => {
+              const isOpen = expanded[cat.name] ?? false
+              const catFails = cat.items.filter(i => i.status === "fail").length
+              const catWarns = cat.items.filter(i => i.status === "warn").length
+              return (
+                <div key={cat.name} className="border-b border-white/5 last:border-0">
+                  <button
+                    onClick={() => setExpanded(p => ({ ...p, [cat.name]: !isOpen }))}
+                    className="flex w-full items-center gap-2 py-2 text-left"
+                  >
+                    {isOpen ? <ChevronDown className="h-3.5 w-3.5 text-slate-500" /> : <ChevronRight className="h-3.5 w-3.5 text-slate-500" />}
+                    <span className="flex-1 text-xs font-medium text-slate-300">{cat.name}</span>
+                    {catFails > 0 && <span className="rounded-md bg-red-500/15 px-1.5 py-0.5 text-[10px] text-red-400">{catFails} fail</span>}
+                    {catWarns > 0 && <span className="rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-400">{catWarns} warn</span>}
+                    {catFails === 0 && catWarns === 0 && <span className="rounded-md bg-emerald-500/15 px-1.5 py-0.5 text-[10px] text-emerald-400">all pass</span>}
+                  </button>
+                  {isOpen && (
+                    <div className="mb-2 space-y-0.5 pl-5">
+                      {cat.items.map((item, i) => (
+                        <div key={i} className="flex items-start gap-2 py-0.5">
+                          {statusIcon(item.status)}
+                          <span className="text-xs text-slate-300">{item.name}</span>
+                          {item.detail && <span className="text-xs text-slate-600">— {item.detail}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
       </div>
-    </div>
+    </>
   )
 }
 
@@ -1629,18 +1741,8 @@ export default function Settings() {
           {/* Quick Actions */}
           <div>
             <p className="section-label mb-2 px-1">Quick Actions</p>
-            <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-              <ActionButton
-                icon={Unplug}
-                label="Toggle USB Drives"
-                description="Connect/disconnect drives"
-                successMessage="Drives toggled successfully"
-                compact
-                onClick={async () => {
-                  const res = await fetch("/api/system/toggle-drives", { method: "POST" })
-                  if (!res.ok) throw new Error("Failed to toggle drives")
-                }}
-              />
+            <div className="grid max-w-md grid-cols-2 gap-2">
+              <UsbDriveToggle />
               <ActionButton
                 icon={RefreshCw}
                 label="Archive Sync"
@@ -1684,29 +1786,28 @@ export default function Settings() {
           {/* Stable update banner */}
           {stableUpdate && updateStatus === "idle" && (
             <div className="glass-card overflow-hidden border border-emerald-500/20 bg-emerald-500/5">
-              <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20">
-                  <Download className="h-5 w-5 text-emerald-400" />
+              <div className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/20">
+                  <Download className="h-4 w-4 text-emerald-400" />
                 </div>
                 <div className="flex-1">
                   <h2 className="text-sm font-semibold text-emerald-200">
                     Stable Update: {stableUpdate.version}
                   </h2>
-                  <p className="mt-0.5 text-sm text-slate-400">
-                    Updates the server, shell scripts, and BLE daemon. No setup changes are made.
-                    {" "}
+                  <p className="mt-0.5 text-xs text-slate-400">
+                    Updates server, scripts, and BLE daemon.{" "}
                     <a href={stableUpdate.release_url} target="_blank" rel="noopener noreferrer"
-                      className="text-blue-400 hover:text-blue-300 underline">View release notes</a>
+                      className="text-blue-400 hover:text-blue-300 underline">Release notes</a>
                   </p>
                   {stableUpdate.release_notes && (
-                    <pre className="mt-2 max-h-32 overflow-y-auto whitespace-pre-wrap rounded-xl bg-black/20 p-3 text-xs text-slate-400">
+                    <pre className="mt-2 max-h-24 overflow-y-auto whitespace-pre-wrap rounded-lg bg-black/20 p-2 text-[11px] text-slate-400">
                       {stableUpdate.release_notes}
                     </pre>
                   )}
                 </div>
                 <button
                   onClick={() => handleInstallUpdate(stableUpdate.version)}
-                  className="shrink-0 self-start rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-emerald-600"
+                  className="shrink-0 self-start rounded-lg bg-emerald-500 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-emerald-600"
                 >
                   Install Stable
                 </button>
@@ -1717,29 +1818,28 @@ export default function Settings() {
           {/* Prerelease update banner */}
           {prereleaseUpdate && updateStatus === "idle" && (
             <div className="glass-card overflow-hidden border border-amber-500/20 bg-amber-500/5">
-              <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/20">
-                  <Download className="h-5 w-5 text-amber-400" />
+              <div className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-500/20">
+                  <Download className="h-4 w-4 text-amber-400" />
                 </div>
                 <div className="flex-1">
                   <h2 className="text-sm font-semibold text-amber-200">
                     Pre-release: {prereleaseUpdate.version}
                   </h2>
-                  <p className="mt-0.5 text-sm text-slate-400">
-                    This is a test build and may contain bugs. You can always switch back to the latest stable release.
-                    {" "}
+                  <p className="mt-0.5 text-xs text-slate-400">
+                    Test build — may contain bugs.{" "}
                     <a href={prereleaseUpdate.release_url} target="_blank" rel="noopener noreferrer"
-                      className="text-blue-400 hover:text-blue-300 underline">View release notes</a>
+                      className="text-blue-400 hover:text-blue-300 underline">Release notes</a>
                   </p>
                   {prereleaseUpdate.release_notes && (
-                    <pre className="mt-2 max-h-32 overflow-y-auto whitespace-pre-wrap rounded-xl bg-black/20 p-3 text-xs text-slate-400">
+                    <pre className="mt-2 max-h-24 overflow-y-auto whitespace-pre-wrap rounded-lg bg-black/20 p-2 text-[11px] text-slate-400">
                       {prereleaseUpdate.release_notes}
                     </pre>
                   )}
                 </div>
                 <button
                   onClick={() => handleInstallUpdate(prereleaseUpdate.version)}
-                  className="shrink-0 self-start rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-amber-600"
+                  className="shrink-0 self-start rounded-lg bg-amber-500 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-amber-600"
                 >
                   Install Pre-release
                 </button>
@@ -1749,24 +1849,22 @@ export default function Settings() {
 
           {/* Update check */}
           <div className="glass-card overflow-hidden">
-            <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20">
+            <div className="flex items-center gap-3 p-3">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/20">
                 {updateStatus === "error" ? (
-                  <AlertCircle className="h-5 w-5 text-red-400" />
+                  <AlertCircle className="h-4 w-4 text-red-400" />
                 ) : updateStatus === "done" ? (
-                  <CheckCircle className="h-5 w-5 text-emerald-400" />
+                  <CheckCircle className="h-4 w-4 text-emerald-400" />
                 ) : updateStatus !== "idle" ? (
-                  <Loader2 className="h-5 w-5 animate-spin text-blue-400" />
+                  <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
                 ) : (
-                  <Download className="h-5 w-5 text-emerald-400" />
+                  <Download className="h-4 w-4 text-emerald-400" />
                 )}
               </div>
-              <div className="flex-1">
-                <h2 className="text-sm font-semibold text-slate-100">
-                  Update Sentry USB
-                </h2>
-                <p className="mt-0.5 text-sm text-slate-400">
-                  {updateStatus === "idle" && !updateError && "Check for and install the latest version."}
+              <div className="flex-1 min-w-0">
+                <h2 className="text-sm font-semibold text-slate-100">Update Sentry USB</h2>
+                <p className="mt-0.5 text-xs text-slate-400 truncate">
+                  {updateStatus === "idle" && !updateError && "Check for and install the latest version"}
                   {updateStatus === "idle" && updateError && <span className="text-red-400">{updateError}</span>}
                   {updateStatus === "error" && <span className="text-red-400">{updateError || "Update failed."}</span>}
                   {updateStatus === "done" && <span className="text-emerald-400">{updateMessage || "Update complete!"}</span>}
@@ -1775,25 +1873,23 @@ export default function Settings() {
                   )}
                 </p>
               </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <button
-                  onClick={() => handleCheckForUpdate()}
-                  disabled={isCheckingUpdate || (updateStatus !== "idle" && updateStatus !== "error" && updateStatus !== "done")}
-                  className="rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-emerald-600 disabled:opacity-50"
-                >
-                  {isCheckingUpdate ? (
-                    <span className="flex items-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin" /> Checking...
-                    </span>
-                  ) : "Check for Updates"}
-                </button>
-              </div>
+              <button
+                onClick={() => handleCheckForUpdate()}
+                disabled={isCheckingUpdate || (updateStatus !== "idle" && updateStatus !== "error" && updateStatus !== "done")}
+                className="shrink-0 rounded-lg bg-emerald-500 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-emerald-600 disabled:opacity-50"
+              >
+                {isCheckingUpdate ? (
+                  <span className="flex items-center gap-1.5">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Checking
+                  </span>
+                ) : "Check for Updates"}
+              </button>
             </div>
 
             {/* Update preferences */}
-            <div className="border-t border-white/5 px-4 py-3">
+            <div className="border-t border-white/5 px-3 py-2">
               <label className="flex cursor-pointer items-center justify-between">
-                <span className="text-sm text-slate-400">Automatically check for updates after each archive</span>
+                <span className="text-xs text-slate-400">Auto-check after each archive</span>
                 <input
                   type="checkbox"
                   checked={autoUpdateEnabled}
@@ -1810,11 +1906,11 @@ export default function Settings() {
                 />
               </label>
             </div>
-            <div className="border-t border-white/5 px-4 py-3">
-              <label className="flex cursor-pointer items-center justify-between gap-4">
+            <div className="border-t border-white/5 px-3 py-2">
+              <label className="flex cursor-pointer items-center justify-between gap-3">
                 <div>
-                  <span className="text-sm text-slate-400">Always include pre-releases when checking</span>
-                  <span className="block text-xs text-slate-600 mt-0.5">Test builds may contain bugs. Auto-check notifications are always stable-only.</span>
+                  <span className="text-xs text-slate-400">Include pre-releases</span>
+                  <span className="block text-[10px] text-slate-600 mt-0.5">Test builds may contain bugs</span>
                 </div>
                 <input
                   type="checkbox"
@@ -1833,11 +1929,11 @@ export default function Settings() {
               </label>
             </div>
             {!includePrerelease && (
-              <div className="border-t border-white/5 px-4 py-3">
+              <div className="border-t border-white/5 px-3 py-2">
                 <button
                   onClick={() => handleCheckForUpdate(true)}
                   disabled={isCheckingUpdate}
-                  className="text-sm text-slate-500 transition-colors hover:text-slate-300"
+                  className="text-xs text-slate-500 transition-colors hover:text-slate-300"
                 >
                   {isCheckingUpdate ? "Checking..." : "One-time check for pre-releases"}
                 </button>
@@ -1879,59 +1975,30 @@ export default function Settings() {
           </div>
 
           {/* About */}
-          <div className="glass-card overflow-hidden">
-            <div className="flex items-center gap-3 border-b border-white/5 px-4 py-3">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-slate-500/10">
-                <Shield className="h-4 w-4 text-slate-400" />
+          <div className="glass-card overflow-hidden p-3">
+            <div className="flex items-center gap-3">
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-500/10">
+                <Shield className="h-3.5 w-3.5 text-slate-400" />
               </div>
-              <div>
-                <h3 className="text-sm font-semibold text-slate-200">About</h3>
-                <p className="text-xs text-slate-500">Version and project info</p>
-              </div>
-            </div>
-            <div className="p-4">
-              <div className="space-y-1.5 text-sm max-w-md">
-                <p className="text-slate-300">
-                  <span className="text-slate-500">Version:</span>{" "}
-                  <span className="font-mono text-xs">{version || "loading..."}</span>
-                </p>
-                <p className="text-slate-300">
-                  <span className="text-slate-500">Project:</span>{" "}
-                  <a
-                    href="https://github.com/Scottmg1/Sentry-USB"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-400 hover:text-blue-300 transition-colors"
-                  >
-                    Sentry USB
-                  </a>
-                </p>
-                <p className="text-slate-300">
-                  <span className="text-slate-500">Based on:</span>{" "}
-                  <a
-                    href="https://github.com/marcone/teslausb"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-400 hover:text-blue-300 transition-colors"
-                  >
-                    TeslaUSB (original)
-                  </a>{" "}
-                  (MIT License)
-                </p>
-                <p className="text-slate-300">
-                  <span className="text-slate-500">License:</span> MIT
-                </p>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-slate-400">
+                <span className="font-mono text-slate-300">{version || "..."}</span>
+                <a href="https://github.com/Scottmg1/Sentry-USB" target="_blank" rel="noopener noreferrer"
+                  className="text-blue-400 hover:text-blue-300">Sentry USB</a>
+                <span className="text-slate-600">·</span>
+                <a href="https://github.com/marcone/teslausb" target="_blank" rel="noopener noreferrer"
+                  className="text-blue-400 hover:text-blue-300">TeslaUSB</a>
+                <span className="text-slate-600">· MIT</span>
               </div>
               <a
                 href="https://discord.gg/9QZEzVwdnt"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-4 inline-flex items-center gap-2 rounded-xl bg-[#5865F2] px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-[#4752c4] hover:shadow-[0_0_20px_rgba(88,101,242,0.2)]"
+                className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-[#5865F2] px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-[#4752c4]"
               >
-                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z" />
                 </svg>
-                Join Discord Server
+                Discord
               </a>
             </div>
           </div>
