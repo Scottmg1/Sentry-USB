@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react"
+import { useEffect, useState, useCallback } from "react"
 import { Search, Upload, Download, Paintbrush, ChevronLeft, ChevronRight, Loader2, CheckCircle, AlertCircle, Trash2, Pencil, Shield, X } from "lucide-react"
 
 const API_BASE = "/api"
@@ -42,50 +42,8 @@ export default function CommunityWraps() {
   const [tab, setTab] = useState<Tab>("browse")
   const [adminPasscode, setAdminPasscode] = useState<string | null>(null)
   const [showPasscodePrompt, setShowPasscodePrompt] = useState(false)
-  const clickCountRef = useRef(0)
-  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const handleHeadingClick = () => {
-    if (adminPasscode) {
-      // Already in admin mode — 5 clicks exits
-      clickCountRef.current++
-      if (clickTimerRef.current) clearTimeout(clickTimerRef.current)
-      clickTimerRef.current = setTimeout(() => { clickCountRef.current = 0 }, 2000)
-      if (clickCountRef.current >= 5) {
-        clickCountRef.current = 0
-        setAdminPasscode(null)
-      }
-      return
-    }
-
-    clickCountRef.current++
-    if (clickTimerRef.current) clearTimeout(clickTimerRef.current)
-    clickTimerRef.current = setTimeout(() => { clickCountRef.current = 0 }, 2000)
-    if (clickCountRef.current >= 5) {
-      clickCountRef.current = 0
-      setShowPasscodePrompt(true)
-    }
-  }
-
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/20">
-            <Paintbrush className="h-5 w-5 text-amber-400" />
-          </div>
-          <div>
-            <h1
-              className="cursor-default select-none text-xl font-semibold text-slate-100"
-              onClick={handleHeadingClick}
-            >
-              Community Wraps
-            </h1>
-            <p className="text-xs text-slate-500">Browse and share Tesla wraps</p>
-          </div>
-        </div>
-      </div>
-
       {/* Tab selector */}
       <div className="flex items-center gap-2">
         <button

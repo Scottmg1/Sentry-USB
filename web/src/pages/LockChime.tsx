@@ -98,57 +98,13 @@ export default function LockChime() {
     const saved = localStorage.getItem("lockchime-preview-volume")
     return saved !== null ? Number(saved) : 0.5
   })
-  const clickCountRef = useRef(0)
-  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
   function handleVolumeChange(v: number) {
     setVolume(v)
     localStorage.setItem("lockchime-preview-volume", String(v))
   }
 
-  const handleHeadingClick = () => {
-    if (adminPasscode) {
-      clickCountRef.current++
-      if (clickTimerRef.current) clearTimeout(clickTimerRef.current)
-      clickTimerRef.current = setTimeout(() => { clickCountRef.current = 0 }, 2000)
-      if (clickCountRef.current >= 5) {
-        clickCountRef.current = 0
-        setAdminPasscode(null)
-      }
-      return
-    }
-
-    clickCountRef.current++
-    if (clickTimerRef.current) clearTimeout(clickTimerRef.current)
-    clickTimerRef.current = setTimeout(() => { clickCountRef.current = 0 }, 2000)
-    if (clickCountRef.current >= 5) {
-      clickCountRef.current = 0
-      setShowPasscodePrompt(true)
-    }
-  }
-
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/20">
-            <Volume2 className="h-5 w-5 text-violet-400" />
-          </div>
-          <div>
-            <h1
-              className="cursor-default select-none text-xl font-semibold text-slate-100"
-              onClick={handleHeadingClick}
-            >
-              Chimes
-            </h1>
-            <p className="text-xs text-slate-500">
-              Custom .wav lock sounds for your Tesla — max {MAX_DURATION_SECONDS}s
-            </p>
-          </div>
-        </div>
-      </div>
-
       {/* Tabs */}
       <div className="flex items-center gap-2">
         <button

@@ -11,8 +11,7 @@ import Drives from "@/pages/Drives"
 import Support from "@/pages/Support"
 import Terminal from "@/pages/Terminal"
 import FSDAnalytics from "@/pages/FSDAnalytics"
-import CommunityWraps from "@/pages/CommunityWraps"
-import LockChime from "@/pages/LockChime"
+import Community from "@/pages/Community"
 import Notifications from "@/pages/Notifications"
 import Login from "@/pages/Login"
 import { SetupWizard } from "@/components/setup/SetupWizard"
@@ -139,8 +138,7 @@ function AppContent() {
           <Route path="/fsd" element={<FSDAnalytics />} />
           <Route path="/support" element={<Support />} />
           <Route path="/terminal" element={<Terminal />} />
-          <Route path="/community-wraps" element={<CommunityWraps />} />
-          <Route path="/lock-chime" element={<LockChime />} />
+          <Route path="/community" element={<Community />} />
           <Route path="/notifications" element={<Notifications />} />
           <Route path="/settings" element={<Settings />} />
         </Route>

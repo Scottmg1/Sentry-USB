@@ -27,12 +27,17 @@ import {
   HardDrive,
   Archive,
   Save,
+  Users,
+  Paintbrush,
+  Volume2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { SetupWizard } from "@/components/setup/SetupWizard"
 import { wsClient } from "@/lib/ws"
 import { useKeepAwake } from "@/hooks/useKeepAwake"
 import { useAwayMode } from "@/hooks/useAwayMode"
+import CommunityWraps from "./CommunityWraps"
+import LockChime from "./LockChime"
 
 // ─── Shared primitives ──────────────────────────────────────────────────────
 
@@ -1381,6 +1386,7 @@ function ConfigBackupSection() {
 const TABS = [
   { id: "general", label: "General", icon: Sliders },
   { id: "connections", label: "Connections", icon: Wifi },
+  { id: "community", label: "Community", icon: Users },
   { id: "advanced", label: "Advanced", icon: Cpu },
 ] as const
 
@@ -1405,6 +1411,7 @@ export default function Settings() {
   const [prereleaseUpdate, setPrereleaseUpdate] = useState<{ version: string; release_url: string; release_notes: string } | null>(null)
   const [autoUpdateEnabled, setAutoUpdateEnabled] = useState(true)
   const [includePrerelease, setIncludePrerelease] = useState(false)
+  const [communityView, setCommunityView] = useState<"wraps" | "chimes">("wraps")
 
   useEffect(() => {
     fetch("/api/system/version")
@@ -1727,6 +1734,42 @@ export default function Settings() {
               <BlePairButton />
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── Community Tab ──────────────────────────────────────────── */}
+      {activeTab === "community" && (
+        <div className="space-y-5">
+          {/* Toggle */}
+          <div className="flex items-center gap-1 rounded-lg bg-white/[0.03] border border-white/10 p-1 w-fit">
+            <button
+              onClick={() => setCommunityView("wraps")}
+              className={cn(
+                "flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors",
+                communityView === "wraps"
+                  ? "bg-blue-500/15 text-blue-400"
+                  : "text-slate-400 hover:text-slate-200"
+              )}
+            >
+              <Paintbrush className="h-4 w-4" />
+              Wraps
+            </button>
+            <button
+              onClick={() => setCommunityView("chimes")}
+              className={cn(
+                "flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors",
+                communityView === "chimes"
+                  ? "bg-blue-500/15 text-blue-400"
+                  : "text-slate-400 hover:text-slate-200"
+              )}
+            >
+              <Volume2 className="h-4 w-4" />
+              Chimes
+            </button>
+          </div>
+
+          {/* Content */}
+          {communityView === "wraps" ? <CommunityWraps /> : <LockChime />}
         </div>
       )}
 
