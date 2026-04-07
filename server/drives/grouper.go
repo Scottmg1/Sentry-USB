@@ -790,8 +790,17 @@ func buildDriveStats(clips []timedRoute, idx int) Drive {
 		FSDDisengagements: fsdDisengagements,
 		FSDAccelPushes:    fsdAccelPushes,
 		FSDPercent:        fsdPercent,
-		FSDDistanceKm:     math.Round(fsdDistanceM/1000*100) / 100,
-		FSDDistanceMi:     math.Round(fsdDistanceM/1609.344*100) / 100,
+		FSDDistanceKm:       math.Round(fsdDistanceM/1000*100) / 100,
+		FSDDistanceMi:       math.Round(fsdDistanceM/1609.344*100) / 100,
+		AutosteerEngagedMs:  autosteerEngagedMs,
+		AutosteerPercent:    autosteerPercent,
+		AutosteerDistanceKm: math.Round(autosteerDistanceM/1000*100) / 100,
+		AutosteerDistanceMi: math.Round(autosteerDistanceM/1609.344*100) / 100,
+		TACCEngagedMs:       taccEngagedMs,
+		TACCPercent:         taccPercent,
+		TACCDistanceKm:      math.Round(taccDistanceM/1000*100) / 100,
+		TACCDistanceMi:      math.Round(taccDistanceM/1609.344*100) / 100,
+		AssistedPercent:     assistedPercent,
 	}
 }
 
