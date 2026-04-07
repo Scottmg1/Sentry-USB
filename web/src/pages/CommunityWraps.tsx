@@ -741,7 +741,8 @@ function UploadTab({ godotReadyRef, godotRef, adminPasscode }: UploadTabProps) {
   const [name, setName] = useState("")
   const [model, setModel] = useState("")
   const [uploading, setUploading] = useState(false)
-  const [uploadStatus, setUploadStatus] = useState("")
+  const [uploadStep, setUploadStep] = useState<"preview" | "uploading" | null>(null)
+  const [hasPreviewStep, setHasPreviewStep] = useState(false)
   const [result, setResult] = useState<{ success: boolean; message: string } | null>(null)
 
   // Wait for Godot engine to finish loading (polls the ref)
@@ -872,30 +873,32 @@ function UploadTab({ godotReadyRef, godotRef, adminPasscode }: UploadTabProps) {
     try {
       let previewDataUrl: string | null = null
       const godotId = MODEL_TO_GODOT_ID[model]
+      const willGeneratePreview = !!(godotId && godotRef.current)
+      setHasPreviewStep(willGeneratePreview)
 
       // Generate 3D preview if model has a Godot counterpart
-      if (godotId && godotRef.current) {
+      if (willGeneratePreview) {
+        setUploadStep("preview")
+
         // Wait for Godot to be ready (may still be downloading the 283MB .pck)
         if (!godotReadyRef.current) {
-          setUploadStatus("Loading 3D engine...")
           const ready = await waitForGodotReady(60000)
           if (!ready) {
-            // Godot didn't load in time — continue without preview
-            setUploadStatus("Uploading...")
+            // Godot didn't load in time — skip preview
+            setUploadStep("uploading")
           }
         }
 
         if (godotReadyRef.current) {
-          setUploadStatus("Generating 3D preview...")
           try {
-            previewDataUrl = await generate3DPreview(file, godotId)
+            previewDataUrl = await generate3DPreview(file, godotId!)
           } catch (previewErr) {
             console.warn("[WRAPS] 3D preview generation failed:", previewErr)
           }
         }
       }
 
-      setUploadStatus("Uploading...")
+      setUploadStep("uploading")
 
       const formData = new FormData()
       formData.append("image", file)
@@ -931,7 +934,7 @@ function UploadTab({ godotReadyRef, godotRef, adminPasscode }: UploadTabProps) {
       setResult({ success: false, message: err.message || "Upload failed" })
     } finally {
       setUploading(false)
-      setUploadStatus("")
+      setUploadStep(null)
     }
   }
 
@@ -986,11 +989,37 @@ function UploadTab({ godotReadyRef, godotRef, adminPasscode }: UploadTabProps) {
         </select>
       </div>
 
-      {/* Upload status indicator */}
-      {uploading && uploadStatus && (
-        <div className="flex items-center justify-center gap-2 rounded-lg border border-blue-500/20 bg-blue-500/10 px-4 py-3 text-sm text-blue-300">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          {uploadStatus}
+      {/* Multi-step upload progress */}
+      {uploading && uploadStep && (
+        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 space-y-3">
+          {hasPreviewStep && (
+            <div className="flex items-center gap-3">
+              {uploadStep === "preview" ? (
+                <Loader2 className="h-5 w-5 animate-spin text-blue-400 shrink-0" />
+              ) : (
+                <CheckCircle className="h-5 w-5 text-emerald-400 shrink-0" />
+              )}
+              <span className={`text-sm font-medium ${
+                uploadStep === "preview" ? "text-blue-300" : "text-emerald-400/70"
+              }`}>
+                {uploadStep === "preview" ? "Generating 3D preview..." : "3D preview generated"}
+              </span>
+            </div>
+          )}
+          <div className="flex items-center gap-3">
+            {uploadStep === "uploading" ? (
+              <Loader2 className="h-5 w-5 animate-spin text-blue-400 shrink-0" />
+            ) : (
+              <div className="flex h-5 w-5 items-center justify-center shrink-0">
+                <div className="h-2 w-2 rounded-full bg-slate-600" />
+              </div>
+            )}
+            <span className={`text-sm font-medium ${
+              uploadStep === "uploading" ? "text-blue-300" : "text-slate-600"
+            }`}>
+              {uploadStep === "uploading" ? "Uploading wrap..." : "Upload wrap"}
+            </span>
+          </div>
         </div>
       )}
 
@@ -1005,7 +1034,10 @@ function UploadTab({ godotReadyRef, godotRef, adminPasscode }: UploadTabProps) {
         ) : (
           <Upload className="h-4 w-4" />
         )}
-        {uploading ? (uploadStatus || "Uploading...") : "Submit Wrap"}
+        {uploading
+          ? uploadStep === "preview" ? "Generating preview..." : "Uploading..."
+          : "Submit Wrap"
+        }
       </button>
 
       {/* Result message */}
