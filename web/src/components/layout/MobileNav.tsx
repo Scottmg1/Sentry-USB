@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react"
 import { NavLink } from "react-router-dom"
 import {
   LayoutDashboard,
@@ -48,6 +49,16 @@ export function MobileNav({ open, onClose }: MobileNavProps) {
   const { available: updateAvailable } = useUpdateAvailable()
   const { state: connState } = useConnectionStatus()
   const { authRequired, logout } = useAuth()
+  const [version, setVersion] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch("/api/system/version")
+      .then(r => r.json())
+      .then(data => setVersion(data.version || null))
+      .catch(() => {})
+  }, [])
+
+  const isPrerelease = version ? /[-]/.test(version) : false
 
   if (!open) return null
 
@@ -61,14 +72,25 @@ export function MobileNav({ open, onClose }: MobileNavProps) {
 
       {/* Drawer */}
       <div className="glass-sidebar fixed left-0 top-0 z-[700] flex h-full w-64 flex-col">
-        <div className="flex h-16 items-center justify-between px-4">
+        <div className="flex min-h-16 items-center justify-between px-4 py-3">
           <div className="flex items-center gap-3">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-500/20">
               <Shield className="h-5 w-5 text-blue-400" />
             </div>
-            <span className="text-lg font-semibold tracking-tight text-slate-100" style={{ fontFamily: '"Sora", "DM Sans", system-ui, sans-serif' }}>
-              Sentry USB
-            </span>
+            <div>
+              <span className="text-lg font-semibold tracking-tight text-slate-100" style={{ fontFamily: '"Sora", "DM Sans", system-ui, sans-serif' }}>
+                Sentry USB
+              </span>
+              {version && (
+                <p className="text-[10px] leading-tight text-slate-600">
+                  v{version}
+                  {isPrerelease
+                    ? <span className="ml-1 text-amber-500/70">Pre-release</span>
+                    : <span className="ml-1 text-slate-600">Stable</span>
+                  }
+                </p>
+              )}
+            </div>
           </div>
           <button
             onClick={onClose}
