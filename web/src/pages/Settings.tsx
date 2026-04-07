@@ -48,6 +48,7 @@ function ActionButton({
   label,
   description,
   variant = "default",
+  compact = false,
   onClick,
   successMessage = "Done!",
   errorMessage = "Failed",
@@ -56,6 +57,7 @@ function ActionButton({
   label: string
   description: string
   variant?: "default" | "danger"
+  compact?: boolean
   onClick: () => void | string | Promise<void | string>
   successMessage?: string
   errorMessage?: string
@@ -88,11 +90,15 @@ function ActionButton({
     <button
       onClick={handleClick}
       disabled={state === "loading"}
-      className="glass-card glass-card-hover flex items-start gap-3 p-4 text-left transition-all disabled:opacity-70"
+      className={cn(
+        "glass-card glass-card-hover flex items-start gap-3 text-left transition-all disabled:opacity-70",
+        compact ? "p-3" : "p-4"
+      )}
     >
       <div
         className={cn(
-          "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors",
+          "flex shrink-0 items-center justify-center rounded-xl transition-colors",
+          compact ? "h-8 w-8" : "h-10 w-10",
           state === "loading" ? "bg-blue-500/15 text-blue-400" :
             state === "success" ? "bg-emerald-500/15 text-emerald-400" :
               state === "error" ? "bg-red-500/15 text-red-400" :
@@ -102,13 +108,13 @@ function ActionButton({
         )}
       >
         {state === "loading" ? (
-          <Loader2 className="h-5 w-5 animate-spin" />
+          <Loader2 className={compact ? "h-4 w-4 animate-spin" : "h-5 w-5 animate-spin"} />
         ) : state === "success" ? (
-          <CheckCircle className="h-5 w-5" />
+          <CheckCircle className={compact ? "h-4 w-4" : "h-5 w-5"} />
         ) : state === "error" ? (
-          <AlertCircle className="h-5 w-5" />
+          <AlertCircle className={compact ? "h-4 w-4" : "h-5 w-5"} />
         ) : (
-          <Icon className="h-5 w-5" />
+          <Icon className={compact ? "h-4 w-4" : "h-5 w-5"} />
         )}
       </div>
       <div>
@@ -374,16 +380,16 @@ function MobileNotificationsSection() {
 
   return (
     <div className="glass-card overflow-hidden">
-      <div className="flex items-center gap-3 border-b border-white/5 px-5 py-4">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-500/15">
-          <Bell className="h-4.5 w-4.5 text-violet-400" />
+      <div className="flex items-center gap-3 border-b border-white/5 px-4 py-3">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-violet-500/15">
+          <Bell className="h-4 w-4 text-violet-400" />
         </div>
         <div>
           <h3 className="text-sm font-semibold text-slate-200">Mobile Notifications</h3>
-          <p className="text-xs text-slate-500">Pair your phone to receive push notifications</p>
+          <p className="text-xs text-slate-500">Pair your phone for push notifications</p>
         </div>
       </div>
-      <div className="p-5 space-y-4">
+      <div className="p-4 space-y-4">
         {/* Generate Code */}
         <div className="flex items-center gap-3">
           {pairingCode ? (
@@ -770,23 +776,23 @@ function KeepAwakePreference() {
 
   return (
     <div className="glass-card overflow-hidden">
-      <div className="flex items-center gap-3 border-b border-white/5 px-5 py-4">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-rose-500/15">
-          <HeartPulse className="h-4.5 w-4.5 text-rose-400" />
+      <div className="flex items-center gap-3 border-b border-white/5 px-4 py-3">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-rose-500/15">
+          <HeartPulse className="h-4 w-4 text-rose-400" />
         </div>
         <div>
           <h3 className="text-sm font-semibold text-slate-200">Keep Awake Mode</h3>
-          <p className="text-xs text-slate-500">Keep the car awake after archiving so you can browse files, update, etc.</p>
+          <p className="text-xs text-slate-500">Keep the car awake after archiving</p>
         </div>
       </div>
-      <div className="p-5">
+      <div className="p-4">
         <div className="grid grid-cols-3 gap-2">
           {KEEP_AWAKE_MODES.map((m) => (
             <button
               key={m.value}
               onClick={() => updateMode(m.value)}
               className={cn(
-                "rounded-xl border px-3 py-3 text-left text-xs transition-all",
+                "rounded-xl border px-3 py-2 text-left text-xs transition-all",
                 (mode ?? "") === m.value
                   ? "border-blue-500/40 bg-blue-500/10 text-blue-400 shadow-[0_0_12px_rgba(59,130,246,0.1)]"
                   : "border-white/5 bg-white/[0.02] text-slate-400 hover:bg-white/[0.05] hover:border-white/10"
@@ -859,20 +865,20 @@ function AwayModeControl() {
 
   return (
     <div className="glass-card overflow-hidden">
-      <div className="flex items-center gap-3 border-b border-white/5 px-5 py-4">
+      <div className="flex items-center gap-3 border-b border-white/5 px-4 py-3">
         <div className={cn(
-          "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl",
+          "flex h-8 w-8 shrink-0 items-center justify-center rounded-xl",
           isActive ? "bg-blue-500/15" : "bg-slate-500/10"
         )}>
           {isActive ? (
-            <Wifi className="h-4.5 w-4.5 text-blue-400" />
+            <Wifi className="h-4 w-4 text-blue-400" />
           ) : (
-            <WifiOff className="h-4.5 w-4.5 text-slate-500" />
+            <WifiOff className="h-4 w-4 text-slate-500" />
           )}
         </div>
         <div>
           <h3 className="text-sm font-semibold text-slate-200">Away Mode</h3>
-          <p className="text-xs text-slate-500">Enable WiFi AP for a set duration when away from home</p>
+          <p className="text-xs text-slate-500">WiFi AP for when away from home</p>
         </div>
         {isActive && (
           <span className="ml-auto rounded-full bg-blue-500/15 px-2.5 py-0.5 text-[10px] font-semibold text-blue-400">
@@ -881,7 +887,7 @@ function AwayModeControl() {
         )}
       </div>
 
-      <div className="p-5 space-y-4">
+      <div className="p-4 space-y-3">
         {/* Collapsible info */}
         <details className="group">
           <summary className="cursor-pointer text-[11px] text-slate-600 hover:text-slate-400 transition-colors select-none">
@@ -1146,18 +1152,16 @@ function ConfigBackupSection() {
 
   return (
     <div className="glass-card overflow-hidden">
-      <div className="flex items-center gap-3 border-b border-white/5 px-5 py-4">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-500/15">
-          <Save className="h-4.5 w-4.5 text-blue-400" />
+      <div className="flex items-center gap-3 border-b border-white/5 px-4 py-3">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-blue-500/15">
+          <Save className="h-4 w-4 text-blue-400" />
         </div>
         <div>
           <h3 className="text-sm font-semibold text-slate-200">Config Backup</h3>
-          <p className="text-xs text-slate-500">
-            Automatically backs up your configuration after each archive
-          </p>
+          <p className="text-xs text-slate-500">Auto-backs up config after each archive</p>
         </div>
       </div>
-      <div className="p-5 space-y-4">
+      <div className="p-4 space-y-3">
         {/* Backup location selector */}
         <div>
           <p className="mb-2 text-xs font-medium text-slate-400">Backup Location</p>
@@ -1165,7 +1169,7 @@ function ConfigBackupSection() {
             <button
               onClick={() => handleLocationChange("archive")}
               className={cn(
-                "rounded-xl border px-3 py-3 text-left text-xs transition-all",
+                "rounded-xl border px-3 py-2.5 text-left text-xs transition-all",
                 backupLocation === "archive"
                   ? "border-blue-500/40 bg-blue-500/10 text-blue-400 shadow-[0_0_12px_rgba(59,130,246,0.1)]"
                   : "border-white/5 bg-white/[0.02] text-slate-400 hover:bg-white/[0.05] hover:border-white/10"
@@ -1179,7 +1183,7 @@ function ConfigBackupSection() {
             <button
               onClick={() => handleLocationChange("ssd")}
               className={cn(
-                "rounded-xl border px-3 py-3 text-left text-xs transition-all",
+                "rounded-xl border px-3 py-2.5 text-left text-xs transition-all",
                 backupLocation === "ssd"
                   ? "border-blue-500/40 bg-blue-500/10 text-blue-400 shadow-[0_0_12px_rgba(59,130,246,0.1)]"
                   : "border-white/5 bg-white/[0.02] text-slate-400 hover:bg-white/[0.05] hover:border-white/10"
@@ -1613,15 +1617,15 @@ export default function Settings() {
 
       {/* ── General Tab ────────────────────────────────────────────── */}
       {activeTab === "general" && (
-        <div className="space-y-5">
+        <div className="space-y-4">
           {/* Setup Wizard CTA */}
           <div className="glass-card overflow-hidden">
-            <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-500/20">
-                <Wand2 className="h-6 w-6 text-blue-400" />
+            <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/20">
+                <Wand2 className="h-5 w-5 text-blue-400" />
               </div>
               <div className="flex-1">
-                <h2 className="text-lg font-semibold text-slate-100">
+                <h2 className="text-base font-semibold text-slate-100">
                   Setup Wizard
                 </h2>
                 <p className="mt-0.5 text-sm text-slate-400">
@@ -1686,7 +1690,7 @@ export default function Settings() {
           {/* Quick Actions */}
           <div>
             <p className="section-label mb-3 px-1">Quick Actions</p>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <ActionButton
                 icon={Unplug}
                 label="Toggle USB Drives"
@@ -1726,7 +1730,7 @@ export default function Settings() {
 
       {/* ── Connections Tab ─────────────────────────────────────────── */}
       {activeTab === "connections" && (
-        <div className="space-y-5">
+        <div className="space-y-4">
           <MobileNotificationsSection />
           {piConfig?.uses_ble === "yes" && (
             <div>
@@ -1739,7 +1743,7 @@ export default function Settings() {
 
       {/* ── Community Tab ──────────────────────────────────────────── */}
       {activeTab === "community" && (
-        <div className="space-y-5">
+        <div className="space-y-4">
           {/* Toggle */}
           <div className="flex items-center gap-1 rounded-lg bg-white/[0.03] border border-white/10 p-1 w-fit">
             <button
@@ -1775,7 +1779,7 @@ export default function Settings() {
 
       {/* ── Advanced Tab ───────────────────────────────────────────── */}
       {activeTab === "advanced" && (
-        <div className="space-y-5">
+        <div className="space-y-4">
           {/* Stable update banner */}
           {stableUpdate && updateStatus === "idle" && (
             <div className="glass-card overflow-hidden border border-emerald-500/20 bg-emerald-500/5">
@@ -1943,7 +1947,7 @@ export default function Settings() {
           {/* System management */}
           <div>
             <p className="section-label mb-3 px-1">System</p>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <ActionButton
                 icon={RotateCcw}
                 label={confirmReboot ? "Press again to confirm" : "Restart Raspberry Pi"}
@@ -1953,12 +1957,14 @@ export default function Settings() {
                     : "Reboot the Sentry USB device"
                 }
                 variant={confirmReboot ? "danger" : "default"}
+                compact
                 onClick={handleReboot}
               />
               <ActionButton
                 icon={SettingsIcon}
                 label="Raw Configuration"
                 description="View and edit raw configuration file"
+                compact
                 onClick={async () => {
                   const res = await fetch("/api/setup/config")
                   if (!res.ok) throw new Error("Failed to load config")

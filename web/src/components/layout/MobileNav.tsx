@@ -37,7 +37,6 @@ const navItems = [
   { to: "/drives", icon: MapPin, label: "Drives" },
   { to: "/community", icon: Users, label: "Community" },
   { to: "/notifications", icon: BellRing, label: "Notifications" },
-  { to: "/support", icon: MessageCircle, label: "Support" },
   { to: "/terminal", icon: TerminalSquare, label: "Terminal" },
   { to: "/settings", icon: Settings, label: "Settings" },
 ]
@@ -115,6 +114,23 @@ export function MobileNav({ open, onClose }: MobileNavProps) {
             )
           })}
         </nav>
+
+        {/* Support link (secondary) */}
+        <NavLink
+          to="/support"
+          onClick={onClose}
+          className={({ isActive }) =>
+            cn(
+              "mx-2 mb-1 flex items-center gap-2 rounded-lg px-3 py-2 text-xs transition-colors",
+              isActive
+                ? "bg-blue-500/10 text-blue-400"
+                : "text-slate-600 hover:bg-white/5 hover:text-slate-400"
+            )
+          }
+        >
+          <MessageCircle className="h-3.5 w-3.5 shrink-0" />
+          <span>Support</span>
+        </NavLink>
 
         {/* Connection status */}
         <div className={cn(

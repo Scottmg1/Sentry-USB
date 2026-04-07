@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react"
-import { ScrollText, Download, RefreshCw, ArrowDown } from "lucide-react"
+import { ScrollText, Download, RefreshCw, ArrowDown, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const logTabs = [
@@ -278,18 +278,19 @@ export default function Logs() {
   // Diagnostics is a structured system-info dump — keep it raw.
   const shouldFormat = activeTab === "archiveloop" || activeTab === "setup"
 
+  // With flex-direction: column-reverse, scrollTop is 0 at the bottom
+  // and becomes negative as you scroll up.
   const handleScroll = useCallback(() => {
     const el = preRef.current
     if (!el) return
-    const atBottom =
-      el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_THRESHOLD
+    const atBottom = el.scrollTop >= -SCROLL_THRESHOLD
     followRef.current = atBottom
     setShowScrollBtn(!atBottom)
   }, [])
 
   function scrollToBottom() {
     if (preRef.current) {
-      preRef.current.scrollTop = preRef.current.scrollHeight
+      preRef.current.scrollTop = 0 // 0 = bottom in column-reverse
       followRef.current = true
       setShowScrollBtn(false)
     }
@@ -304,7 +305,7 @@ export default function Logs() {
     let mounted = true
     let isFirstFetch = true
     setLoading(true)
-    setContent("Loading...")
+    setContent("")
 
     async function fetchLog() {
       try {
@@ -321,11 +322,6 @@ export default function Logs() {
             setContent(text || "(empty)")
           }
           setLoading(false)
-          requestAnimationFrame(() => {
-            if (preRef.current && (followRef.current || isFirstFetch)) {
-              preRef.current.scrollTop = preRef.current.scrollHeight
-            }
-          })
           isFirstFetch = false
         }
       } catch {
@@ -427,20 +423,27 @@ export default function Logs() {
         <pre
           ref={preRef}
           onScroll={handleScroll}
-          className="h-full overflow-auto p-4 font-mono text-xs leading-relaxed text-slate-300"
+          className="flex h-full flex-col-reverse overflow-auto p-4 font-mono text-xs leading-relaxed text-slate-300"
         >
-          {content ? (
-            shouldFormat ? (
-              <FormattedLog content={content} />
+          <div>
+            {loading && !content ? (
+              <span className="flex items-center gap-2 text-slate-600">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Loading...
+              </span>
+            ) : content ? (
+              shouldFormat ? (
+                <FormattedLog content={content} />
+              ) : (
+                content
+              )
             ) : (
-              content
-            )
-          ) : (
-            <span className="flex items-center gap-2 text-slate-600">
-              <ScrollText className="h-4 w-4" />
-              No log content
-            </span>
-          )}
+              <span className="flex items-center gap-2 text-slate-600">
+                <ScrollText className="h-4 w-4" />
+                No log content
+              </span>
+            )}
+          </div>
         </pre>
         {showScrollBtn && (
           <button

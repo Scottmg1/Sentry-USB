@@ -320,6 +320,22 @@ export default function Files() {
     }, 2000)
   }, [currentPath])
 
+  function handleDownloadSelected() {
+    if (selected.size === 0) return
+    const form = document.createElement("form")
+    form.method = "POST"
+    form.action = "/api/files/download-zip-multi"
+    form.style.display = "none"
+    const input = document.createElement("input")
+    input.type = "hidden"
+    input.name = "paths"
+    input.value = JSON.stringify(Array.from(selected))
+    form.appendChild(input)
+    document.body.appendChild(form)
+    form.submit()
+    form.remove()
+  }
+
   async function handleNewFolder() {
     const name = prompt("Folder name:")
     if (!name) return
@@ -518,42 +534,11 @@ export default function Files() {
             )}
             <p className="font-mono text-sm text-slate-400">{relativePath}</p>
           </div>
-          <div className="flex items-center gap-1">
-            {selected.size > 0 && (
-              <>
-                <span className="mr-1 rounded-full bg-blue-500/20 px-2 py-0.5 text-[10px] font-semibold text-blue-400">
-                  {selected.size} selected
-                </span>
-                <button
-                  onClick={() => {
-                    const form = document.createElement("form")
-                    form.method = "POST"
-                    form.action = "/api/files/download-zip-multi"
-                    form.style.display = "none"
-                    const input = document.createElement("input")
-                    input.type = "hidden"
-                    input.name = "paths"
-                    input.value = JSON.stringify(Array.from(selected))
-                    form.appendChild(input)
-                    document.body.appendChild(form)
-                    form.submit()
-                    form.remove()
-                  }}
-                  className="rounded p-1 text-slate-500 hover:bg-white/5 hover:text-blue-400"
-                  title="Download selected"
-                >
-                  <Download className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={handleDelete}
-                  className="rounded p-1 text-slate-500 hover:bg-white/5 hover:text-red-400"
-                  title="Delete selected"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </>
-            )}
-          </div>
+          {selected.size > 0 && (
+            <span className="rounded-full bg-blue-500/20 px-2 py-0.5 text-[10px] font-semibold text-blue-400">
+              {selected.size} selected
+            </span>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto">
@@ -634,6 +619,39 @@ export default function Files() {
           )}
         </div>
       </div>
+
+      {/* Floating selection action bar */}
+      {selected.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 md:left-[calc(50%+7rem)]">
+          <div className="glass-card flex items-center gap-3 border border-blue-500/20 bg-slate-900/95 px-4 py-3 shadow-2xl backdrop-blur-xl animate-in slide-in-from-bottom-2 fade-in duration-200">
+            <span className="rounded-full bg-blue-500/20 px-2.5 py-1 text-xs font-semibold text-blue-400">
+              {selected.size} selected
+            </span>
+            <div className="h-4 w-px bg-white/10" />
+            <button
+              onClick={handleDownloadSelected}
+              className="flex items-center gap-2 rounded-lg bg-blue-500/15 px-3 py-2 text-sm font-medium text-blue-400 transition-colors hover:bg-blue-500/25"
+            >
+              <Download className="h-4 w-4" />
+              Download
+            </button>
+            <button
+              onClick={handleDelete}
+              className="flex items-center gap-2 rounded-lg bg-red-500/10 px-3 py-2 text-sm font-medium text-red-400 transition-colors hover:bg-red-500/20"
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete
+            </button>
+            <button
+              onClick={() => setSelected(new Set())}
+              className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-white/5 hover:text-slate-300"
+              title="Clear selection"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

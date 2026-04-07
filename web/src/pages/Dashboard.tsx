@@ -306,7 +306,7 @@ export default function Dashboard() {
   const snapshotCount = parseInt(status.num_snapshots)
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
         <h1 className="text-2xl font-bold text-slate-100">Dashboard</h1>
         <p className="mt-1 text-sm text-slate-500">
@@ -345,65 +345,128 @@ export default function Dashboard() {
       )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <StatCard
-          icon={Clock}
-          label="Uptime"
-          value={formatUptime(uptime)}
-          color="blue"
-        />
+        {/* System tile: Uptime + CPU Temp */}
+        <div className="glass-card p-4">
+          <div className="flex items-start gap-3">
+            <div
+              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${
+                cpuTemp > 0
+                  ? { emerald: "text-emerald-400 bg-emerald-500/15", amber: "text-amber-400 bg-amber-500/15", red: "text-red-400 bg-red-500/15" }[getTempColor(cpuTemp)]
+                  : "text-blue-400 bg-blue-500/15"
+              }`}
+            >
+              <Activity className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
+                System
+              </p>
+              <div className="mt-2 space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <Clock className="h-3.5 w-3.5 text-slate-500" />
+                  <span className="text-xs text-slate-400">Uptime</span>
+                  <span className="ml-auto text-sm font-semibold text-slate-100">{formatUptime(uptime)}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Thermometer className="h-3.5 w-3.5 text-slate-500" />
+                  <span className="text-xs text-slate-400">CPU</span>
+                  <span className={`ml-auto text-sm font-semibold ${
+                    cpuTemp > 0
+                      ? { emerald: "text-emerald-400", amber: "text-amber-400", red: "text-red-400" }[getTempColor(cpuTemp)]
+                      : "text-slate-100"
+                  }`}>
+                    {cpuTemp > 0 ? formatTemp(cpuTemp, useFahrenheit) : "N/A"}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
 
-        <StatCard
-          icon={Thermometer}
-          label="CPU Temperature"
-          value={cpuTemp > 0 ? formatTemp(cpuTemp, useFahrenheit) : "N/A"}
-          color={cpuTemp > 0 ? getTempColor(cpuTemp) : "blue"}
-        />
+        {/* Storage tile: Storage + Snapshots */}
+        <div className="glass-card p-4">
+          <div className="flex items-start gap-3">
+            <div
+              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${
+                parseInt(usedPercent) > 90
+                  ? "text-red-400 bg-red-500/15"
+                  : parseInt(usedPercent) > 75
+                    ? "text-amber-400 bg-amber-500/15"
+                    : "text-emerald-400 bg-emerald-500/15"
+              }`}
+            >
+              <HardDrive className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
+                Storage
+              </p>
+              <p className="mt-1 text-sm font-semibold text-slate-100">
+                {formatBytes(usedSpace)} / {formatBytes(totalSpace)}
+              </p>
+              <p className="text-xs text-slate-500">{usedPercent}% used</p>
+              <div className="mt-2 border-t border-white/5 pt-2">
+                <div className="flex items-center gap-2">
+                  <Camera className="h-3.5 w-3.5 text-purple-400" />
+                  <span className="text-xs text-slate-400">{snapshotCount} snapshots</span>
+                  {snapshotCount > 0 && (
+                    <span className="ml-auto text-[10px] text-slate-600">
+                      {new Date(parseInt(status.snapshot_oldest) * 1000).toLocaleDateString()} — {new Date(parseInt(status.snapshot_newest) * 1000).toLocaleDateString()}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
 
-        <StatCard
-          icon={HardDrive}
-          label="Storage"
-          value={`${formatBytes(usedSpace)} / ${formatBytes(totalSpace)}`}
-          sub={`${usedPercent}% used`}
-          color={parseInt(usedPercent) > 90 ? "red" : parseInt(usedPercent) > 75 ? "amber" : "emerald"}
-        />
-
-        <StatCard
-          icon={Wifi}
-          label="WiFi"
-          value={status.wifi_ssid || "Not connected"}
-          sub={
-            status.wifi_ssid
-              ? `${status.wifi_ip || "No IP"} · ${wifiBars}/4 bars`
-              : undefined
-          }
-          color={status.wifi_ssid ? "emerald" : "red"}
-        />
-
-        {status.ether_speed && (
-          <StatCard
-            icon={Cable}
-            label="Ethernet"
-            value={
-              status.ether_speed === "Unknown!"
-                ? "Not connected"
-                : status.ether_speed
-            }
-            sub={status.ether_ip || undefined}
-            color={status.ether_speed === "Unknown!" ? "red" : "emerald"}
-          />
-        )}
-
-        <StatCard
-          icon={Camera}
-          label="Snapshots"
-          value={`${snapshotCount}`}
-          sub={
-            snapshotCount > 0
-              ? `${new Date(parseInt(status.snapshot_oldest) * 1000).toLocaleDateString()} — ${new Date(parseInt(status.snapshot_newest) * 1000).toLocaleDateString()}`
-              : "No snapshots"
-          }
-          color="purple"
-        />
+        {/* Network tile: WiFi + Ethernet */}
+        <div className="glass-card p-4">
+          <div className="flex items-start gap-3">
+            <div
+              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${
+                status.wifi_ssid || (status.ether_speed && status.ether_speed !== "Unknown!")
+                  ? "text-emerald-400 bg-emerald-500/15"
+                  : "text-red-400 bg-red-500/15"
+              }`}
+            >
+              <Wifi className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
+                Network
+              </p>
+              <div className="mt-2 space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <Wifi className="h-3.5 w-3.5 text-slate-500" />
+                  {status.wifi_ssid ? (
+                    <>
+                      <span className="truncate text-xs font-medium text-slate-200">{status.wifi_ssid}</span>
+                      <span className="ml-auto text-[10px] text-slate-500">{status.wifi_ip || "No IP"} · {wifiBars}/4</span>
+                    </>
+                  ) : (
+                    <span className="text-xs text-slate-500">WiFi not connected</span>
+                  )}
+                </div>
+                {status.ether_speed && (
+                  <div className="flex items-center gap-2">
+                    <Cable className="h-3.5 w-3.5 text-slate-500" />
+                    {status.ether_speed !== "Unknown!" ? (
+                      <>
+                        <span className="text-xs font-medium text-slate-200">{status.ether_speed}</span>
+                        {status.ether_ip && (
+                          <span className="ml-auto text-[10px] text-slate-500">{status.ether_ip}</span>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-xs text-slate-500">Ethernet not connected</span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
 
         <StatCard
           icon={HardDrive}
@@ -420,210 +483,196 @@ export default function Dashboard() {
         <KeepAwakeTile />
       </div>
 
-      {/* Archive progress */}
-      <div className="glass-card p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Archive className="h-4 w-4 text-slate-400" />
-            <span className="text-sm font-medium text-slate-300">
-              Clip Archive Progress
-            </span>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {/* Archive progress */}
+        <div className="glass-card p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Archive className="h-4 w-4 text-slate-400" />
+              <span className="text-sm font-medium text-slate-300">
+                Clip Archive Progress
+              </span>
+            </div>
+            {active && (
+              <span className={`flex items-center gap-1.5 text-xs ${archiveProgress ? "text-emerald-400" : "text-blue-400"}`}>
+                <span className={`inline-block h-1.5 w-1.5 animate-pulse rounded-full ${archiveProgress ? "bg-emerald-400" : "bg-blue-400"}`} />
+                {archiveProgress ? "Archiving" : "Processing Drives"}
+              </span>
+            )}
           </div>
-          {active && (
-            <span className={`flex items-center gap-1.5 text-xs ${archiveProgress ? "text-emerald-400" : "text-blue-400"}`}>
-              <span className={`inline-block h-1.5 w-1.5 animate-pulse rounded-full ${archiveProgress ? "bg-emerald-400" : "bg-blue-400"}`} />
-              {archiveProgress ? "Archiving" : "Processing Drives"}
-            </span>
+
+          {driveStats ? (
+            <>
+              <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1">
+                <div>
+                  <p className="text-[10px] text-slate-500">Clips</p>
+                  <p className="text-sm font-semibold text-slate-100">
+                    {driveStats.processed_count.toLocaleString()}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-500">Drives</p>
+                  <p className="text-sm font-semibold text-slate-100">
+                    {driveStats.drives_count.toLocaleString()}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-500">Distance</p>
+                  <p className="text-sm font-semibold text-slate-100">
+                    {metric ? driveStats.total_distance_km.toFixed(1) : driveStats.total_distance_mi.toFixed(1)}{" "}
+                    <span className="text-xs font-normal text-slate-400">{metric ? "km" : "mi"}</span>
+                  </p>
+                </div>
+              </div>
+
+              {driveStats.fsd_engaged_ms > 0 && (
+                <Link to="/fsd" className="mb-3 flex items-center justify-between rounded-lg border border-emerald-500/10 bg-emerald-500/5 p-2.5 transition-colors hover:bg-emerald-500/10">
+                  <div className="flex items-center gap-2.5">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/20">
+                      <Zap className="h-3.5 w-3.5 text-emerald-400" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-emerald-400">FSD {driveStats.fsd_percent}%</p>
+                      <p className="text-[10px] text-slate-500">{driveStats.fsd_disengagements} disengagements</p>
+                    </div>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-slate-600" />
+                </Link>
+              )}
+
+              {archiveProgress && archiveProgress.total > 0 ? (
+                <>
+                  <div className="mb-1.5 flex items-center justify-between text-xs text-slate-500">
+                    <span>
+                      {archiveProgress.current.toLocaleString()} / {archiveProgress.total.toLocaleString()} files
+                      {(() => {
+                        const eta = computeETA(archiveProgress.current, archiveProgress.total, archiveHistoryRef.current)
+                        return eta ? <span className="ml-2 text-emerald-400/70">{eta} left</span> : null
+                      })()}
+                    </span>
+                    <span>
+                      {Math.round((archiveProgress.current / archiveProgress.total) * 100)}%
+                    </span>
+                  </div>
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all duration-500"
+                      style={{ width: `${(archiveProgress.current / archiveProgress.total) * 100}%` }}
+                    />
+                  </div>
+                </>
+              ) : processing && processProgress && processProgress.total > 0 ? (
+                <>
+                  <div className="mb-1.5 flex items-center justify-between text-xs text-slate-500">
+                    <span>
+                      {processProgress.current.toLocaleString()} / {processProgress.total.toLocaleString()} files
+                      {(() => {
+                        const eta = computeETA(processProgress.current, processProgress.total, processHistoryRef.current)
+                        return eta ? <span className="ml-2 text-blue-400/70">{eta} left</span> : null
+                      })()}
+                    </span>
+                    <span>
+                      {Math.round((processProgress.current / processProgress.total) * 100)}%
+                    </span>
+                  </div>
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-blue-500 to-blue-400 transition-all duration-500"
+                      style={{ width: `${(processProgress.current / processProgress.total) * 100}%` }}
+                    />
+                  </div>
+                </>
+              ) : processing ? (
+                <>
+                  <div className="mb-1.5 text-xs text-slate-500">Processing Drives...</div>
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
+                    <div className="h-full w-2/5 animate-pulse rounded-full bg-gradient-to-r from-blue-500 to-blue-400" />
+                  </div>
+                </>
+              ) : archiveProgress ? (
+                <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
+                  <div className="h-full w-2/5 animate-pulse rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400" />
+                </div>
+              ) : (
+                <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-emerald-500/60 to-emerald-400/60"
+                    style={{ width: driveStats.processed_count > 0 ? "100%" : "0%" }}
+                  />
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="space-y-2">
+              <div className="h-4 w-1/2 animate-pulse rounded bg-slate-800" />
+              <div className="h-2 w-full animate-pulse rounded-full bg-slate-800" />
+            </div>
           )}
         </div>
 
-        {driveStats ? (
-          <>
-            <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <div>
-                <p className="text-xs text-slate-500">Lifetime Clips Processed</p>
-                <p className="mt-0.5 text-lg font-semibold text-slate-100">
-                  {driveStats.processed_count.toLocaleString()}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-slate-500">Lifetime Drives Found</p>
-                <p className="mt-0.5 text-lg font-semibold text-slate-100">
-                  {driveStats.drives_count.toLocaleString()}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-slate-500">Lifetime Distance</p>
-                <p className="mt-0.5 text-lg font-semibold text-slate-100">
-                  {metric ? driveStats.total_distance_km.toFixed(1) : driveStats.total_distance_mi.toFixed(1)}{" "}
-                  <span className="text-sm font-normal text-slate-400">{metric ? "km" : "mi"}</span>
-                </p>
-              </div>
-            </div>
-
-            {driveStats.fsd_engaged_ms > 0 && (
-              <Link to="/fsd" className="mb-4 flex items-center justify-between rounded-lg border border-emerald-500/10 bg-emerald-500/5 p-3 transition-colors hover:bg-emerald-500/10">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/20">
-                    <Zap className="h-4 w-4 text-emerald-400" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-emerald-400">FSD {driveStats.fsd_percent}%</p>
-                    <p className="text-xs text-slate-500">{driveStats.fsd_disengagements} disengagements</p>
-                  </div>
-                </div>
-                <ChevronRight className="h-4 w-4 text-slate-600" />
-              </Link>
-            )}
-
-            {archiveProgress && archiveProgress.total > 0 ? (
-              <>
-                <div className="mb-1.5 flex items-center justify-between text-xs text-slate-500">
-                  <span>
-                    Archiving: {archiveProgress.current.toLocaleString()} /{" "}
-                    {archiveProgress.total.toLocaleString()} files
-                    {(() => {
-                      const eta = computeETA(archiveProgress.current, archiveProgress.total, archiveHistoryRef.current)
-                      return eta ? <span className="ml-2 text-emerald-400/70">{eta} left</span> : null
-                    })()}
-                  </span>
-                  <span>
-                    {Math.round(
-                      (archiveProgress.current / archiveProgress.total) * 100
-                    )}
-                    %
-                  </span>
-                </div>
-                <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all duration-500"
-                    style={{
-                      width: `${(archiveProgress.current / archiveProgress.total) * 100}%`,
-                    }}
-                  />
-                </div>
-              </>
-            ) : processing && processProgress && processProgress.total > 0 ? (
-              <>
-                <div className="mb-1.5 flex items-center justify-between text-xs text-slate-500">
-                  <span>
-                    Processing Drives: {processProgress.current.toLocaleString()} /{" "}
-                    {processProgress.total.toLocaleString()} files
-                    {(() => {
-                      const eta = computeETA(processProgress.current, processProgress.total, processHistoryRef.current)
-                      return eta ? <span className="ml-2 text-blue-400/70">{eta} left</span> : null
-                    })()}
-                  </span>
-                  <span>
-                    {Math.round(
-                      (processProgress.current / processProgress.total) * 100
-                    )}
-                    %
-                  </span>
-                </div>
-                <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-blue-500 to-blue-400 transition-all duration-500"
-                    style={{
-                      width: `${(processProgress.current / processProgress.total) * 100}%`,
-                    }}
-                  />
-                </div>
-              </>
-            ) : processing ? (
-              <>
-                <div className="mb-1.5 flex items-center justify-between text-xs text-slate-500">
-                  <span>Processing Drives...</span>
-                </div>
-                <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
-                  <div className="h-full w-2/5 animate-pulse rounded-full bg-gradient-to-r from-blue-500 to-blue-400" />
-                </div>
-              </>
-            ) : archiveProgress ? (
-              <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
-                <div className="h-full w-2/5 animate-pulse rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400" />
-              </div>
-            ) : (
-              <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
-                <div
-                  className="h-full rounded-full bg-gradient-to-r from-emerald-500/60 to-emerald-400/60"
-                  style={{
-                    width: driveStats.processed_count > 0 ? "100%" : "0%",
-                  }}
-                />
-              </div>
-            )}
-          </>
-        ) : (
-          <div className="space-y-2">
-            <div className="h-4 w-1/2 animate-pulse rounded bg-slate-800" />
-            <div className="h-2 w-full animate-pulse rounded-full bg-slate-800" />
+        {/* Storage bar */}
+        <div className="glass-card p-4">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-sm font-medium text-slate-300">
+              Storage Usage
+            </span>
+            <span className="text-xs text-slate-500">
+              {formatBytes(freeSpace)} free
+            </span>
           </div>
-        )}
-      </div>
-
-      {/* Storage bar */}
-      <div className="glass-card p-4">
-        <div className="mb-2 flex items-center justify-between">
-          <span className="text-sm font-medium text-slate-300">
-            Storage Usage
-          </span>
-          <span className="text-xs text-slate-500">
-            {formatBytes(freeSpace)} free of {formatBytes(totalSpace)}
-          </span>
-        </div>
-        {storageBreakdown && storageBreakdown.total_space > 0 ? (() => {
-          const segments = [
-            { label: "Dashcam", size: storageBreakdown.cam_size, color: "#3b82f6" },
-            { label: "Music", size: storageBreakdown.music_size, color: "#a855f7" },
-            { label: "Lightshow", size: storageBreakdown.lightshow_size, color: "#f59e0b" },
-            { label: "Boombox", size: storageBreakdown.boombox_size, color: "#ec4899" },
-            { label: "Wraps", size: storageBreakdown.wraps_size, color: "#14b8a6" },
-            { label: "Snapshots", size: storageBreakdown.snapshots_size, color: "#6366f1" },
-          ].filter(s => s.size > 0)
-          const total = storageBreakdown.total_space
-          return (
-            <>
-              <div className="h-3 w-full overflow-hidden rounded-full bg-slate-800 flex">
-                {segments.map((s) => (
-                  <div
-                    key={s.label}
-                    className="h-full transition-all duration-500 first:rounded-l-full last:rounded-r-full"
-                    style={{
-                      width: `${Math.max((s.size / total) * 100, 0.5)}%`,
-                      backgroundColor: s.color,
-                    }}
-                    title={`${s.label}: ${formatBytes(s.size)}`}
-                  />
-                ))}
-              </div>
-              <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1">
-                {segments.map((s) => (
-                  <div key={s.label} className="flex items-center gap-1.5 text-xs">
-                    <span
-                      className="inline-block h-2 w-2 rounded-full"
-                      style={{ backgroundColor: s.color }}
+          {storageBreakdown && storageBreakdown.total_space > 0 ? (() => {
+            const segments = [
+              { label: "Dashcam", size: storageBreakdown.cam_size, color: "#3b82f6" },
+              { label: "Music", size: storageBreakdown.music_size, color: "#a855f7" },
+              { label: "Lightshow", size: storageBreakdown.lightshow_size, color: "#f59e0b" },
+              { label: "Boombox", size: storageBreakdown.boombox_size, color: "#ec4899" },
+              { label: "Wraps", size: storageBreakdown.wraps_size, color: "#14b8a6" },
+              { label: "Snapshots", size: storageBreakdown.snapshots_size, color: "#6366f1" },
+            ].filter(s => s.size > 0)
+            const total = storageBreakdown.total_space
+            return (
+              <>
+                <div className="h-3 w-full overflow-hidden rounded-full bg-slate-800 flex">
+                  {segments.map((s) => (
+                    <div
+                      key={s.label}
+                      className="h-full transition-all duration-500 first:rounded-l-full last:rounded-r-full"
+                      style={{
+                        width: `${Math.max((s.size / total) * 100, 0.5)}%`,
+                        backgroundColor: s.color,
+                      }}
+                      title={`${s.label}: ${formatBytes(s.size)}`}
                     />
-                    <span className="text-slate-400">{s.label}</span>
-                    <span className="font-medium text-slate-300">{formatBytes(s.size)}</span>
-                  </div>
-                ))}
-                <div className="flex items-center gap-1.5 text-xs">
-                  <span className="inline-block h-2 w-2 rounded-full bg-slate-700" />
-                  <span className="text-slate-400">Free</span>
-                  <span className="font-medium text-slate-300">{formatBytes(storageBreakdown.free_space)}</span>
+                  ))}
                 </div>
-              </div>
-            </>
-          )
-        })() : (
-          <div className="h-3 w-full overflow-hidden rounded-full bg-slate-800">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-blue-500 to-blue-400 transition-all duration-500"
-              style={{ width: `${usedPercent}%` }}
-            />
-          </div>
-        )}
+                <div className="mt-2.5 flex flex-wrap gap-x-3 gap-y-1">
+                  {segments.map((s) => (
+                    <div key={s.label} className="flex items-center gap-1.5 text-xs">
+                      <span
+                        className="inline-block h-2 w-2 rounded-full"
+                        style={{ backgroundColor: s.color }}
+                      />
+                      <span className="text-slate-400">{s.label}</span>
+                      <span className="font-medium text-slate-300">{formatBytes(s.size)}</span>
+                    </div>
+                  ))}
+                  <div className="flex items-center gap-1.5 text-xs">
+                    <span className="inline-block h-2 w-2 rounded-full bg-slate-700" />
+                    <span className="text-slate-400">Free</span>
+                    <span className="font-medium text-slate-300">{formatBytes(storageBreakdown.free_space)}</span>
+                  </div>
+                </div>
+              </>
+            )
+          })() : (
+            <div className="h-3 w-full overflow-hidden rounded-full bg-slate-800">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-blue-500 to-blue-400 transition-all duration-500"
+                style={{ width: `${usedPercent}%` }}
+              />
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
