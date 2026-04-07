@@ -741,7 +741,7 @@ function UploadTab({ godotReadyRef, godotRef, adminPasscode }: UploadTabProps) {
   const [name, setName] = useState("")
   const [model, setModel] = useState("")
   const [uploading, setUploading] = useState(false)
-  const [uploadStatus, setUploadStatus] = useState<string | null>(null)
+  const [uploadStatus, setUploadStatus] = useState("")
   const [result, setResult] = useState<{ success: boolean; message: string } | null>(null)
 
   // Wait for Godot engine to finish loading (polls the ref)
@@ -931,7 +931,7 @@ function UploadTab({ godotReadyRef, godotRef, adminPasscode }: UploadTabProps) {
       setResult({ success: false, message: err.message || "Upload failed" })
     } finally {
       setUploading(false)
-      setUploadStatus(null)
+      setUploadStatus("")
     }
   }
 
