@@ -35,11 +35,15 @@ const GodotRenderer = forwardRef<GodotRendererHandle, GodotRendererProps>(
         sendToGodot({ type: "set_texture", texture: dataUrl })
       },
       capture(distance?: number) {
-        // Set camera to elevated front-left angle, then capture after a short delay
-        sendToGodot({ type: "set_camera_angle", horizontal: -135, vertical: 25, distance: distance ?? 7 })
+        const angle = { type: "set_camera_angle", horizontal: -135, vertical: 25, distance: distance ?? 7 }
+        // Apply camera orientation twice to ensure it settles in the correct position
+        sendToGodot(angle)
         setTimeout(() => {
-          sendToGodot({ type: "capture" })
-        }, 1000)
+          sendToGodot(angle)
+          setTimeout(() => {
+            sendToGodot({ type: "capture" })
+          }, 1000)
+        }, 500)
       },
     }), [sendToGodot])
 

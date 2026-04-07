@@ -9,8 +9,6 @@ const TESLA_MODELS = [
   "Model 3",
   "Model 3 (2024+) Standard & Premium",
   "Model 3 (2024+) Performance",
-  "Model S",
-  "Model X",
   "Model Y",
   "Model Y (2025+) Standard",
   "Model Y (2025+) Premium",
