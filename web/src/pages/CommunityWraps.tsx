@@ -782,7 +782,7 @@ function UploadTab({ godotReadyRef, godotRef, adminPasscode }: UploadTabProps) {
             // Delay texture application to let the scene's materials fully initialize —
             // complex models (Highland, Juniper, Cybertruck) need more time than base models
             setTimeout(() => {
-              godotRef.current?.setTexture(textureDataUrl)
+              godotRef.current?.setTexture(textureDataUrl!)
               phase = "capturing"
               const camDistance = GODOT_CAMERA_DISTANCE[godotId]
               setTimeout(() => godotRef.current?.capture(camDistance), 3000)
