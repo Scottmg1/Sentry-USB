@@ -3,7 +3,7 @@ import { Link } from "react-router-dom"
 import L from "leaflet"
 import "leaflet/dist/leaflet.css"
 import {
-  MapPin, Navigation, Clock, Gauge, Play,
+  MapPin, Navigation, Clock, Gauge, Play, Pause,
   Download, Upload, Loader2, ChevronLeft, Search, List, X,
   Tag, Plus, Layers, RefreshCw, AlertTriangle,
   Eye, EyeOff, Zap, ChevronRight,
@@ -45,6 +45,7 @@ interface FSDEventPoint {
 
 interface DriveDetail extends Omit<DriveSummary, "startPoint" | "endPoint"> {
   points: [number, number, number, number][] // [lat, lng, timeMs, speedMps]
+  gearStates?: number[] // parallel to points: 0=P, 1=D, 2=R, 3=N
   fsdStates?: number[] // parallel to points: 0=manual, >0=FSD engaged
   fsdEvents?: FSDEventPoint[]
   tags?: string[]
@@ -71,6 +72,13 @@ interface DriveStats {
 }
 
 // ── Helpers ────────────────────────────────────────────────────────
+
+const GEAR_LABELS: Record<number, { text: string; color: string }> = {
+  0: { text: "P", color: "text-blue-400" },
+  1: { text: "D", color: "text-emerald-400" },
+  2: { text: "R", color: "text-red-400" },
+  3: { text: "N", color: "text-amber-400" },
+}
 
 function formatDuration(ms: number) {
   const totalMin = Math.floor(ms / 60000)
@@ -163,6 +171,8 @@ export default function Drives() {
       .catch(() => { })
   }, [])
   const [sliderIdx, setSliderIdx] = useState(0)
+  const [sliderPlaying, setSliderPlaying] = useState(false)
+  const sliderPlayRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const [loading, setLoading] = useState(true)
   const [processing, setProcessing] = useState(false)
   const [processMsg, setProcessMsg] = useState("")
@@ -437,6 +447,46 @@ export default function Drives() {
     arrowMarker.current.setLatLng([pt[0], pt[1]])
   }
 
+  function toggleSliderPlay() {
+    if (sliderPlaying) {
+      if (sliderPlayRef.current) clearInterval(sliderPlayRef.current)
+      sliderPlayRef.current = null
+      setSliderPlaying(false)
+      return
+    }
+    if (!selectedDrive || selectedDrive.points.length === 0) return
+    // If at end, restart from beginning
+    if (sliderIdx >= selectedDrive.points.length - 1) {
+      handleSlider(0)
+    }
+    setSliderPlaying(true)
+    sliderPlayRef.current = setInterval(() => {
+      setSliderIdx((prev) => {
+        const drive = selectedDrive
+        if (!drive) return prev
+        const next = prev + 1
+        if (next >= drive.points.length) {
+          if (sliderPlayRef.current) clearInterval(sliderPlayRef.current)
+          sliderPlayRef.current = null
+          setSliderPlaying(false)
+          return drive.points.length - 1
+        }
+        const pt = drive.points[next]
+        if (arrowMarker.current) arrowMarker.current.setLatLng([pt[0], pt[1]])
+        return next
+      })
+    }, 100)
+  }
+
+  // Stop playback when drive changes
+  useEffect(() => {
+    if (sliderPlayRef.current) {
+      clearInterval(sliderPlayRef.current)
+      sliderPlayRef.current = null
+    }
+    setSliderPlaying(false)
+  }, [selectedId])
+
   // ── Check archive status ──
   useEffect(() => {
     async function checkArchive() {
@@ -537,7 +587,7 @@ export default function Drives() {
   const dist = (d: DriveSummary | DriveDetail) => metric ? `${d.distanceKm} km` : `${d.distanceMi} mi`
   const avgSpd = (d: DriveSummary | DriveDetail) => metric ? `${d.avgSpeedKmh} km/h` : `${d.avgSpeedMph} mph`
   const maxSpd = (d: DriveSummary | DriveDetail) => metric ? `${d.maxSpeedKmh} km/h` : `${d.maxSpeedMph} mph`
-  const mpsToDisplay = (mps: number) => metric ? (mps * 3.6).toFixed(1) : (mps * 2.23694).toFixed(1)
+  const mpsToDisplay = (mps: number) => metric ? (Math.abs(mps) * 3.6).toFixed(1) : (Math.abs(mps) * 2.23694).toFixed(1)
   const distUnit = metric ? "km" : "mi"
   const speedUnit = metric ? "km/h" : "mph"
 
@@ -1117,6 +1167,13 @@ export default function Drives() {
 
               {/* Slider */}
               <div className="flex items-center gap-3">
+                <button
+                  onClick={toggleSliderPlay}
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-500/20 text-blue-400 transition-colors hover:bg-blue-500/30"
+                  title={sliderPlaying ? "Pause playback" : "Play drive route"}
+                >
+                  {sliderPlaying ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5 translate-x-px" />}
+                </button>
                 <span className="min-w-[52px] text-[10px] tabular-nums text-slate-500">
                   {selectedDrive.points.length > 0 ? formatTimeMs(selectedDrive.points[0][2]) : "--"}
                 </span>
@@ -1125,7 +1182,7 @@ export default function Drives() {
                   min={0}
                   max={selectedDrive.points.length - 1}
                   value={sliderIdx}
-                  onChange={(e) => handleSlider(parseInt(e.target.value))}
+                  onChange={(e) => { if (sliderPlaying) toggleSliderPlay(); handleSlider(parseInt(e.target.value)) }}
                   className="h-1 flex-1 cursor-pointer appearance-none rounded-full bg-slate-800 accent-blue-500 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-blue-500 [&::-webkit-slider-thumb]:shadow-[0_0_6px_rgba(59,130,246,0.5)]"
                 />
                 <span className="min-w-[52px] text-right text-[10px] tabular-nums text-slate-500">
@@ -1137,6 +1194,13 @@ export default function Drives() {
                 <div className="mt-1.5 flex flex-wrap justify-center gap-x-4 gap-y-1 text-[11px] text-slate-500 sm:gap-5">
                   <span>Time: <span className="font-semibold text-blue-400">{formatTimeMs(sliderPt[2])}</span></span>
                   <span>Speed: <span className="font-semibold text-blue-400">{mpsToDisplay(sliderPt[3])} {speedUnit}</span></span>
+                  {selectedDrive.gearStates && selectedDrive.gearStates[sliderIdx] !== undefined && (
+                    <span>
+                      Gear: <span className={`font-semibold ${(GEAR_LABELS[selectedDrive.gearStates[sliderIdx]] || GEAR_LABELS[0]).color}`}>
+                        {(GEAR_LABELS[selectedDrive.gearStates[sliderIdx]] || GEAR_LABELS[0]).text}
+                      </span>
+                    </span>
+                  )}
                   <span>Dist: <span className="font-semibold text-blue-400">{sliderDistDisplay} {distUnit}</span></span>
                   <span>Pt: <span className="font-semibold text-blue-400">{sliderIdx + 1}/{selectedDrive.points.length}</span></span>
                   {selectedDrive.fsdStates && selectedDrive.fsdStates[sliderIdx] !== undefined && (
