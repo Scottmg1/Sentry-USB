@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useRef, useCallback } from "react"
 import { Users, Paintbrush, Volume2 } from "lucide-react"
 import CommunityWraps from "./CommunityWraps"
 import LockChime from "./LockChime"
@@ -7,6 +7,8 @@ type CommunityView = "wraps" | "chimes"
 
 export default function Community() {
   const [view, setView] = useState<CommunityView>("wraps")
+  const headingClickRef = useRef<(() => void) | null>(null)
+  const registerHeadingClick = useCallback((fn: () => void) => { headingClickRef.current = fn }, [])
 
   return (
     <div className="space-y-6">
@@ -17,7 +19,10 @@ export default function Community() {
             <Users className="h-5 w-5 text-blue-400" />
           </div>
           <div>
-            <h1 className="text-xl font-semibold text-slate-100">Community</h1>
+            <h1
+              className="cursor-default select-none text-xl font-semibold text-slate-100"
+              onClick={() => headingClickRef.current?.()}
+            >Community</h1>
             <p className="text-xs text-slate-500">Wraps & Chimes</p>
           </div>
         </div>
@@ -50,7 +55,7 @@ export default function Community() {
       </div>
 
       {/* Content */}
-      {view === "wraps" ? <CommunityWraps /> : <LockChime />}
+      {view === "wraps" ? <CommunityWraps onRegisterHeadingClick={registerHeadingClick} /> : <LockChime />}
     </div>
   )
 }

@@ -1889,18 +1889,6 @@ export default function Settings() {
                 />
               </label>
             </div>
-            {!includePrerelease && (
-              <div className="border-t border-white/5 px-3 py-2">
-                <button
-                  onClick={() => handleCheckForUpdate(true)}
-                  disabled={isCheckingUpdate}
-                  className="text-xs text-slate-500 transition-colors hover:text-slate-300"
-                >
-                  {isCheckingUpdate ? "Checking..." : "One-time check for pre-releases"}
-                </button>
-              </div>
-            )}
-
             {/* Links footer */}
             <div className="border-t border-white/5 px-3 py-2 flex items-center gap-3">
               <a href="https://github.com/Scottmg1/Sentry-USB" target="_blank" rel="noopener noreferrer"

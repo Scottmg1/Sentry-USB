@@ -39,7 +39,6 @@ const navItems = [
   { to: "/drives", icon: MapPin, label: "Drives" },
   { to: "/community", icon: Users, label: "Community" },
   { to: "/notifications", icon: BellRing, label: "Notifications" },
-  { to: "/terminal", icon: TerminalSquare, label: "Terminal" },
   { to: "/settings", icon: Settings, label: "Settings" },
 ]
 
@@ -124,6 +123,22 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         })}
       </nav>
 
+      {/* Terminal link (secondary) */}
+      <NavLink
+        to="/terminal"
+        className={({ isActive }) =>
+          cn(
+            "mx-2 mb-1 flex items-center gap-2 rounded-lg px-3 py-2 text-xs transition-colors",
+            isActive
+              ? "bg-blue-500/10 text-blue-400"
+              : "text-slate-600 hover:bg-white/5 hover:text-slate-400"
+          )
+        }
+      >
+        <TerminalSquare className="h-3.5 w-3.5 shrink-0" />
+        {!collapsed && <span>Terminal</span>}
+      </NavLink>
+
       {/* Support link (secondary) */}
       <NavLink
         to="/support"
@@ -198,12 +213,12 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         </button>
       )}
 
-      {/* Collapse toggle */}
+      {/* Collapse toggle — pinned to right edge, vertically centered */}
       <button
         onClick={onToggle}
-        className="mx-2 mb-4 flex items-center justify-center rounded-lg p-2 text-slate-600 transition-colors hover:bg-white/5 hover:text-slate-400"
+        className="absolute right-0 top-1/2 z-40 -translate-y-1/2 translate-x-1/2 flex h-6 w-6 items-center justify-center rounded-full border border-white/10 bg-slate-900 text-slate-500 shadow-lg transition-colors hover:bg-slate-800 hover:text-slate-300"
       >
-        {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+        {collapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronLeft className="h-3 w-3" />}
       </button>
     </aside>
   )
