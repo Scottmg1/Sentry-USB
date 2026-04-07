@@ -81,7 +81,7 @@ export function MobileNav({ open, onClose }: MobileNavProps) {
               </span>
               {version && (
                 <p className="text-[10px] leading-tight text-slate-600">
-                  v{version}
+                  {version}
                 </p>
               )}
             </div>

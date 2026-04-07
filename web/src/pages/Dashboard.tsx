@@ -371,9 +371,9 @@ export default function Dashboard() {
                 </p>
                 <div className="group relative">
                   <Info className="h-3 w-3 cursor-help text-slate-600 transition-colors hover:text-slate-400" />
-                  <div className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 w-64 -translate-x-1/2 rounded-xl border border-white/10 bg-slate-900 p-3 text-[11px] leading-relaxed text-slate-400 opacity-0 shadow-xl transition-opacity group-hover:pointer-events-auto group-hover:opacity-100">
+                  <div className="pointer-events-none absolute left-0 top-full z-50 mt-2 w-64 rounded-xl border border-white/10 bg-slate-900 p-3 text-[11px] leading-relaxed text-slate-400 opacity-0 shadow-xl transition-opacity group-hover:pointer-events-auto group-hover:opacity-100">
+                    <div className="absolute bottom-full left-4 border-4 border-transparent border-b-slate-900" />
                     Sentry USB automatically manages your storage. Old snapshots are deleted when space is needed — you don't need to manually free up space. Low remaining space is normal and expected, especially with dashcam footage being continuously saved.
-                    <div className="absolute left-1/2 top-full -translate-x-1/2 border-4 border-transparent border-t-slate-900" />
                   </div>
                 </div>
               </div>
