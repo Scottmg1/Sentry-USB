@@ -130,6 +130,7 @@ func RegisterRoutes(mux *http.ServeMux, hub *ws.Hub) {
 	// Community wraps (proxy to backend API)
 	mux.HandleFunc("GET /api/wraps/library", h.communityWrapsLibrary)
 	mux.HandleFunc("GET /api/wraps/thumbnail/{code}", h.communityWrapsThumbnail)
+	mux.HandleFunc("GET /api/wraps/preview/{code}", h.communityWrapsPreview)
 	mux.HandleFunc("POST /api/wraps/upload", h.communityWrapsUpload)
 	mux.HandleFunc("POST /api/wraps/download/{code}", h.communityWrapsDownload)
 	mux.HandleFunc("POST /api/wraps/admin/validate", h.communityWrapsAdminValidate)
