@@ -22,8 +22,6 @@ import {
   Clock,
   Bell,
   Shield,
-  Cpu,
-  Sliders,
   Save,
 } from "lucide-react"
 import { api } from "@/lib/api"
@@ -335,7 +333,7 @@ function BlePairButton() {
     <button
       onClick={bleState === "idle" ? handlePair : bleState === "paired" ? handlePairedClick : bleState === "error" ? handleReset : undefined}
       disabled={isActive}
-      className="glass-card glass-card-hover flex items-start gap-3 p-3 text-left transition-all disabled:opacity-70"
+      className="glass-card glass-card-hover max-w-sm flex items-start gap-3 p-3 text-left transition-all disabled:opacity-70"
     >
       <div
         className={cn(
@@ -880,7 +878,7 @@ function KeepAwakePreference() {
   const { mode, updateMode } = useKeepAwake()
 
   return (
-    <div className="glass-card overflow-hidden p-3">
+    <div className="glass-card w-56 overflow-hidden p-3">
       <div className="flex items-center gap-3 mb-2">
         <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-rose-500/15">
           <HeartPulse className="h-3.5 w-3.5 text-rose-400" />
@@ -965,7 +963,7 @@ function AwayModeControl() {
   }
 
   return (
-    <div className="glass-card overflow-hidden p-3">
+    <div className="glass-card max-w-xs overflow-hidden p-3">
       <div className="flex items-center gap-3 mb-2">
         <div className={cn(
           "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg",
@@ -1233,7 +1231,7 @@ function ConfigBackupSection() {
   }
 
   return (
-    <div className="glass-card overflow-hidden p-3">
+    <div className="glass-card max-w-xs overflow-hidden p-3">
       <div className="flex items-center gap-3 mb-2">
         <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-500/15">
           <Save className="h-3.5 w-3.5 text-blue-400" />
@@ -1441,17 +1439,9 @@ function ConfigBackupSection() {
 
 // ─── Tab definitions ────────────────────────────────────────────────────────
 
-const TABS = [
-  { id: "general", label: "General", icon: Sliders },
-  { id: "advanced", label: "Advanced", icon: Cpu },
-] as const
-
-type TabId = typeof TABS[number]["id"]
-
 // ─── Main Settings page ────────────────────────────────────────────────────
 
 export default function Settings() {
-  const [activeTab, setActiveTab] = useState<TabId>("general")
   const [confirmReboot, setConfirmReboot] = useState(false)
   const [wizardOpen, setWizardOpen] = useState(false)
   const [wizardInitialData, setWizardInitialData] = useState<Record<string, string> | undefined>(undefined)
@@ -1652,358 +1642,317 @@ export default function Settings() {
         </p>
       </div>
 
-      {/* Tab bar */}
-      <div className="tab-bar">
-        {TABS.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={cn("tab-item flex items-center justify-center gap-2", activeTab === tab.id && "active")}
-          >
-            <tab.icon className="h-3.5 w-3.5 hidden sm:block" />
-            {tab.label}
-          </button>
-        ))}
+      {/* Setup Wizard CTA */}
+      <div className="glass-card overflow-hidden">
+        <div className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-blue-500/20">
+            <Wand2 className="h-4 w-4 text-blue-400" />
+          </div>
+          <div className="flex-1">
+            <h2 className="text-sm font-semibold text-slate-100">
+              Setup Wizard
+            </h2>
+            <p className="mt-0.5 text-xs text-slate-400">
+              Configure WiFi, archive, notifications, and more.
+            </p>
+          </div>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <button
+              onClick={async () => {
+                try {
+                  const res = await fetch("/api/setup/config")
+                  if (!res.ok) throw new Error("Failed")
+                  const data = await res.json()
+                  let content = "# sentryusb.conf - exported from Sentry USB UI\n"
+                  for (const [k, v] of Object.entries(data)) {
+                    const entry = v as { value: string; active: boolean }
+                    if (entry.active) {
+                      content += `export ${k}='${entry.value}'\n`
+                    } else {
+                      content += `# export ${k}='${entry.value}'\n`
+                    }
+                  }
+                  const blob = new Blob([content], { type: "text/plain" })
+                  const url = URL.createObjectURL(blob)
+                  const a = document.createElement("a")
+                  a.href = url
+                  a.download = "sentryusb.conf"
+                  a.click()
+                  URL.revokeObjectURL(url)
+                } catch { /* ignore */ }
+              }}
+              className="shrink-0 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-slate-300 transition-colors hover:bg-white/10"
+            >
+              <Download className="mr-1.5 inline h-3.5 w-3.5" />
+              Export Config
+            </button>
+            <button
+              onClick={async () => {
+                try {
+                  const res = await fetch("/api/setup/config")
+                  if (res.ok) {
+                    const data = await res.json()
+                    const flat: Record<string, string> = {}
+                    for (const [k, v] of Object.entries(data)) {
+                      const entry = v as { value: string; active: boolean }
+                      if (entry.active) flat[k] = entry.value
+                    }
+                    setWizardInitialData(flat)
+                  }
+                } catch { /* use empty data */ }
+                setWizardOpen(true)
+              }}
+              className="shrink-0 rounded-xl bg-blue-500 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-blue-600"
+            >
+              Open Wizard
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* ── General Tab ────────────────────────────────────────────── */}
-      {activeTab === "general" && (
-        <div className="space-y-4">
-          {/* Setup Wizard CTA */}
-          <div className="glass-card overflow-hidden">
-            <div className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-blue-500/20">
-                <Wand2 className="h-4 w-4 text-blue-400" />
-              </div>
-              <div className="flex-1">
-                <h2 className="text-sm font-semibold text-slate-100">
-                  Setup Wizard
-                </h2>
-                <p className="mt-0.5 text-xs text-slate-400">
-                  Configure WiFi, archive, notifications, and more through a guided
-                  setup experience.
-                </p>
-              </div>
-              <div className="flex shrink-0 flex-wrap gap-2">
-                <button
-                  onClick={async () => {
-                    try {
-                      const res = await fetch("/api/setup/config")
-                      if (!res.ok) throw new Error("Failed")
-                      const data = await res.json()
-                      let content = "# sentryusb.conf - exported from Sentry USB UI\n"
-                      for (const [k, v] of Object.entries(data)) {
-                        const entry = v as { value: string; active: boolean }
-                        if (entry.active) {
-                          content += `export ${k}='${entry.value}'\n`
-                        } else {
-                          content += `# export ${k}='${entry.value}'\n`
-                        }
-                      }
-                      const blob = new Blob([content], { type: "text/plain" })
-                      const url = URL.createObjectURL(blob)
-                      const a = document.createElement("a")
-                      a.href = url
-                      a.download = "sentryusb.conf"
-                      a.click()
-                      URL.revokeObjectURL(url)
-                    } catch { /* ignore */ }
-                  }}
-                  className="shrink-0 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-slate-300 transition-colors hover:bg-white/10"
-                >
-                  <Download className="mr-1.5 inline h-3.5 w-3.5" />
-                  Export Config
-                </button>
-                <button
-                  onClick={async () => {
-                    try {
-                      const res = await fetch("/api/setup/config")
-                      if (res.ok) {
-                        const data = await res.json()
-                        const flat: Record<string, string> = {}
-                        for (const [k, v] of Object.entries(data)) {
-                          const entry = v as { value: string; active: boolean }
-                          if (entry.active) flat[k] = entry.value
-                        }
-                        setWizardInitialData(flat)
-                      }
-                    } catch { /* use empty data */ }
-                    setWizardOpen(true)
-                  }}
-                  className="shrink-0 rounded-xl bg-blue-500 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-blue-600"
-                >
-                  Open Wizard
-                </button>
-              </div>
-            </div>
-          </div>
+      {/* Quick Actions — 3x2 */}
+      <div>
+        <p className="section-label mb-2 px-1">Quick Actions</p>
+        <div className="grid max-w-lg grid-cols-3 gap-2">
+          <UsbDriveToggle />
+          <ActionButton
+            icon={RefreshCw}
+            label="Archive Sync"
+            description="Start archiving clips now"
+            successMessage="Archive sync started"
+            compact
+            onClick={async () => {
+              const res = await fetch("/api/system/trigger-sync", { method: "POST" })
+              if (!res.ok) throw new Error("Failed to trigger sync")
+            }}
+          />
+          <SpeedTestButton />
+          <HealthCheckButton />
+          <ActionButton
+            icon={RotateCcw}
+            label={confirmReboot ? "Confirm Reboot" : "Restart Pi"}
+            description={confirmReboot ? "Press again to reboot" : "Reboot the device"}
+            variant={confirmReboot ? "danger" : "default"}
+            compact
+            onClick={handleReboot}
+          />
+          <ActionButton
+            icon={SettingsIcon}
+            label="Raw Config"
+            description="View/edit config file"
+            compact
+            onClick={async () => {
+              const res = await fetch("/api/setup/config")
+              if (!res.ok) throw new Error("Failed to load config")
+              const data = await res.json()
+              setRawConfig(data)
+              setRawConfigOpen(true)
+              return "confirm"
+            }}
+          />
+        </div>
+      </div>
 
-          {/* Quick Actions */}
-          <div>
-            <p className="section-label mb-2 px-1">Quick Actions</p>
-            <div className="grid max-w-md grid-cols-2 gap-2">
-              <UsbDriveToggle />
-              <ActionButton
-                icon={RefreshCw}
-                label="Archive Sync"
-                description="Start archiving clips now"
-                successMessage="Archive sync started"
-                compact
-                onClick={async () => {
-                  const res = await fetch("/api/system/trigger-sync", { method: "POST" })
-                  if (!res.ok) throw new Error("Failed to trigger sync")
-                }}
-              />
-              <SpeedTestButton />
-              <HealthCheckButton />
-            </div>
-          </div>
+      {/* Preferences */}
+      <div>
+        <p className="section-label mb-2 px-1">Preferences</p>
+        <div className="flex flex-wrap gap-2">
+          <KeepAwakePreference />
+          <AwayModeControl />
+          <ConfigBackupSection />
+        </div>
+      </div>
 
-          {/* Preferences */}
-          <div>
-            <p className="section-label mb-2 px-1">Preferences</p>
-            <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
-              <KeepAwakePreference />
-              <AwayModeControl />
-              <ConfigBackupSection />
-            </div>
-          </div>
+      {/* Connections */}
+      <div>
+        <p className="section-label mb-2 px-1">Connections</p>
+        <div className="flex flex-wrap gap-2">
+          <MobileNotificationsSection />
+          {piConfig?.uses_ble === "yes" && <BlePairButton />}
+        </div>
+      </div>
 
-          {/* Connections */}
-          <div>
-            <p className="section-label mb-2 px-1">Connections</p>
-            <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
-              <MobileNotificationsSection />
-              {piConfig?.uses_ble === "yes" && <BlePairButton />}
+      {/* Update banners */}
+      {stableUpdate && updateStatus === "idle" && (
+        <div className="glass-card max-w-lg overflow-hidden border border-emerald-500/20 bg-emerald-500/5">
+          <div className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/20">
+              <Download className="h-4 w-4 text-emerald-400" />
             </div>
+            <div className="flex-1">
+              <h2 className="text-sm font-semibold text-emerald-200">
+                Stable Update: {stableUpdate.version}
+              </h2>
+              <p className="mt-0.5 text-xs text-slate-400">
+                Updates server, scripts, and BLE daemon.{" "}
+                <a href={stableUpdate.release_url} target="_blank" rel="noopener noreferrer"
+                  className="text-blue-400 hover:text-blue-300 underline">Release notes</a>
+              </p>
+              {stableUpdate.release_notes && (
+                <pre className="mt-2 max-h-24 overflow-y-auto whitespace-pre-wrap rounded-lg bg-black/20 p-2 text-[11px] text-slate-400">
+                  {stableUpdate.release_notes}
+                </pre>
+              )}
+            </div>
+            <button
+              onClick={() => handleInstallUpdate(stableUpdate.version)}
+              className="shrink-0 self-start rounded-lg bg-emerald-500 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-emerald-600"
+            >
+              Install Stable
+            </button>
           </div>
         </div>
       )}
 
-      {/* ── Advanced Tab ───────────────────────────────────────────── */}
-      {activeTab === "advanced" && (
-        <div className="space-y-4">
-          {/* Stable update banner */}
-          {stableUpdate && updateStatus === "idle" && (
-            <div className="glass-card overflow-hidden border border-emerald-500/20 bg-emerald-500/5">
-              <div className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/20">
-                  <Download className="h-4 w-4 text-emerald-400" />
-                </div>
-                <div className="flex-1">
-                  <h2 className="text-sm font-semibold text-emerald-200">
-                    Stable Update: {stableUpdate.version}
-                  </h2>
-                  <p className="mt-0.5 text-xs text-slate-400">
-                    Updates server, scripts, and BLE daemon.{" "}
-                    <a href={stableUpdate.release_url} target="_blank" rel="noopener noreferrer"
-                      className="text-blue-400 hover:text-blue-300 underline">Release notes</a>
-                  </p>
-                  {stableUpdate.release_notes && (
-                    <pre className="mt-2 max-h-24 overflow-y-auto whitespace-pre-wrap rounded-lg bg-black/20 p-2 text-[11px] text-slate-400">
-                      {stableUpdate.release_notes}
-                    </pre>
-                  )}
-                </div>
-                <button
-                  onClick={() => handleInstallUpdate(stableUpdate.version)}
-                  className="shrink-0 self-start rounded-lg bg-emerald-500 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-emerald-600"
-                >
-                  Install Stable
-                </button>
-              </div>
+      {prereleaseUpdate && updateStatus === "idle" && (
+        <div className="glass-card max-w-lg overflow-hidden border border-amber-500/20 bg-amber-500/5">
+          <div className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-500/20">
+              <Download className="h-4 w-4 text-amber-400" />
             </div>
-          )}
+            <div className="flex-1">
+              <h2 className="text-sm font-semibold text-amber-200">
+                Pre-release: {prereleaseUpdate.version}
+              </h2>
+              <p className="mt-0.5 text-xs text-slate-400">
+                Test build — may contain bugs.{" "}
+                <a href={prereleaseUpdate.release_url} target="_blank" rel="noopener noreferrer"
+                  className="text-blue-400 hover:text-blue-300 underline">Release notes</a>
+              </p>
+              {prereleaseUpdate.release_notes && (
+                <pre className="mt-2 max-h-24 overflow-y-auto whitespace-pre-wrap rounded-lg bg-black/20 p-2 text-[11px] text-slate-400">
+                  {prereleaseUpdate.release_notes}
+                </pre>
+              )}
+            </div>
+            <button
+              onClick={() => handleInstallUpdate(prereleaseUpdate.version)}
+              className="shrink-0 self-start rounded-lg bg-amber-500 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-amber-600"
+            >
+              Install Pre-release
+            </button>
+          </div>
+        </div>
+      )}
 
-          {/* Prerelease update banner */}
-          {prereleaseUpdate && updateStatus === "idle" && (
-            <div className="glass-card overflow-hidden border border-amber-500/20 bg-amber-500/5">
-              <div className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-500/20">
-                  <Download className="h-4 w-4 text-amber-400" />
-                </div>
-                <div className="flex-1">
-                  <h2 className="text-sm font-semibold text-amber-200">
-                    Pre-release: {prereleaseUpdate.version}
-                  </h2>
-                  <p className="mt-0.5 text-xs text-slate-400">
-                    Test build — may contain bugs.{" "}
-                    <a href={prereleaseUpdate.release_url} target="_blank" rel="noopener noreferrer"
-                      className="text-blue-400 hover:text-blue-300 underline">Release notes</a>
-                  </p>
-                  {prereleaseUpdate.release_notes && (
-                    <pre className="mt-2 max-h-24 overflow-y-auto whitespace-pre-wrap rounded-lg bg-black/20 p-2 text-[11px] text-slate-400">
-                      {prereleaseUpdate.release_notes}
-                    </pre>
-                  )}
-                </div>
-                <button
-                  onClick={() => handleInstallUpdate(prereleaseUpdate.version)}
-                  className="shrink-0 self-start rounded-lg bg-amber-500 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-amber-600"
-                >
-                  Install Pre-release
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Update check */}
-          <div className="glass-card overflow-hidden">
-            <div className="flex items-center gap-3 p-3">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/20">
-                {updateStatus === "error" ? (
-                  <AlertCircle className="h-4 w-4 text-red-400" />
-                ) : updateStatus === "done" ? (
-                  <CheckCircle className="h-4 w-4 text-emerald-400" />
-                ) : updateStatus !== "idle" ? (
-                  <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
-                ) : (
-                  <Download className="h-4 w-4 text-emerald-400" />
-                )}
-              </div>
-              <div className="flex-1 min-w-0">
-                <h2 className="text-sm font-semibold text-slate-100">Update Sentry USB</h2>
-                <p className="mt-0.5 text-xs text-slate-400 truncate">
-                  {updateStatus === "idle" && !updateError && "Check for and install the latest version"}
-                  {updateStatus === "idle" && updateError && <span className="text-red-400">{updateError}</span>}
-                  {updateStatus === "error" && <span className="text-red-400">{updateError || "Update failed."}</span>}
-                  {updateStatus === "done" && <span className="text-emerald-400">{updateMessage || "Update complete!"}</span>}
-                  {updateStatus !== "idle" && updateStatus !== "error" && updateStatus !== "done" && (
-                    updateMessage || "Working..."
-                  )}
-                </p>
-              </div>
-              <button
-                onClick={() => handleCheckForUpdate()}
-                disabled={isCheckingUpdate || (updateStatus !== "idle" && updateStatus !== "error" && updateStatus !== "done")}
-                className="shrink-0 rounded-lg bg-emerald-500 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-emerald-600 disabled:opacity-50"
-              >
-                {isCheckingUpdate ? (
-                  <span className="flex items-center gap-1.5">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Checking
-                  </span>
-                ) : "Check for Updates"}
-              </button>
-            </div>
-
-            {/* Update preferences */}
-            <div className="border-t border-white/5 px-3 py-2">
-              <label className="flex cursor-pointer items-center justify-between">
-                <span className="text-xs text-slate-400">Auto-check after each archive</span>
-                <input
-                  type="checkbox"
-                  checked={autoUpdateEnabled}
-                  onChange={async (e) => {
-                    const enabled = e.target.checked
-                    setAutoUpdateEnabled(enabled)
-                    await fetch("/api/config/preference", {
-                      method: "PUT",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ key: "auto_update_check", value: enabled ? "enabled" : "disabled" }),
-                    }).catch(() => { })
-                  }}
-                  className="toggle-switch"
-                />
-              </label>
-            </div>
-            <div className="border-t border-white/5 px-3 py-2">
-              <label className="flex cursor-pointer items-center justify-between gap-3">
-                <div>
-                  <span className="text-xs text-slate-400">Include pre-releases</span>
-                  <span className="block text-[10px] text-slate-600 mt-0.5">Test builds may contain bugs</span>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={includePrerelease}
-                  onChange={async (e) => {
-                    const enabled = e.target.checked
-                    setIncludePrerelease(enabled)
-                    await fetch("/api/config/preference", {
-                      method: "PUT",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ key: "update_channel", value: enabled ? "prerelease" : "stable" }),
-                    }).catch(() => { })
-                  }}
-                  className="toggle-switch"
-                />
-              </label>
-            </div>
-            {!includePrerelease && (
-              <div className="border-t border-white/5 px-3 py-2">
-                <button
-                  onClick={() => handleCheckForUpdate(true)}
-                  disabled={isCheckingUpdate}
-                  className="text-xs text-slate-500 transition-colors hover:text-slate-300"
-                >
-                  {isCheckingUpdate ? "Checking..." : "One-time check for pre-releases"}
-                </button>
-              </div>
+      {/* Update check */}
+      <div className="glass-card max-w-lg overflow-hidden">
+        <div className="flex items-center gap-3 p-3">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/20">
+            {updateStatus === "error" ? (
+              <AlertCircle className="h-4 w-4 text-red-400" />
+            ) : updateStatus === "done" ? (
+              <CheckCircle className="h-4 w-4 text-emerald-400" />
+            ) : updateStatus !== "idle" ? (
+              <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
+            ) : (
+              <Download className="h-4 w-4 text-emerald-400" />
             )}
           </div>
-
-          {/* System management */}
-          <div>
-            <p className="section-label mb-2 px-1">System</p>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <ActionButton
-                icon={RotateCcw}
-                label={confirmReboot ? "Press again to confirm" : "Restart Raspberry Pi"}
-                description={
-                  confirmReboot
-                    ? "This will reboot the device immediately"
-                    : "Reboot the Sentry USB device"
-                }
-                variant={confirmReboot ? "danger" : "default"}
-                compact
-                onClick={handleReboot}
-              />
-              <ActionButton
-                icon={SettingsIcon}
-                label="Raw Configuration"
-                description="View and edit raw configuration file"
-                compact
-                onClick={async () => {
-                  const res = await fetch("/api/setup/config")
-                  if (!res.ok) throw new Error("Failed to load config")
-                  const data = await res.json()
-                  setRawConfig(data)
-                  setRawConfigOpen(true)
-                  return "confirm"
-                }}
-              />
-            </div>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-sm font-semibold text-slate-100">Update Sentry USB</h2>
+            <p className="mt-0.5 text-xs text-slate-400 truncate">
+              {updateStatus === "idle" && !updateError && "Check for and install the latest version"}
+              {updateStatus === "idle" && updateError && <span className="text-red-400">{updateError}</span>}
+              {updateStatus === "error" && <span className="text-red-400">{updateError || "Update failed."}</span>}
+              {updateStatus === "done" && <span className="text-emerald-400">{updateMessage || "Update complete!"}</span>}
+              {updateStatus !== "idle" && updateStatus !== "error" && updateStatus !== "done" && (
+                updateMessage || "Working..."
+              )}
+            </p>
           </div>
-
-          {/* About */}
-          <div className="glass-card overflow-hidden p-3">
-            <div className="flex items-center gap-3">
-              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-500/10">
-                <Shield className="h-3.5 w-3.5 text-slate-400" />
-              </div>
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-slate-400">
-                <span className="font-mono text-slate-300">{version || "..."}</span>
-                <a href="https://github.com/Scottmg1/Sentry-USB" target="_blank" rel="noopener noreferrer"
-                  className="text-blue-400 hover:text-blue-300">Sentry USB</a>
-                <span className="text-slate-600">·</span>
-                <a href="https://github.com/marcone/teslausb" target="_blank" rel="noopener noreferrer"
-                  className="text-blue-400 hover:text-blue-300">TeslaUSB</a>
-                <span className="text-slate-600">· MIT</span>
-              </div>
-              <a
-                href="https://discord.gg/9QZEzVwdnt"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-[#5865F2] px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-[#4752c4]"
-              >
-                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z" />
-                </svg>
-                Discord
-              </a>
-            </div>
-          </div>
+          <button
+            onClick={() => handleCheckForUpdate()}
+            disabled={isCheckingUpdate || (updateStatus !== "idle" && updateStatus !== "error" && updateStatus !== "done")}
+            className="shrink-0 rounded-lg bg-emerald-500 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-emerald-600 disabled:opacity-50"
+          >
+            {isCheckingUpdate ? (
+              <span className="flex items-center gap-1.5">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Checking
+              </span>
+            ) : "Check for Updates"}
+          </button>
         </div>
-      )}
+
+        {/* Update preferences */}
+        <div className="border-t border-white/5 px-3 py-2">
+          <label className="flex cursor-pointer items-center justify-between">
+            <span className="text-xs text-slate-400">Auto-check after each archive</span>
+            <input
+              type="checkbox"
+              checked={autoUpdateEnabled}
+              onChange={async (e) => {
+                const enabled = e.target.checked
+                setAutoUpdateEnabled(enabled)
+                await fetch("/api/config/preference", {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ key: "auto_update_check", value: enabled ? "enabled" : "disabled" }),
+                }).catch(() => { })
+              }}
+              className="toggle-switch"
+            />
+          </label>
+        </div>
+        <div className="border-t border-white/5 px-3 py-2">
+          <label className="flex cursor-pointer items-center justify-between gap-3">
+            <div>
+              <span className="text-xs text-slate-400">Include pre-releases</span>
+              <span className="block text-[10px] text-slate-600 mt-0.5">Test builds may contain bugs</span>
+            </div>
+            <input
+              type="checkbox"
+              checked={includePrerelease}
+              onChange={async (e) => {
+                const enabled = e.target.checked
+                setIncludePrerelease(enabled)
+                await fetch("/api/config/preference", {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ key: "update_channel", value: enabled ? "prerelease" : "stable" }),
+                }).catch(() => { })
+              }}
+              className="toggle-switch"
+            />
+          </label>
+        </div>
+        {!includePrerelease && (
+          <div className="border-t border-white/5 px-3 py-2">
+            <button
+              onClick={() => handleCheckForUpdate(true)}
+              disabled={isCheckingUpdate}
+              className="text-xs text-slate-500 transition-colors hover:text-slate-300"
+            >
+              {isCheckingUpdate ? "Checking..." : "One-time check for pre-releases"}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* About */}
+      <div className="glass-card max-w-lg overflow-hidden p-3">
+        <div className="flex items-center gap-3">
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-500/10">
+            <Shield className="h-3.5 w-3.5 text-slate-400" />
+          </div>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-slate-400">
+            <span className="font-mono text-slate-300">{version || "..."}</span>
+            <a href="https://github.com/Scottmg1/Sentry-USB" target="_blank" rel="noopener noreferrer"
+              className="text-blue-400 hover:text-blue-300">Sentry USB</a>
+          </div>
+          <a
+            href="https://discord.gg/9QZEzVwdnt"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-[#5865F2] px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-[#4752c4]"
+          >
+            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z" />
+            </svg>
+            Discord
+          </a>
+        </div>
+      </div>
 
       {/* Setup Wizard Modal */}
       {wizardOpen && (
