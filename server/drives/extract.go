@@ -18,8 +18,13 @@ const (
 	GearNeutral = 3
 )
 
-// AutopilotOff means no autopilot / FSD is active.
-const AutopilotOff = 0
+// Autopilot state constants matching Tesla's Dashcam.proto AutopilotState enum.
+const (
+	AutopilotOff       = 0 // Manual driving
+	AutopilotFSD       = 1 // Full Self-Driving (Supervised)
+	AutopilotAutosteer = 2 // Autopilot (Autosteer)
+	AutopilotTACC      = 3 // Traffic-Aware Cruise Control
+)
 
 // ExtractGPSFromFile opens an MP4 file and extracts GPS points, gear states,
 // autopilot states, speeds, and accelerator pedal positions from SEI NAL units.

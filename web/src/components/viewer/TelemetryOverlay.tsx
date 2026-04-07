@@ -23,7 +23,9 @@ export default memo(function TelemetryOverlay({ frame, metric = false }: Telemet
   const speed = Math.round(Math.abs(speedVal))
   const unit = metric ? "km/h" : "mph"
   const gear = GEAR_LABELS[frame.gear] || GEAR_LABELS[0]
-  const isFSD = frame.autopilot > 0
+  const apState = frame.autopilot
+  const isAssisted = apState > 0
+  const apLabel = apState === 1 ? "FSD" : apState === 2 ? "Autopilot" : apState === 3 ? "TACC" : ""
   const accelPct = Math.round(Math.min(Math.max(frame.accel_pos * 100, 0), 100))
 
   return (
@@ -46,13 +48,13 @@ export default memo(function TelemetryOverlay({ frame, metric = false }: Telemet
         {gear.text}
       </span>
 
-      {/* FSD indicator */}
-      {isFSD && (
+      {/* Autopilot mode indicator */}
+      {isAssisted && (
         <>
           <div className="h-6 w-px bg-white/10" />
           <div className="flex items-center gap-1">
             <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
-            <span className="text-[10px] font-semibold text-emerald-400">FSD</span>
+            <span className="text-[10px] font-semibold text-emerald-400">{apLabel}</span>
           </div>
         </>
       )}

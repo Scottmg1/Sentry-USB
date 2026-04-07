@@ -114,7 +114,7 @@ export default memo(function MiniMap({ telemetry, currentFrame }: MiniMapProps) 
           <span className="text-[10px] font-medium text-slate-300">Map</span>
           {telemetry.has_autopilot && (
             <span className="ml-1 flex items-center gap-0.5 text-[9px] text-slate-500">
-              <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400" /> FSD
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400" /> Assisted
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-blue-400" /> Manual
             </span>
           )}
