@@ -303,7 +303,6 @@ export default function Logs() {
 
   useEffect(() => {
     let mounted = true
-    let isFirstFetch = true
     setLoading(true)
     setContent("")
 
@@ -322,7 +321,6 @@ export default function Logs() {
             setContent(text || "(empty)")
           }
           setLoading(false)
-          isFirstFetch = false
         }
       } catch {
         if (mounted) {
