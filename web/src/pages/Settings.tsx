@@ -255,11 +255,11 @@ function BlePairButton() {
     <button
       onClick={bleState === "idle" ? handlePair : bleState === "paired" ? handlePairedClick : bleState === "error" ? handleReset : undefined}
       disabled={isActive}
-      className="glass-card glass-card-hover flex items-start gap-3 p-4 text-left transition-all disabled:opacity-70"
+      className="glass-card glass-card-hover flex items-start gap-3 p-3 text-left transition-all disabled:opacity-70"
     >
       <div
         className={cn(
-          "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors",
+          "flex h-8 w-8 shrink-0 items-center justify-center rounded-xl transition-colors",
           bleState === "paired" ? "bg-emerald-500/15 text-emerald-400" :
             bleState === "error" ? "bg-red-500/15 text-red-400" :
               isActive ? "bg-amber-500/15 text-amber-400" :
@@ -267,13 +267,13 @@ function BlePairButton() {
         )}
       >
         {isActive ? (
-          <Loader2 className="h-5 w-5 animate-spin" />
+          <Loader2 className="h-4 w-4 animate-spin" />
         ) : bleState === "paired" ? (
-          <CheckCircle className="h-5 w-5" />
+          <CheckCircle className="h-4 w-4" />
         ) : bleState === "error" ? (
-          <AlertCircle className="h-5 w-5" />
+          <AlertCircle className="h-4 w-4" />
         ) : (
-          <Bluetooth className="h-5 w-5" />
+          <Bluetooth className="h-4 w-4" />
         )}
       </div>
       <div className="min-w-0 flex-1">
@@ -380,7 +380,7 @@ function MobileNotificationsSection() {
 
   return (
     <div className="glass-card overflow-hidden">
-      <div className="flex items-center gap-3 border-b border-white/5 px-4 py-3">
+      <div className="flex items-center gap-3 border-b border-white/5 px-3 py-2.5">
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-violet-500/15">
           <Bell className="h-4 w-4 text-violet-400" />
         </div>
@@ -389,7 +389,7 @@ function MobileNotificationsSection() {
           <p className="text-xs text-slate-500">Pair your phone for push notifications</p>
         </div>
       </div>
-      <div className="p-4 space-y-4">
+      <div className="p-3 space-y-3">
         {/* Generate Code */}
         <div className="flex items-center gap-3">
           {pairingCode ? (
@@ -497,10 +497,10 @@ function HealthCheckButton() {
       <button
         onClick={runCheck}
         disabled={loading}
-        className="glass-card glass-card-hover flex items-start gap-3 p-4 text-left transition-all disabled:opacity-70"
+        className="glass-card glass-card-hover flex items-start gap-3 p-3 text-left transition-all disabled:opacity-70"
       >
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/15 text-blue-400">
-          {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Stethoscope className="h-5 w-5" />}
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-blue-500/15 text-blue-400">
+          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Stethoscope className="h-4 w-4" />}
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-slate-200">{loading ? "Running..." : "System Health Check"}</p>
@@ -640,13 +640,13 @@ function SpeedTestButton() {
   return (
     <button
       onClick={running ? stopTest : startTest}
-      className="glass-card glass-card-hover flex items-start gap-3 p-4 text-left transition-all"
+      className="glass-card glass-card-hover flex items-start gap-3 p-3 text-left transition-all"
     >
       <div className={cn(
-        "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors",
+        "flex h-8 w-8 shrink-0 items-center justify-center rounded-xl transition-colors",
         running ? "bg-amber-500/15 text-amber-400" : "bg-blue-500/15 text-blue-400"
       )}>
-        {running ? <Loader2 className="h-5 w-5 animate-spin" /> : <Gauge className="h-5 w-5" />}
+        {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Gauge className="h-4 w-4" />}
       </div>
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-slate-200">
@@ -776,7 +776,7 @@ function KeepAwakePreference() {
 
   return (
     <div className="glass-card overflow-hidden">
-      <div className="flex items-center gap-3 border-b border-white/5 px-4 py-3">
+      <div className="flex items-center gap-3 border-b border-white/5 px-3 py-2.5">
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-rose-500/15">
           <HeartPulse className="h-4 w-4 text-rose-400" />
         </div>
@@ -785,7 +785,7 @@ function KeepAwakePreference() {
           <p className="text-xs text-slate-500">Keep the car awake after archiving</p>
         </div>
       </div>
-      <div className="p-4">
+      <div className="p-3">
         <div className="grid grid-cols-3 gap-2">
           {KEEP_AWAKE_MODES.map((m) => (
             <button
@@ -865,7 +865,7 @@ function AwayModeControl() {
 
   return (
     <div className="glass-card overflow-hidden">
-      <div className="flex items-center gap-3 border-b border-white/5 px-4 py-3">
+      <div className="flex items-center gap-3 border-b border-white/5 px-3 py-2.5">
         <div className={cn(
           "flex h-8 w-8 shrink-0 items-center justify-center rounded-xl",
           isActive ? "bg-blue-500/15" : "bg-slate-500/10"
@@ -887,7 +887,7 @@ function AwayModeControl() {
         )}
       </div>
 
-      <div className="p-4 space-y-3">
+      <div className="p-3 space-y-3">
         {/* Collapsible info */}
         <details className="group">
           <summary className="cursor-pointer text-[11px] text-slate-600 hover:text-slate-400 transition-colors select-none">
@@ -1152,7 +1152,7 @@ function ConfigBackupSection() {
 
   return (
     <div className="glass-card overflow-hidden">
-      <div className="flex items-center gap-3 border-b border-white/5 px-4 py-3">
+      <div className="flex items-center gap-3 border-b border-white/5 px-3 py-2.5">
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-blue-500/15">
           <Save className="h-4 w-4 text-blue-400" />
         </div>
@@ -1161,7 +1161,7 @@ function ConfigBackupSection() {
           <p className="text-xs text-slate-500">Auto-backs up config after each archive</p>
         </div>
       </div>
-      <div className="p-4 space-y-3">
+      <div className="p-3 space-y-3">
         {/* Backup location selector */}
         <div>
           <p className="mb-2 text-xs font-medium text-slate-400">Backup Location</p>
@@ -1592,7 +1592,7 @@ export default function Settings() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-slate-100">Settings</h1>
@@ -1620,15 +1620,15 @@ export default function Settings() {
         <div className="space-y-4">
           {/* Setup Wizard CTA */}
           <div className="glass-card overflow-hidden">
-            <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/20">
-                <Wand2 className="h-5 w-5 text-blue-400" />
+            <div className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-blue-500/20">
+                <Wand2 className="h-4 w-4 text-blue-400" />
               </div>
               <div className="flex-1">
-                <h2 className="text-base font-semibold text-slate-100">
+                <h2 className="text-sm font-semibold text-slate-100">
                   Setup Wizard
                 </h2>
-                <p className="mt-0.5 text-sm text-slate-400">
+                <p className="mt-0.5 text-xs text-slate-400">
                   Configure WiFi, archive, notifications, and more through a guided
                   setup experience.
                 </p>
@@ -1658,7 +1658,7 @@ export default function Settings() {
                       URL.revokeObjectURL(url)
                     } catch { /* ignore */ }
                   }}
-                  className="shrink-0 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-medium text-slate-300 transition-colors hover:bg-white/10"
+                  className="shrink-0 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-slate-300 transition-colors hover:bg-white/10"
                 >
                   <Download className="mr-1.5 inline h-3.5 w-3.5" />
                   Export Config
@@ -1679,7 +1679,7 @@ export default function Settings() {
                     } catch { /* use empty data */ }
                     setWizardOpen(true)
                   }}
-                  className="shrink-0 rounded-xl bg-blue-500 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-600"
+                  className="shrink-0 rounded-xl bg-blue-500 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-blue-600"
                 >
                   Open Wizard
                 </button>
@@ -1689,13 +1689,14 @@ export default function Settings() {
 
           {/* Quick Actions */}
           <div>
-            <p className="section-label mb-3 px-1">Quick Actions</p>
+            <p className="section-label mb-2 px-1">Quick Actions</p>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <ActionButton
                 icon={Unplug}
                 label="Toggle USB Drives"
                 description="Connect or disconnect drives from the host"
                 successMessage="Drives toggled successfully"
+                compact
                 onClick={async () => {
                   const res = await fetch("/api/system/toggle-drives", { method: "POST" })
                   if (!res.ok) throw new Error("Failed to toggle drives")
@@ -1706,6 +1707,7 @@ export default function Settings() {
                 label="Trigger Archive Sync"
                 description="Start archiving recorded clips now"
                 successMessage="Archive sync started"
+                compact
                 onClick={async () => {
                   const res = await fetch("/api/system/trigger-sync", { method: "POST" })
                   if (!res.ok) throw new Error("Failed to trigger sync")
@@ -1718,7 +1720,7 @@ export default function Settings() {
 
           {/* Preferences */}
           <div>
-            <p className="section-label mb-3 px-1">Preferences</p>
+            <p className="section-label mb-2 px-1">Preferences</p>
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <KeepAwakePreference />
               <AwayModeControl />
@@ -1734,7 +1736,7 @@ export default function Settings() {
           <MobileNotificationsSection />
           {piConfig?.uses_ble === "yes" && (
             <div>
-              <p className="section-label mb-3 px-1">Car Connectivity</p>
+              <p className="section-label mb-2 px-1">Car Connectivity</p>
               <BlePairButton />
             </div>
           )}
@@ -1783,12 +1785,12 @@ export default function Settings() {
           {/* Stable update banner */}
           {stableUpdate && updateStatus === "idle" && (
             <div className="glass-card overflow-hidden border border-emerald-500/20 bg-emerald-500/5">
-              <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-500/20">
-                  <Download className="h-6 w-6 text-emerald-400" />
+              <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20">
+                  <Download className="h-5 w-5 text-emerald-400" />
                 </div>
                 <div className="flex-1">
-                  <h2 className="text-lg font-semibold text-emerald-200">
+                  <h2 className="text-sm font-semibold text-emerald-200">
                     Stable Update: {stableUpdate.version}
                   </h2>
                   <p className="mt-0.5 text-sm text-slate-400">
@@ -1816,12 +1818,12 @@ export default function Settings() {
           {/* Prerelease update banner */}
           {prereleaseUpdate && updateStatus === "idle" && (
             <div className="glass-card overflow-hidden border border-amber-500/20 bg-amber-500/5">
-              <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-amber-500/20">
-                  <Download className="h-6 w-6 text-amber-400" />
+              <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/20">
+                  <Download className="h-5 w-5 text-amber-400" />
                 </div>
                 <div className="flex-1">
-                  <h2 className="text-lg font-semibold text-amber-200">
+                  <h2 className="text-sm font-semibold text-amber-200">
                     Pre-release: {prereleaseUpdate.version}
                   </h2>
                   <p className="mt-0.5 text-sm text-slate-400">
@@ -1848,20 +1850,20 @@ export default function Settings() {
 
           {/* Update check */}
           <div className="glass-card overflow-hidden">
-            <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-500/20">
+            <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20">
                 {updateStatus === "error" ? (
-                  <AlertCircle className="h-6 w-6 text-red-400" />
+                  <AlertCircle className="h-5 w-5 text-red-400" />
                 ) : updateStatus === "done" ? (
-                  <CheckCircle className="h-6 w-6 text-emerald-400" />
+                  <CheckCircle className="h-5 w-5 text-emerald-400" />
                 ) : updateStatus !== "idle" ? (
-                  <Loader2 className="h-6 w-6 animate-spin text-blue-400" />
+                  <Loader2 className="h-5 w-5 animate-spin text-blue-400" />
                 ) : (
-                  <Download className="h-6 w-6 text-emerald-400" />
+                  <Download className="h-5 w-5 text-emerald-400" />
                 )}
               </div>
               <div className="flex-1">
-                <h2 className="text-lg font-semibold text-slate-100">
+                <h2 className="text-sm font-semibold text-slate-100">
                   Update Sentry USB
                 </h2>
                 <p className="mt-0.5 text-sm text-slate-400">
@@ -1890,7 +1892,7 @@ export default function Settings() {
             </div>
 
             {/* Update preferences */}
-            <div className="border-t border-white/5 px-5 py-4">
+            <div className="border-t border-white/5 px-4 py-3">
               <label className="flex cursor-pointer items-center justify-between">
                 <span className="text-sm text-slate-400">Automatically check for updates after each archive</span>
                 <input
@@ -1909,7 +1911,7 @@ export default function Settings() {
                 />
               </label>
             </div>
-            <div className="border-t border-white/5 px-5 py-4">
+            <div className="border-t border-white/5 px-4 py-3">
               <label className="flex cursor-pointer items-center justify-between gap-4">
                 <div>
                   <span className="text-sm text-slate-400">Always include pre-releases when checking</span>
@@ -1932,7 +1934,7 @@ export default function Settings() {
               </label>
             </div>
             {!includePrerelease && (
-              <div className="border-t border-white/5 px-5 py-4">
+              <div className="border-t border-white/5 px-4 py-3">
                 <button
                   onClick={() => handleCheckForUpdate(true)}
                   disabled={isCheckingUpdate}
@@ -1946,7 +1948,7 @@ export default function Settings() {
 
           {/* System management */}
           <div>
-            <p className="section-label mb-3 px-1">System</p>
+            <p className="section-label mb-2 px-1">System</p>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <ActionButton
                 icon={RotateCcw}
@@ -1979,16 +1981,16 @@ export default function Settings() {
 
           {/* About */}
           <div className="glass-card overflow-hidden">
-            <div className="flex items-center gap-3 border-b border-white/5 px-5 py-4">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-500/10">
-                <Shield className="h-4.5 w-4.5 text-slate-400" />
+            <div className="flex items-center gap-3 border-b border-white/5 px-4 py-3">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-slate-500/10">
+                <Shield className="h-4 w-4 text-slate-400" />
               </div>
               <div>
                 <h3 className="text-sm font-semibold text-slate-200">About</h3>
                 <p className="text-xs text-slate-500">Version and project info</p>
               </div>
             </div>
-            <div className="p-5">
+            <div className="p-4">
               <div className="space-y-1.5 text-sm max-w-md">
                 <p className="text-slate-300">
                   <span className="text-slate-500">Version:</span>{" "}
