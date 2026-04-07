@@ -1,5 +1,6 @@
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useRef } from "react"
 import { Search, Upload, Download, Paintbrush, ChevronLeft, ChevronRight, Loader2, CheckCircle, AlertCircle, Trash2, Pencil, Shield, X } from "lucide-react"
+import GodotRenderer, { type GodotRendererHandle } from "../components/wraps/GodotRenderer"
 
 const API_BASE = "/api"
 
@@ -19,6 +20,32 @@ const TESLA_MODELS = [
 
 const FILTER_MODELS = ["All", ...TESLA_MODELS]
 
+// Maps display names to Godot scene IDs from Tesla Wrap Studio
+// Models without a Godot 3D counterpart (Model S, Model X) are omitted — no 3D preview for those
+const MODEL_TO_GODOT_ID: Record<string, string> = {
+  "Cybertruck": "cybertruck",
+  "Model 3": "model3",
+  "Model 3 (2024+) Standard & Premium": "model3-2024-base",
+  "Model 3 (2024+) Performance": "model3-2024-performance",
+  "Model Y": "modely",
+  "Model Y (2025+) Standard": "modely-2025-base",
+  "Model Y (2025+) Premium": "modely-2025-premium",
+  "Model Y (2025+) Performance": "modely-2025-performance",
+  "Model Y L": "modely-l",
+}
+
+const GODOT_CAMERA_DISTANCE: Record<string, number> = {
+  "cybertruck": 10,
+  "model3": 8,
+  "model3-2024-base": 8,
+  "model3-2024-performance": 8,
+  "modely": 8,
+  "modely-2025-base": 8,
+  "modely-2025-premium": 8,
+  "modely-2025-performance": 8,
+  "modely-l": 8,
+}
+
 type SortOption = "newest" | "oldest" | "popular" | "name"
 
 interface CommunityWrap {
@@ -28,6 +55,7 @@ interface CommunityWrap {
   download_count: number
   created_at: string
   fingerprint?: string
+  has_preview?: boolean
 }
 
 interface LibraryResponse {
@@ -42,8 +70,54 @@ export default function CommunityWraps() {
   const [tab, setTab] = useState<Tab>("browse")
   const [adminPasscode, setAdminPasscode] = useState<string | null>(null)
   const [showPasscodePrompt, setShowPasscodePrompt] = useState(false)
+  const clickCountRef = useRef(0)
+  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Godot 3D engine state — mounted at page level so it starts loading immediately
+  const godotReadyRef = useRef(false)
+  const godotRef = useRef<GodotRendererHandle>(null)
+
+  const handleHeadingClick = () => {
+    if (adminPasscode) {
+      // Already in admin mode — 5 clicks exits
+      clickCountRef.current++
+      if (clickTimerRef.current) clearTimeout(clickTimerRef.current)
+      clickTimerRef.current = setTimeout(() => { clickCountRef.current = 0 }, 2000)
+      if (clickCountRef.current >= 5) {
+        clickCountRef.current = 0
+        setAdminPasscode(null)
+      }
+      return
+    }
+
+    clickCountRef.current++
+    if (clickTimerRef.current) clearTimeout(clickTimerRef.current)
+    clickTimerRef.current = setTimeout(() => { clickCountRef.current = 0 }, 2000)
+    if (clickCountRef.current >= 5) {
+      clickCountRef.current = 0
+      setShowPasscodePrompt(true)
+    }
+  }
+
   return (
     <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/20">
+            <Paintbrush className="h-5 w-5 text-amber-400" />
+          </div>
+          <div>
+            <h1
+              className="cursor-default select-none text-xl font-semibold text-slate-100"
+              onClick={handleHeadingClick}
+            >
+              Community Wraps
+            </h1>
+            <p className="text-xs text-slate-500">Browse and share Tesla wraps</p>
+          </div>
+        </div>
+      </div>
+
       {/* Tab selector */}
       <div className="flex items-center gap-2">
         <button
@@ -78,10 +152,19 @@ export default function CommunityWraps() {
         )}
       </div>
 
+      {/* Hidden Godot renderer — starts loading 283MB .pck immediately */}
+      <GodotRenderer
+        ref={godotRef}
+        onReady={() => { godotReadyRef.current = true }}
+        onCapture={() => {}}
+        onError={() => {}}
+        onCarLoaded={() => {}}
+      />
+
       {tab === "browse" ? (
         <BrowseTab adminPasscode={adminPasscode} onAdminExit={() => setAdminPasscode(null)} />
       ) : (
-        <UploadTab />
+        <UploadTab godotReadyRef={godotReadyRef} godotRef={godotRef} adminPasscode={adminPasscode} />
       )}
 
       {/* Passcode prompt modal */}
@@ -367,7 +450,7 @@ function BrowseTab({ adminPasscode, onAdminExit }: { adminPasscode: string | nul
                 >
                   <div className="aspect-square overflow-hidden bg-slate-800/50">
                     <img
-                      src={`${API_BASE}/wraps/thumbnail/${wrap.code}`}
+                      src={`${API_BASE}/wraps/${wrap.has_preview ? 'preview' : 'thumbnail'}/${wrap.code}`}
                       alt={wrap.name}
                       className="h-full w-full object-cover transition-transform group-hover:scale-105"
                       loading="lazy"
@@ -447,7 +530,7 @@ function BrowseTab({ adminPasscode, onAdminExit }: { adminPasscode: string | nul
           >
             <div className="aspect-square overflow-hidden bg-slate-800">
               <img
-                src={`${API_BASE}/wraps/thumbnail/${selectedWrap.code}`}
+                src={`${API_BASE}/wraps/${selectedWrap.has_preview ? 'preview' : 'thumbnail'}/${selectedWrap.code}`}
                 alt={selectedWrap.name}
                 className="h-full w-full object-cover"
               />
@@ -646,13 +729,120 @@ function DeleteWrapModal({ wrap, onDelete, onClose }: {
   )
 }
 
-function UploadTab() {
+interface UploadTabProps {
+  godotReadyRef: React.MutableRefObject<boolean>
+  godotRef: React.RefObject<GodotRendererHandle | null>
+  adminPasscode: string | null
+}
+
+function UploadTab({ godotReadyRef, godotRef, adminPasscode }: UploadTabProps) {
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
   const [name, setName] = useState("")
   const [model, setModel] = useState("")
   const [uploading, setUploading] = useState(false)
+  const [uploadStatus, setUploadStatus] = useState<string | null>(null)
   const [result, setResult] = useState<{ success: boolean; message: string } | null>(null)
+
+  // Wait for Godot engine to finish loading (polls the ref)
+  const waitForGodotReady = useCallback((timeoutMs: number): Promise<boolean> => {
+    return new Promise((resolve) => {
+      if (godotReadyRef.current) { resolve(true); return }
+      const start = Date.now()
+      const check = setInterval(() => {
+        if (godotReadyRef.current) { clearInterval(check); resolve(true) }
+        else if (Date.now() - start > timeoutMs) { clearInterval(check); resolve(false) }
+      }, 500)
+    })
+  }, [godotReadyRef])
+
+  // Generate a 3D preview by sending commands to Godot and capturing the result
+  const generate3DPreview = useCallback((imageFile: File, godotId: string): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      let textureDataUrl: string | null = null
+      let phase: "loading_scene" | "applying_texture" | "capturing" = "loading_scene"
+
+      const abortTimer = setTimeout(() => {
+        cleanup()
+        reject(new Error("Preview capture timeout"))
+      }, 30000)
+
+      const cleanup = () => {
+        clearTimeout(abortTimer)
+        window.removeEventListener("message", handler)
+      }
+
+      const handler = (e: MessageEvent) => {
+        if (!e.data?.type) return
+
+        // Step 2: Scene loaded → wait for materials to initialize, then apply texture
+        if ((e.data.type === "car_loaded" || e.data.type === "scene_loaded") && phase === "loading_scene") {
+          phase = "applying_texture"
+          if (textureDataUrl) {
+            // Delay texture application to let the scene's materials fully initialize —
+            // complex models (Highland, Juniper, Cybertruck) need more time than base models
+            setTimeout(() => {
+              godotRef.current?.setTexture(textureDataUrl)
+              phase = "capturing"
+              const camDistance = GODOT_CAMERA_DISTANCE[godotId]
+              setTimeout(() => godotRef.current?.capture(camDistance), 3000)
+            }, 2000)
+          }
+        }
+
+        // Step 3: Capture result → crop to 1:1
+        if (e.data.type === "capture_result" && e.data.dataUrl) {
+          cleanup()
+
+          // Crop to 1:1 (1024×1024) for consistent thumbnails
+          const img = new Image()
+          img.onload = () => {
+            const size = Math.min(img.width, img.height)
+            const sx = (img.width - size) / 2
+            const sy = (img.height - size) / 2
+            const canvas = document.createElement("canvas")
+            canvas.width = 1024
+            canvas.height = 1024
+            const ctx = canvas.getContext("2d")!
+            ctx.drawImage(img, sx, sy, size, size, 0, 0, 1024, 1024)
+            resolve(canvas.toDataURL("image/png"))
+          }
+          img.onerror = () => resolve(e.data.dataUrl) // fallback to raw if crop fails
+          img.src = e.data.dataUrl
+        } else if (e.data.type === "capture_error") {
+          cleanup()
+          reject(new Error(e.data.error || "Capture failed"))
+        }
+      }
+      window.addEventListener("message", handler)
+
+      // Step 1: Read the file, then load the scene
+      const reader = new FileReader()
+      reader.onload = () => {
+        textureDataUrl = reader.result as string
+
+        // Always explicitly load the scene — even if it's the same model,
+        // Godot needs to re-init for back-to-back uploads
+        godotRef.current?.loadScene(godotId)
+
+        // Fallback: if scene_loaded/car_loaded never fires, apply texture after timeout
+        setTimeout(() => {
+          if (phase === "loading_scene") {
+            console.warn("Scene load event not received, applying texture anyway")
+            phase = "applying_texture"
+            // Same material-init delay as the normal path
+            setTimeout(() => {
+              godotRef.current?.setTexture(textureDataUrl!)
+              phase = "capturing"
+              const camDistance = GODOT_CAMERA_DISTANCE[godotId]
+              setTimeout(() => godotRef.current?.capture(camDistance), 3000)
+            }, 2000)
+          }
+        }, 10000)
+      }
+      reader.readAsDataURL(imageFile)
+    })
+  }, [godotRef])
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
@@ -680,13 +870,49 @@ function UploadTab() {
     setResult(null)
 
     try {
+      let previewDataUrl: string | null = null
+      const godotId = MODEL_TO_GODOT_ID[model]
+
+      // Generate 3D preview if model has a Godot counterpart
+      if (godotId && godotRef.current) {
+        // Wait for Godot to be ready (may still be downloading the 283MB .pck)
+        if (!godotReadyRef.current) {
+          setUploadStatus("Loading 3D engine...")
+          const ready = await waitForGodotReady(60000)
+          if (!ready) {
+            // Godot didn't load in time — continue without preview
+            setUploadStatus("Uploading...")
+          }
+        }
+
+        if (godotReadyRef.current) {
+          setUploadStatus("Generating 3D preview...")
+          try {
+            previewDataUrl = await generate3DPreview(file, godotId)
+          } catch (previewErr) {
+            console.warn("[WRAPS] 3D preview generation failed:", previewErr)
+          }
+        }
+      }
+
+      setUploadStatus("Uploading...")
+
       const formData = new FormData()
       formData.append("image", file)
       formData.append("name", name.trim())
       formData.append("tesla_model", model)
 
+      if (previewDataUrl) {
+        const previewBlob = await (await fetch(previewDataUrl)).blob()
+        formData.append("preview", previewBlob, "preview.png")
+      }
+
+      const headers: Record<string, string> = {}
+      if (adminPasscode) headers["x-passcode"] = adminPasscode
+
       const res = await fetch(`${API_BASE}/wraps/upload`, {
         method: "POST",
+        headers,
         body: formData,
       })
 
@@ -705,6 +931,7 @@ function UploadTab() {
       setResult({ success: false, message: err.message || "Upload failed" })
     } finally {
       setUploading(false)
+      setUploadStatus(null)
     }
   }
 
@@ -724,7 +951,7 @@ function UploadTab() {
         <p className="mt-1 text-xs text-slate-600">PNG, 512x512 to 1024x1024, max 1 MB</p>
       </div>
 
-      {/* Preview */}
+      {/* Flat preview */}
       {preview && (
         <div className="overflow-hidden rounded-xl border border-white/10">
           <img src={preview} alt="Preview" className="h-48 w-full object-contain bg-slate-800/50" />
@@ -759,6 +986,14 @@ function UploadTab() {
         </select>
       </div>
 
+      {/* Upload status indicator */}
+      {uploading && uploadStatus && (
+        <div className="flex items-center justify-center gap-2 rounded-lg border border-blue-500/20 bg-blue-500/10 px-4 py-3 text-sm text-blue-300">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          {uploadStatus}
+        </div>
+      )}
+
       {/* Submit */}
       <button
         onClick={handleSubmit}
@@ -770,7 +1005,7 @@ function UploadTab() {
         ) : (
           <Upload className="h-4 w-4" />
         )}
-        {uploading ? "Uploading..." : "Submit Wrap"}
+        {uploading ? (uploadStatus || "Uploading...") : "Submit Wrap"}
       </button>
 
       {/* Result message */}
