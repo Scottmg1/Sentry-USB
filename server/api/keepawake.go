@@ -70,7 +70,7 @@ func keepAwakeLog(format string, args ...interface{}) {
 	}
 	defer f.Close()
 	msg := fmt.Sprintf(format, args...)
-	fmt.Fprintf(f, "%s: [keep-awake-webui] %s\n", time.Now().Format("Mon 02 Jan 15:04:05 MST 2006"), msg)
+	fmt.Fprintf(f, "%s: [keep-awake-webui] %s\n", time.Now().Format("Mon Jan _2 15:04:05 MST 2006"), msg)
 }
 
 // Start initiates a keep-awake session. If the system is busy, it queues the
