@@ -224,26 +224,29 @@ type lockChimeRandomConfig struct {
 }
 
 // queryBLEShiftState queries the vehicle's current shift state via BLE.
-// Returns "P", "D", "R", "N", "SNA", or "" on error.
-func queryBLEShiftState() string {
+// Returns the shift state ("P", "D", "R", "N", "SNA") and nil on success,
+// or empty string and a descriptive error on failure.
+func queryBLEShiftState() (string, error) {
 	vin := readBLEVin()
 	if vin == "" {
-		log.Printf("lockchime: smart mode — no VIN configured")
-		return ""
+		return "", fmt.Errorf("no VIN configured — set TESLA_BLE_VIN in your config")
 	}
 
-	// Check BLE pairing exists
 	if _, err := os.Stat("/root/.ble/paired"); err != nil {
-		log.Printf("lockchime: smart mode — BLE not paired")
-		return ""
+		return "", fmt.Errorf("BLE not paired — pair your Pi in Settings first")
+	}
+
+	if _, err := os.Stat("/root/.ble/key_private.pem"); err != nil {
+		return "", fmt.Errorf("BLE private key missing at /root/.ble/key_private.pem")
 	}
 
 	out, err := shell.RunWithTimeout(15*time.Second,
 		"/root/bin/tesla-control", "-ble", "-vin", strings.ToUpper(vin),
 		"state", "drive", "/root/.ble/key_private.pem")
 	if err != nil {
-		log.Printf("lockchime: smart mode — BLE drive state query failed: %v", err)
-		return ""
+		errMsg := shell.CleanStderr(err.Error())
+		log.Printf("lockchime: BLE drive state query failed: %s", errMsg)
+		return "", fmt.Errorf("tesla-control failed: %s", errMsg)
 	}
 
 	// Parse the JSON response to extract shift state.
@@ -254,24 +257,27 @@ func queryBLEShiftState() string {
 		} `json:"driveState"`
 	}
 	if err := json.Unmarshal([]byte(out), &resp); err != nil {
-		log.Printf("lockchime: smart mode — failed to parse drive state: %v", err)
-		return ""
+		log.Printf("lockchime: failed to parse drive state JSON: %v\nRaw output: %s", err, out)
+		return "", fmt.Errorf("unexpected response from tesla-control — raw: %s", strings.TrimSpace(out))
+	}
+
+	if len(resp.DriveState.ShiftState) == 0 {
+		return "", fmt.Errorf("vehicle returned empty drive state — car may be asleep")
 	}
 
 	// shiftState is a oneof — the key name IS the state (p, d, r, n, SNA)
 	var stateMap map[string]interface{}
 	if err := json.Unmarshal(resp.DriveState.ShiftState, &stateMap); err != nil {
-		log.Printf("lockchime: smart mode — failed to parse shift state: %v", err)
-		return ""
+		return "", fmt.Errorf("could not parse shiftState field — raw: %s", string(resp.DriveState.ShiftState))
 	}
 
 	for key := range stateMap {
 		state := strings.ToUpper(key)
-		log.Printf("lockchime: smart mode — vehicle shift state: %s", state)
-		return state
+		log.Printf("lockchime: vehicle shift state: %s", state)
+		return state, nil
 	}
 
-	return ""
+	return "", fmt.Errorf("shiftState was empty in response")
 }
 
 var (
@@ -501,7 +507,11 @@ func lockChimeSchedulerLoop(stop chan struct{}) {
 			if lastRun.IsZero() || now.Sub(lastRun) >= interval {
 				// Smart mode: only change when vehicle is in Park
 				if cfg.Mode == "smart" {
-					shiftState := queryBLEShiftState()
+					shiftState, err := queryBLEShiftState()
+					if err != nil {
+						log.Printf("lockchime: smart mode — BLE query failed: %v, skipping", err)
+						continue
+					}
 					if shiftState != "P" {
 						log.Printf("lockchime: smart mode — vehicle not in Park (state=%q), skipping", shiftState)
 						continue // don't update lastRun — retry next tick
@@ -807,11 +817,11 @@ func (h *handlers) lockChimeGetRandomConfig(w http.ResponseWriter, r *http.Reque
 
 // GET /api/lockchime/ble-shift-state — test BLE shift state query
 func (h *handlers) lockChimeBLEShiftState(w http.ResponseWriter, r *http.Request) {
-	state := queryBLEShiftState()
-	if state == "" {
+	state, err := queryBLEShiftState()
+	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"success": false,
-			"error":   "Could not query vehicle — check BLE pairing and that the car is nearby and awake",
+			"error":   err.Error(),
 		})
 		return
 	}
