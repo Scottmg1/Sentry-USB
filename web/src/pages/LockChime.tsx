@@ -46,6 +46,7 @@ interface RandomConfig {
   mode: string
   interval: string
   has_rtc: boolean
+  has_ble: boolean
 }
 
 interface CommunitySound {
@@ -312,12 +313,15 @@ function MyLibraryTab({ volume }: { volume: number }) {
     mode: "on_connect",
     interval: "daily",
     has_rtc: false,
+    has_ble: false,
   })
   const [randomLoading, setRandomLoading] = useState(true)
   const [savingRandom, setSavingRandom] = useState(false)
   const [randomizing, setRandomizing] = useState(false)
   const [showRandomDisclaimer, setShowRandomDisclaimer] = useState(false)
   const [pendingRandomCfg, setPendingRandomCfg] = useState<RandomConfig | null>(null)
+  const [bleTestLoading, setBleTestLoading] = useState(false)
+  const [bleTestResult, setBleTestResult] = useState<{ success: boolean; label?: string; shift_state?: string; error?: string } | null>(null)
 
   const { showToast, ToastView } = useToast()
 
@@ -655,9 +659,87 @@ function MyLibraryTab({ volume }: { volume: number }) {
                     </p>
                   </div>
                 </button>
+
+                <button
+                  onClick={() => {
+                    if (!randomCfg.has_rtc || !randomCfg.has_ble) {
+                      showToast(
+                        !randomCfg.has_ble
+                          ? "Smart mode requires a paired BLE key — pair your Pi in Settings first"
+                          : "Smart mode requires a Pi with RTC (real-time clock)",
+                        "error"
+                      )
+                      return
+                    }
+                    handleSaveRandomConfig({ ...randomCfg, mode: "smart" })
+                  }}
+                  disabled={savingRandom}
+                  className={`flex-1 flex items-center gap-2 rounded-lg border px-3 py-2.5 text-xs transition-colors ${
+                    randomCfg.mode === "smart"
+                      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+                      : !randomCfg.has_rtc || !randomCfg.has_ble
+                        ? "border-white/5 text-slate-600 cursor-not-allowed"
+                        : "border-white/10 text-slate-400 hover:border-white/20"
+                  }`}
+                >
+                  <Shield className="h-3.5 w-3.5 shrink-0" />
+                  <div className="text-left">
+                    <p className="font-medium">Smart</p>
+                    <p className="mt-0.5 text-[10px] opacity-60">
+                      {!randomCfg.has_ble
+                        ? "Requires BLE pairing"
+                        : !randomCfg.has_rtc
+                          ? "Requires RTC hardware"
+                          : "Only changes while parked via BLE"}
+                    </p>
+                  </div>
+                </button>
               </div>
 
-              {randomCfg.mode === "scheduled" && randomCfg.has_rtc && (
+              {randomCfg.mode === "smart" && (
+                <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/[0.06] p-3 space-y-3">
+                  <p className="text-xs text-emerald-200/80 leading-relaxed">
+                    Smart mode uses your BLE key to check if the vehicle is in Park before changing the lock sound.
+                    If the car is in Drive, Reverse, or Neutral the change is skipped and retried later.
+                    Sentry footage recording during Park may still be briefly interrupted (~5 seconds) during the USB reconnect.
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={async () => {
+                        setBleTestLoading(true)
+                        setBleTestResult(null)
+                        try {
+                          const res = await fetch(`${API_BASE}/lockchime/ble-shift-state`)
+                          const data = await res.json()
+                          setBleTestResult(data)
+                        } catch {
+                          setBleTestResult({ success: false, error: "Request failed — is the server running?" })
+                        } finally {
+                          setBleTestLoading(false)
+                        }
+                      }}
+                      disabled={bleTestLoading}
+                      className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-300 transition-colors hover:bg-emerald-500/20 disabled:opacity-50"
+                    >
+                      {bleTestLoading ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Shield className="h-3.5 w-3.5" />
+                      )}
+                      {bleTestLoading ? "Querying..." : "Test BLE"}
+                    </button>
+                    {bleTestResult && (
+                      <span className={`text-xs font-medium ${bleTestResult.success ? "text-emerald-300" : "text-red-400"}`}>
+                        {bleTestResult.success
+                          ? `Vehicle is in ${bleTestResult.label} (${bleTestResult.shift_state})`
+                          : bleTestResult.error}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {(randomCfg.mode === "scheduled" || randomCfg.mode === "smart") && randomCfg.has_rtc && (
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-slate-400">Change every:</span>
                   {(["hourly", "daily", "weekly"] as const).map((int) => (
@@ -667,7 +749,9 @@ function MyLibraryTab({ volume }: { volume: number }) {
                       disabled={savingRandom}
                       className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
                         randomCfg.interval === int
-                          ? "bg-amber-500/20 text-amber-300 font-medium"
+                          ? randomCfg.mode === "smart"
+                            ? "bg-emerald-500/20 text-emerald-300 font-medium"
+                            : "bg-amber-500/20 text-amber-300 font-medium"
                           : "text-slate-500 hover:text-slate-300"
                       }`}
                     >
@@ -919,7 +1003,8 @@ function MyLibraryTab({ volume }: { volume: number }) {
           Tesla reads <code className="text-slate-400">LockChime.wav</code> from the root of the USB drive.
           Only one lock sound can be active at a time. Tesla supports WAV format only, max {MAX_DURATION_SECONDS} seconds.
           Random mode selects from your library automatically — "On Connect" works on all Pis,
-          "Scheduled" requires a Pi with a real-time clock (RTC).
+          "Scheduled" requires a Pi with a real-time clock (RTC), and
+          "Smart" uses BLE to only change while parked (requires RTC + BLE pairing).
         </p>
       </div>
 
@@ -957,6 +1042,10 @@ function MyLibraryTab({ volume }: { volume: number }) {
                 <li className="flex items-start gap-2">
                   <Clock className="h-3.5 w-3.5 shrink-0 mt-0.5 text-slate-500" />
                   <span><strong className="text-slate-300">Scheduled</strong> — changes on a timer which may disconnect USB at any time, including while driving</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <Shield className="h-3.5 w-3.5 shrink-0 mt-0.5 text-slate-500" />
+                  <span><strong className="text-slate-300">Smart</strong> — uses BLE to check if parked before changing. Only sentry/recent clips may be affected, never while driving</span>
                 </li>
               </ul>
             </div>

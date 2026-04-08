@@ -219,8 +219,59 @@ func clearLockChimeFromCamDisk() error {
 // RandomConfig stores the random mode settings.
 type lockChimeRandomConfig struct {
 	Enabled  bool   `json:"enabled"`
-	Mode     string `json:"mode"`     // "on_connect" or "scheduled"
-	Interval string `json:"interval"` // "hourly", "daily", "weekly" (scheduled mode only)
+	Mode     string `json:"mode"`     // "on_connect", "scheduled", or "smart"
+	Interval string `json:"interval"` // "hourly", "daily", "weekly" (scheduled/smart mode only)
+}
+
+// queryBLEShiftState queries the vehicle's current shift state via BLE.
+// Returns "P", "D", "R", "N", "SNA", or "" on error.
+func queryBLEShiftState() string {
+	vin := readBLEVin()
+	if vin == "" {
+		log.Printf("lockchime: smart mode — no VIN configured")
+		return ""
+	}
+
+	// Check BLE pairing exists
+	if _, err := os.Stat("/root/.ble/paired"); err != nil {
+		log.Printf("lockchime: smart mode — BLE not paired")
+		return ""
+	}
+
+	out, err := shell.RunWithTimeout(15*time.Second,
+		"/root/bin/tesla-control", "-ble", "-vin", strings.ToUpper(vin),
+		"state", "drive", "/root/.ble/key_private.pem")
+	if err != nil {
+		log.Printf("lockchime: smart mode — BLE drive state query failed: %v", err)
+		return ""
+	}
+
+	// Parse the JSON response to extract shift state.
+	// The response contains {"driveState":{"shiftState":{"p":{}},...}}
+	var resp struct {
+		DriveState struct {
+			ShiftState json.RawMessage `json:"shiftState"`
+		} `json:"driveState"`
+	}
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		log.Printf("lockchime: smart mode — failed to parse drive state: %v", err)
+		return ""
+	}
+
+	// shiftState is a oneof — the key name IS the state (p, d, r, n, SNA)
+	var stateMap map[string]interface{}
+	if err := json.Unmarshal(resp.DriveState.ShiftState, &stateMap); err != nil {
+		log.Printf("lockchime: smart mode — failed to parse shift state: %v", err)
+		return ""
+	}
+
+	for key := range stateMap {
+		state := strings.ToUpper(key)
+		log.Printf("lockchime: smart mode — vehicle shift state: %s", state)
+		return state
+	}
+
+	return ""
 }
 
 var (
@@ -310,10 +361,10 @@ func loadLockChimeRandomConfig() lockChimeRandomConfig {
 
 func saveLockChimeRandomConfig(cfg lockChimeRandomConfig) error {
 	// Validate values
-	if cfg.Mode != "on_connect" && cfg.Mode != "scheduled" && cfg.Mode != "" {
-		return fmt.Errorf("invalid mode: must be on_connect or scheduled")
+	if cfg.Mode != "on_connect" && cfg.Mode != "scheduled" && cfg.Mode != "smart" && cfg.Mode != "" {
+		return fmt.Errorf("invalid mode: must be on_connect, scheduled, or smart")
 	}
-	if cfg.Mode == "scheduled" && cfg.Interval != "hourly" && cfg.Interval != "daily" && cfg.Interval != "weekly" {
+	if (cfg.Mode == "scheduled" || cfg.Mode == "smart") && cfg.Interval != "hourly" && cfg.Interval != "daily" && cfg.Interval != "weekly" {
 		return fmt.Errorf("invalid interval: must be hourly, daily, or weekly")
 	}
 	os.MkdirAll(lockChimeDir, 0755)
@@ -424,7 +475,7 @@ func lockChimeSchedulerLoop(stop chan struct{}) {
 			return
 		case now := <-ticker.C:
 			cfg := loadLockChimeRandomConfig()
-			if !cfg.Enabled || cfg.Mode != "scheduled" {
+			if !cfg.Enabled || (cfg.Mode != "scheduled" && cfg.Mode != "smart") {
 				lastRun = time.Time{} // reset so next enable fires immediately
 				continue
 			}
@@ -442,9 +493,19 @@ func lockChimeSchedulerLoop(stop chan struct{}) {
 			}
 
 			if lastRun.IsZero() || now.Sub(lastRun) >= interval {
+				// Smart mode: only change when vehicle is in Park
+				if cfg.Mode == "smart" {
+					shiftState := queryBLEShiftState()
+					if shiftState != "P" {
+						log.Printf("lockchime: smart mode — vehicle not in Park (state=%q), skipping", shiftState)
+						continue // don't update lastRun — retry next tick
+					}
+					log.Printf("lockchime: smart mode — vehicle in Park, proceeding with chime change")
+				}
+
 				if chosen := pickAndActivateRandom(); chosen != "" {
 					if err := syncLockChimeToCamDisk(); err != nil {
-						log.Printf("lockchime: scheduled cam sync failed: %v", err)
+						log.Printf("lockchime: %s cam sync failed: %v", cfg.Mode, err)
 					}
 				}
 				lastRun = now
@@ -719,15 +780,52 @@ func (h *handlers) lockChimeDelete(w http.ResponseWriter, r *http.Request) {
 func (h *handlers) lockChimeGetRandomConfig(w http.ResponseWriter, r *http.Request) {
 	cfg := loadLockChimeRandomConfig()
 
-	// Also return RTC status so the frontend knows which options to show
-	rtcInfo := getRTCInfo()
-	hasRTC := rtcInfo.RTCPresent && rtcInfo.RTCHealthy
+	// Check for actual RTC hardware. getRTCInfo().RTCPresent depends on the
+	// RTC_BATTERY_ENABLED config flag which may not be set even when hardware
+	// exists, so check /dev/rtc0 directly.
+	_, rtcErr := os.Stat("/dev/rtc0")
+	hasRTC := rtcErr == nil
+
+	// Smart mode requires BLE paired + RTC
+	_, blePairedErr := os.Stat("/root/.ble/paired")
+	hasBLE := blePairedErr == nil && readBLEVin() != ""
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"enabled":  cfg.Enabled,
 		"mode":     cfg.Mode,
 		"interval": cfg.Interval,
 		"has_rtc":  hasRTC,
+		"has_ble":  hasBLE,
+	})
+}
+
+// GET /api/lockchime/ble-shift-state — test BLE shift state query
+func (h *handlers) lockChimeBLEShiftState(w http.ResponseWriter, r *http.Request) {
+	state := queryBLEShiftState()
+	if state == "" {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"success": false,
+			"error":   "Could not query vehicle — check BLE pairing and that the car is nearby and awake",
+		})
+		return
+	}
+
+	labels := map[string]string{
+		"P":   "Park",
+		"D":   "Drive",
+		"R":   "Reverse",
+		"N":   "Neutral",
+		"SNA": "Not Available",
+	}
+	label := labels[state]
+	if label == "" {
+		label = state
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success":     true,
+		"shift_state": state,
+		"label":       label,
 	})
 }
 
@@ -739,11 +837,28 @@ func (h *handlers) lockChimeSaveRandomConfig(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// If scheduled mode, verify RTC is available
-	if req.Enabled && req.Mode == "scheduled" {
-		rtcInfo := getRTCInfo()
-		if !rtcInfo.RTCPresent || !rtcInfo.RTCHealthy {
-			writeError(w, http.StatusBadRequest, "Scheduled mode requires a working RTC (Pi 5 with battery)")
+	// If scheduled or smart mode, verify RTC hardware is present
+	if req.Enabled && (req.Mode == "scheduled" || req.Mode == "smart") {
+		if _, err := os.Stat("/dev/rtc0"); err != nil {
+			modeName := req.Mode
+			if modeName == "smart" {
+				modeName = "Smart"
+			} else {
+				modeName = "Scheduled"
+			}
+			writeError(w, http.StatusBadRequest, modeName+" mode requires a working RTC (Pi 5 with battery)")
+			return
+		}
+	}
+
+	// Smart mode also requires BLE
+	if req.Enabled && req.Mode == "smart" {
+		if _, err := os.Stat("/root/.ble/paired"); err != nil {
+			writeError(w, http.StatusBadRequest, "Smart mode requires a paired BLE key — pair your Pi in Settings first")
+			return
+		}
+		if readBLEVin() == "" {
+			writeError(w, http.StatusBadRequest, "Smart mode requires a VIN configured for BLE")
 			return
 		}
 	}

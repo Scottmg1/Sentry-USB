@@ -118,6 +118,7 @@ func RegisterRoutes(mux *http.ServeMux, hub *ws.Hub) {
 	mux.HandleFunc("PUT /api/lockchime/random-config", h.lockChimeSaveRandomConfig)
 	mux.HandleFunc("POST /api/lockchime/randomize", h.lockChimeRandomize)
 	mux.HandleFunc("POST /api/lockchime/randomize-on-connect", h.lockChimeRandomizeOnConnect)
+	mux.HandleFunc("GET /api/lockchime/ble-shift-state", h.lockChimeBLEShiftState)
 
 	// Community lock chimes (proxy to support server)
 	mux.HandleFunc("GET /api/lockchime/community/library", h.communityLockChimeLibrary)
