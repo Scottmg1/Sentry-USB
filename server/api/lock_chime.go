@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -33,6 +34,90 @@ const lockChimeConfigFile = "/mutable/LockChime/.random_config.json"
 const lockChimeActiveFile = "/mutable/LockChime/.active_name"
 
 var validLockChimeFile = regexp.MustCompile(`^[a-zA-Z0-9 _.-]+\.wav$`)
+
+// gadgetRoot is the configfs path for the SentryUSB gadget.
+const gadgetRoot = "/sys/kernel/config/usb_gadget/sentryusb"
+
+// writeChimeFileAtomic writes data to destPath using the same atomic pattern as
+// the old TeslaUSB codebase: write to temp → fsync file → rename → fsync dir →
+// touch timestamps → system sync.  This ensures Tesla reads the new content
+// instead of a stale cached version.
+func writeChimeFileAtomic(destPath string, data []byte) error {
+	dir := filepath.Dir(destPath)
+	tmpPath := filepath.Join(dir, "."+filepath.Base(destPath)+".tmp")
+
+	// 1. Write to temp file
+	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
+		return fmt.Errorf("write temp: %w", err)
+	}
+
+	// 2. Fsync the temp file to flush to disk
+	f, err := os.Open(tmpPath)
+	if err == nil {
+		_ = f.Sync()
+		f.Close()
+	}
+
+	// 3. Remove old target so rename is clean
+	os.Remove(destPath)
+
+	// 4. Atomic rename
+	if err := os.Rename(tmpPath, destPath); err != nil {
+		os.Remove(tmpPath) // cleanup on failure
+		return fmt.Errorf("rename: %w", err)
+	}
+
+	// 5. Fsync the directory to make the rename durable
+	d, err := os.Open(dir)
+	if err == nil {
+		_ = d.Sync()
+		d.Close()
+	}
+
+	// 6. Touch timestamps to help Tesla detect the change even if size is identical
+	now := time.Now()
+	_ = os.Chtimes(destPath, now, now)
+
+	// 7. Full system sync for exFAT / backing-file durability
+	syscall.Sync()
+
+	return nil
+}
+
+// rebindUSBGadget simulates a USB unplug/replug by unbinding and rebinding
+// the UDC controller.  This forces Tesla to drop its file cache and re-read
+// LockChime.wav.  Returns nil if the gadget is not active (drives disconnected).
+func rebindUSBGadget() error {
+	udcPath := filepath.Join(gadgetRoot, "UDC")
+
+	// Read current UDC — if empty or missing, gadget isn't active; nothing to rebind.
+	udcBytes, err := os.ReadFile(udcPath)
+	if err != nil {
+		log.Printf("lockchime: rebind skipped — gadget not active (%v)", err)
+		return nil
+	}
+	udc := strings.TrimSpace(string(udcBytes))
+	if udc == "" {
+		log.Printf("lockchime: rebind skipped — UDC is empty (drives disconnected)")
+		return nil
+	}
+
+	// Unbind: write empty string
+	if err := os.WriteFile(udcPath, []byte("\n"), 0644); err != nil {
+		return fmt.Errorf("unbind UDC: %w", err)
+	}
+
+	// Brief pause so Tesla's USB stack registers the disconnect
+	time.Sleep(2 * time.Second)
+
+	// Rebind: write UDC name back
+	if err := os.WriteFile(udcPath, []byte(udc), 0644); err != nil {
+		return fmt.Errorf("rebind UDC: %w", err)
+	}
+
+	log.Printf("lockchime: USB gadget rebound (UDC=%s) — Tesla will re-read files", udc)
+	return nil
+}
 
 // RandomConfig stores the random mode settings.
 type lockChimeRandomConfig struct {
@@ -161,14 +246,36 @@ func listWavFiles() []string {
 	return wavs
 }
 
-// pickAndActivateRandom selects a random .wav from the library and copies it
-// to the Tesla target path. Returns the chosen filename or empty string.
+// pickAndActivateRandom selects a random .wav from the library (avoiding the
+// currently active chime when possible) and copies it to the Tesla target path
+// using atomic writes + USB rebind.  Returns the chosen filename or empty string.
 func pickAndActivateRandom() string {
 	wavs := listWavFiles()
 	if len(wavs) == 0 {
 		return ""
 	}
-	chosen := wavs[rand.Intn(len(wavs))]
+
+	// Read current active name so we can avoid picking it again
+	currentActive := ""
+	if data, err := os.ReadFile(lockChimeActiveFile); err == nil {
+		currentActive = strings.TrimSpace(string(data))
+	}
+
+	// Filter out the current chime if we have more than one option
+	candidates := wavs
+	if currentActive != "" && len(wavs) > 1 {
+		filtered := make([]string, 0, len(wavs)-1)
+		for _, w := range wavs {
+			if w != currentActive {
+				filtered = append(filtered, w)
+			}
+		}
+		if len(filtered) > 0 {
+			candidates = filtered
+		}
+	}
+
+	chosen := candidates[rand.Intn(len(candidates))]
 	srcPath := filepath.Join(lockChimeDir, chosen)
 
 	data, err := os.ReadFile(srcPath)
@@ -176,13 +283,19 @@ func pickAndActivateRandom() string {
 		log.Printf("lockchime: failed to read %s: %v", chosen, err)
 		return ""
 	}
-	os.Remove(lockChimeTarget)
-	if err := os.WriteFile(lockChimeTarget, data, 0644); err != nil {
+
+	if err := writeChimeFileAtomic(lockChimeTarget, data); err != nil {
 		log.Printf("lockchime: failed to write target: %v", err)
 		return ""
 	}
 	os.WriteFile(lockChimeActiveFile, []byte(chosen), 0644)
 	log.Printf("lockchime: random mode activated %q", chosen)
+
+	// Rebind USB so Tesla picks up the new file
+	if err := rebindUSBGadget(); err != nil {
+		log.Printf("lockchime: USB rebind failed after random: %v", err)
+	}
+
 	return chosen
 }
 
@@ -416,11 +529,8 @@ func (h *handlers) lockChimeActivate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Remove existing target (file or symlink)
-	os.Remove(lockChimeTarget)
-
-	// Write to target
-	if err := os.WriteFile(lockChimeTarget, data, 0644); err != nil {
+	// Atomic write to target with fsync + system sync
+	if err := writeChimeFileAtomic(lockChimeTarget, data); err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to activate lock sound")
 		return
 	}
@@ -428,9 +538,18 @@ func (h *handlers) lockChimeActivate(w http.ResponseWriter, r *http.Request) {
 	// Record the active filename in sidecar metadata
 	os.WriteFile(lockChimeActiveFile, []byte(filename), 0644)
 
+	// Rebind USB gadget so Tesla re-reads the file (runs in background to avoid
+	// blocking the HTTP response — the 2-second sleep is internal)
+	go func() {
+		if err := rebindUSBGadget(); err != nil {
+			log.Printf("lockchime: USB rebind failed after activate: %v", err)
+		}
+	}()
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"success": true,
-		"active":  filename,
+		"success":      true,
+		"active":       filename,
+		"usb_rebound":  true,
 	})
 }
 
@@ -441,6 +560,15 @@ func (h *handlers) lockChimeClear(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	os.Remove(lockChimeActiveFile)
+
+	// Sync directory so removal is durable, then rebind USB
+	syscall.Sync()
+	go func() {
+		if err := rebindUSBGadget(); err != nil {
+			log.Printf("lockchime: USB rebind failed after clear: %v", err)
+		}
+	}()
+
 	writeOK(w)
 }
 
@@ -529,8 +657,9 @@ func (h *handlers) lockChimeRandomize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"success": true,
-		"active":  chosen,
+		"success":     true,
+		"active":      chosen,
+		"usb_rebound": true,
 	})
 }
 

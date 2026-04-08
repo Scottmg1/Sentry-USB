@@ -434,7 +434,12 @@ function MyLibraryTab({ volume }: { volume: number }) {
       const res = await fetch(`${API_BASE}/lockchime/activate/${encodeURIComponent(name)}`, { method: "POST" })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-      showToast(`"${name}" is now your active lock sound`, "success")
+      showToast(
+        data.usb_rebound
+          ? `"${name}" activated — USB re-enumerated, Tesla will use the new sound`
+          : `"${name}" is now your active lock sound`,
+        "success"
+      )
       await fetchSounds()
     } catch (e: unknown) {
       showToast(e instanceof Error ? e.message : "Failed to activate", "error")
@@ -507,7 +512,12 @@ function MyLibraryTab({ volume }: { volume: number }) {
       const res = await fetch(`${API_BASE}/lockchime/randomize`, { method: "POST" })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-      showToast(`Randomly selected "${data.active}"`, "success")
+      showToast(
+        data.usb_rebound
+          ? `Randomly selected "${data.active}" — USB re-enumerated`
+          : `Randomly selected "${data.active}"`,
+        "success"
+      )
       await fetchSounds()
     } catch (e: unknown) {
       showToast(e instanceof Error ? e.message : "Failed to randomize", "error")
