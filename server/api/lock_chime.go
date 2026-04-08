@@ -242,7 +242,8 @@ func queryBLEShiftState() (string, error) {
 
 	out, err := shell.RunWithTimeout(15*time.Second,
 		"/root/bin/tesla-control", "-ble", "-vin", strings.ToUpper(vin),
-		"state", "drive", "/root/.ble/key_private.pem")
+		"-key-file", "/root/.ble/key_private.pem",
+		"state", "drive")
 	if err != nil {
 		errMsg := shell.CleanStderr(err.Error())
 		log.Printf("lockchime: BLE drive state query failed: %s", errMsg)
