@@ -37,6 +37,18 @@ const lockChimeActiveFile = "/mutable/LockChime/.active_name"
 
 var validLockChimeFile = regexp.MustCompile(`^[a-zA-Z0-9 _.-]+\.wav$`)
 
+// lockChimeLog writes to the archiveloop log with [lock-chime] prefix.
+func lockChimeLog(format string, args ...interface{}) {
+	const logPath = "/mutable/archiveloop.log"
+	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	msg := fmt.Sprintf(format, args...)
+	fmt.Fprintf(f, "%s: [lock-chime] %s\n", time.Now().Format("Mon 02 Jan 15:04:05 MST 2006"), msg)
+}
+
 // writeChimeFileAtomic writes data to destPath using the same atomic pattern as
 // the old TeslaUSB codebase: write to temp → fsync file → rename → fsync dir →
 // touch timestamps → system sync.  This ensures Tesla reads the new content
@@ -100,6 +112,21 @@ func isGadgetActive() bool {
 	return err == nil
 }
 
+// isMountPointActive checks /proc/mounts to see if a mount point is currently active.
+func isMountPointActive(mountPoint string) bool {
+	data, err := os.ReadFile("/proc/mounts")
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[1] == mountPoint {
+			return true
+		}
+	}
+	return false
+}
+
 // copyLockChimeToCamMount copies /mutable/LockChime.wav to the root of the cam
 // disk so Tesla can read it via USB mass storage.  The cam disk must NOT be in
 // use by the USB gadget — the caller is responsible for ensuring the gadget is
@@ -114,6 +141,14 @@ func copyLockChimeToCamMount() error {
 
 	if _, err := os.Stat(camDiskImage); os.IsNotExist(err) {
 		log.Printf("lockchime: cam disk image not found, skipping cam sync")
+		return nil
+	}
+
+	// Check if cam disk is already mounted (e.g. archiveloop has it mounted).
+	// If so, skip — archiveloop's sync_user_media_to_cam will handle the copy.
+	alreadyMounted := isMountPointActive(camMountPoint)
+	if alreadyMounted {
+		log.Printf("lockchime: cam disk already mounted (archiveloop?), skipping to avoid conflict")
 		return nil
 	}
 
@@ -220,7 +255,9 @@ func clearLockChimeFromCamDisk() error {
 type lockChimeRandomConfig struct {
 	Enabled  bool   `json:"enabled"`
 	Mode     string `json:"mode"`     // "on_connect", "scheduled", or "smart"
-	Interval string `json:"interval"` // "hourly", "daily", "weekly" (scheduled/smart mode only)
+	Interval string `json:"interval"` // "hourly", "daily", "weekly" (scheduled/smart mode)
+	Hour     int    `json:"hour"`     // 0-23, hour of day for daily/weekly schedules
+	Day      int    `json:"day"`      // 0=Sun, 1=Mon, ..., 6=Sat (weekly only)
 }
 
 // queryBLEShiftState queries the vehicle's current shift state via BLE.
@@ -240,10 +277,18 @@ func queryBLEShiftState() (string, error) {
 		return "", fmt.Errorf("BLE private key missing at /root/.ble/key_private.pem")
 	}
 
+	// Stop the BLE GATT daemon so tesla-control gets exclusive hci0 access.
+	// Without this, concurrent BLE usage can cause "device or resource busy".
+	shell.RunWithTimeout(5*time.Second, "systemctl", "stop", "sentryusb-ble")
+
 	out, err := shell.RunWithTimeout(15*time.Second,
 		"/root/bin/tesla-control", "-ble", "-vin", strings.ToUpper(vin),
 		"-key-file", "/root/.ble/key_private.pem",
 		"state", "drive")
+
+	// Always restart the BLE daemon regardless of success/failure
+	shell.RunWithTimeout(5*time.Second, "systemctl", "start", "sentryusb-ble")
+
 	if err != nil {
 		errMsg := shell.CleanStderr(err.Error())
 		log.Printf("lockchime: BLE drive state query failed: %s", errMsg)
@@ -372,12 +417,17 @@ func saveLockChimeRandomConfig(cfg lockChimeRandomConfig) error {
 		return fmt.Errorf("invalid mode: must be on_connect, scheduled, or smart")
 	}
 	if cfg.Mode == "scheduled" || cfg.Mode == "smart" {
-		// Default to daily if no interval was set (e.g. switching from on_connect)
 		if cfg.Interval == "" {
 			cfg.Interval = "daily"
 		}
 		if cfg.Interval != "hourly" && cfg.Interval != "daily" && cfg.Interval != "weekly" {
 			return fmt.Errorf("invalid interval: must be hourly, daily, or weekly")
+		}
+		if cfg.Hour < 0 || cfg.Hour > 23 {
+			cfg.Hour = 0
+		}
+		if cfg.Day < 0 || cfg.Day > 6 {
+			cfg.Day = 0
 		}
 	}
 	os.MkdirAll(lockChimeDir, 0755)
@@ -463,7 +513,9 @@ func RandomizeOnConnect() {
 	if !cfg.Enabled || cfg.Mode != "on_connect" {
 		return
 	}
-	pickAndActivateRandom()
+	if chosen := pickAndActivateRandom(); chosen != "" {
+		lockChimeLog("on_connect mode — changed lock chime to %q", chosen)
+	}
 }
 
 // StartLockChimeScheduler starts the background goroutine for scheduled
@@ -476,11 +528,17 @@ func StartLockChimeScheduler() {
 }
 
 func lockChimeSchedulerLoop(stop chan struct{}) {
-	// Check every minute; only act when the interval has elapsed.
+	// Check every minute; fire when the configured schedule matches.
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
 
-	var lastRun time.Time
+	// Track the last date-string to avoid firing twice per window.
+	var lastScheduledKey string
+	// Smart mode: when the schedule fires but the car isn't parked, we set
+	// smartPending=true and retry every 15 minutes until parked or the next
+	// schedule window arrives.
+	var smartPending bool
+	var lastSmartRetry time.Time
 
 	for {
 		select {
@@ -488,44 +546,82 @@ func lockChimeSchedulerLoop(stop chan struct{}) {
 			return
 		case now := <-ticker.C:
 			cfg := loadLockChimeRandomConfig()
-			if !cfg.Enabled || (cfg.Mode != "scheduled" && cfg.Mode != "smart") {
-				lastRun = time.Time{} // reset so next enable fires immediately
+			if !cfg.Enabled {
+				lastScheduledKey = ""
 				continue
 			}
 
-			var interval time.Duration
-			switch cfg.Interval {
-			case "hourly":
-				interval = 1 * time.Hour
-			case "daily":
-				interval = 24 * time.Hour
-			case "weekly":
-				interval = 7 * 24 * time.Hour
-			default:
-				continue
-			}
+			if cfg.Mode == "scheduled" || cfg.Mode == "smart" {
+				// Time-of-day based scheduling
+				var runKey string
+				switch cfg.Interval {
+				case "hourly":
+					if now.Minute() != 0 {
+						continue
+					}
+					runKey = now.Format("2006-01-02-15")
+				case "daily":
+					if now.Hour() != cfg.Hour || now.Minute() != 0 {
+						continue
+					}
+					runKey = now.Format("2006-01-02")
+				case "weekly":
+					if int(now.Weekday()) != cfg.Day || now.Hour() != cfg.Hour || now.Minute() != 0 {
+						continue
+					}
+					runKey = now.Format("2006-W01")
+				default:
+					continue
+				}
 
-			if lastRun.IsZero() || now.Sub(lastRun) >= interval {
-				// Smart mode: only change when vehicle is in Park
+				// Smart mode: support retries every 15 min if car wasn't parked
 				if cfg.Mode == "smart" {
+					isNewWindow := runKey != lastScheduledKey
+					isRetry := smartPending && !lastSmartRetry.IsZero() && now.Sub(lastSmartRetry) >= 15*time.Minute
+
+					if !isNewWindow && !isRetry {
+						continue
+					}
+
+					// Query vehicle shift state via BLE
 					shiftState, err := queryBLEShiftState()
 					if err != nil {
-						log.Printf("lockchime: smart mode — BLE query failed: %v, skipping", err)
+						log.Printf("lockchime: smart mode — BLE query failed: %v, will retry in 15 min", err)
+						lockChimeLog("smart mode — BLE query failed: %v, will retry in 15 min", err)
+						smartPending = true
+						lastSmartRetry = now
+						lastScheduledKey = runKey
 						continue
 					}
 					if shiftState != "P" {
-						log.Printf("lockchime: smart mode — vehicle not in Park (state=%q), skipping", shiftState)
-						continue // don't update lastRun — retry next tick
+						log.Printf("lockchime: smart mode — vehicle in %s, will retry in 15 min", shiftState)
+						lockChimeLog("smart mode — vehicle in %s, will retry in 15 min", shiftState)
+						smartPending = true
+						lastSmartRetry = now
+						lastScheduledKey = runKey
+						continue
 					}
+
 					log.Printf("lockchime: smart mode — vehicle in Park, proceeding with chime change")
+					lockChimeLog("smart mode — vehicle in Park, proceeding with chime change")
+					smartPending = false
+				} else {
+					// Scheduled mode: simple dedup
+					if runKey == lastScheduledKey {
+						continue
+					}
 				}
 
 				if chosen := pickAndActivateRandom(); chosen != "" {
+					lockChimeLog("%s mode — changed lock chime to %q", cfg.Mode, chosen)
 					if err := syncLockChimeToCamDisk(); err != nil {
 						log.Printf("lockchime: %s cam sync failed: %v", cfg.Mode, err)
+						lockChimeLog("%s mode — cam disk sync FAILED: %v", cfg.Mode, err)
+					} else {
+						lockChimeLog("%s mode — cam disk sync OK, Tesla will use new sound", cfg.Mode)
 					}
 				}
-				lastRun = now
+				lastScheduledKey = runKey
 			}
 		}
 	}
@@ -811,6 +907,8 @@ func (h *handlers) lockChimeGetRandomConfig(w http.ResponseWriter, r *http.Reque
 		"enabled":  cfg.Enabled,
 		"mode":     cfg.Mode,
 		"interval": cfg.Interval,
+		"hour":     cfg.Hour,
+		"day":      cfg.Day,
 		"has_rtc":  hasRTC,
 		"has_ble":  hasBLE,
 	})
@@ -868,8 +966,12 @@ func (h *handlers) lockChimeSaveRandomConfig(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	// Smart mode also requires BLE
+	// Smart mode requires both RTC and BLE
 	if req.Enabled && req.Mode == "smart" {
+		if _, err := os.Stat("/dev/rtc0"); err != nil {
+			writeError(w, http.StatusBadRequest, "Smart mode requires a working RTC (Pi 5 with battery)")
+			return
+		}
 		if _, err := os.Stat("/root/.ble/paired"); err != nil {
 			writeError(w, http.StatusBadRequest, "Smart mode requires a paired BLE key — pair your Pi in Settings first")
 			return
@@ -890,6 +992,8 @@ func (h *handlers) lockChimeSaveRandomConfig(w http.ResponseWriter, r *http.Requ
 		"enabled":  req.Enabled,
 		"mode":     req.Mode,
 		"interval": req.Interval,
+		"hour":     req.Hour,
+		"day":      req.Day,
 	})
 }
 
@@ -909,6 +1013,7 @@ func (h *handlers) lockChimeRandomizeOnConnect(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusBadRequest, "No sounds in library to randomize")
 		return
 	}
+	lockChimeLog("on_connect mode (archiveloop) — changed lock chime to %q", chosen)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
 		"active":  chosen,
@@ -923,10 +1028,15 @@ func (h *handlers) lockChimeRandomize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	lockChimeLog("manual randomize — changed lock chime to %q", chosen)
+
 	// Sync to cam disk in background (gadget may be active)
 	go func() {
 		if err := syncLockChimeToCamDisk(); err != nil {
 			log.Printf("lockchime: cam disk sync failed after manual randomize: %v", err)
+			lockChimeLog("manual randomize — cam disk sync FAILED: %v", err)
+		} else {
+			lockChimeLog("manual randomize — cam disk sync OK")
 		}
 	}()
 

@@ -33,11 +33,13 @@ func (h *handlers) toggleDrives(w http.ResponseWriter, r *http.Request) {
 		// Randomize lock chime before enabling gadget (if random on_connect mode is active)
 		RandomizeOnConnect()
 		// Sync LockChime.wav into the cam disk image so Tesla reads the correct
-		// sound when the gadget comes up. The gadget is not active at this point
-		// so we can safely mount/unmount the cam disk.
+		// sound when the gadget comes up. Acquire camDiskMu to prevent racing with
+		// a concurrent syncLockChimeToCamDisk from the scheduler or manual randomize.
+		camDiskMu.Lock()
 		if err := copyLockChimeToCamMount(); err != nil {
 			log.Printf("lockchime: cam sync before gadget enable failed: %v", err)
 		}
+		camDiskMu.Unlock()
 		shell.Run("bash", "/root/bin/enable_gadget.sh")
 	}
 	writeOK(w)

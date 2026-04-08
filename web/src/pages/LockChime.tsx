@@ -15,6 +15,7 @@ import {
   Zap,
   Download,
   Search,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Loader2,
@@ -45,6 +46,8 @@ interface RandomConfig {
   enabled: boolean
   mode: string
   interval: string
+  hour: number
+  day: number
   has_rtc: boolean
   has_ble: boolean
 }
@@ -141,6 +144,17 @@ export default function LockChime() {
           </div>
         )}
       </div>
+
+      {/* USB Disconnect Notice */}
+      {tab === "library" && (
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.06] p-3 flex items-start gap-3">
+          <Unplug className="h-4 w-4 shrink-0 mt-0.5 text-amber-400" />
+          <p className="text-xs text-amber-200/80 leading-relaxed">
+            Changing or clearing the active lock chime requires a brief USB disconnect (~5 seconds).
+            Tesla will temporarily lose access to the drives during this time.
+          </p>
+        </div>
+      )}
 
       {/* Preview Volume */}
       <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3">
@@ -312,12 +326,15 @@ function MyLibraryTab({ volume }: { volume: number }) {
     enabled: false,
     mode: "on_connect",
     interval: "daily",
+    hour: 3,
+    day: 0,
     has_rtc: false,
     has_ble: false,
   })
   const [randomLoading, setRandomLoading] = useState(true)
   const [savingRandom, setSavingRandom] = useState(false)
   const [randomizing, setRandomizing] = useState(false)
+  const [randomExpanded, setRandomExpanded] = useState(false)
   const [showRandomDisclaimer, setShowRandomDisclaimer] = useState(false)
   const [pendingRandomCfg, setPendingRandomCfg] = useState<RandomConfig | null>(null)
   const [bleTestLoading, setBleTestLoading] = useState(false)
@@ -536,15 +553,6 @@ function MyLibraryTab({ volume }: { volume: number }) {
 
   return (
     <div className="space-y-5">
-      {/* USB Disconnect Disclaimer */}
-      <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.06] p-3.5 flex items-start gap-3">
-        <Unplug className="h-4 w-4 shrink-0 mt-0.5 text-amber-400" />
-        <p className="text-xs text-amber-200/80 leading-relaxed">
-          Changing or clearing the active lock chime requires a brief USB disconnect (~5 seconds).
-          Tesla will temporarily lose access to the drives during this time.
-        </p>
-      </div>
-
       {/* Active Sound Banner */}
       <div
         className={`rounded-xl border p-4 flex items-center justify-between gap-4 ${
@@ -579,285 +587,6 @@ function MyLibraryTab({ volume }: { volume: number }) {
           </button>
         )}
       </div>
-
-      {/* Random Mode */}
-      {!randomLoading && (
-        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <Shuffle className="h-4 w-4 text-amber-400" />
-              <h2 className="text-sm font-medium text-slate-200">Random Mode</h2>
-            </div>
-            <button
-              onClick={() => {
-                if (!randomCfg.enabled) {
-                  // Enabling — show disclaimer first
-                  setPendingRandomCfg({ ...randomCfg, enabled: true })
-                  setShowRandomDisclaimer(true)
-                } else {
-                  // Disabling — no disclaimer needed
-                  handleSaveRandomConfig({ ...randomCfg, enabled: false })
-                }
-              }}
-              disabled={savingRandom || sounds.length < 2}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                randomCfg.enabled ? "bg-amber-500" : "bg-white/10"
-              } ${sounds.length < 2 ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}`}
-              title={sounds.length < 2 ? "Upload at least 2 sounds to use random mode" : ""}
-            >
-              <span className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${
-                randomCfg.enabled ? "translate-x-6" : "translate-x-1"
-              }`} />
-            </button>
-          </div>
-
-          {sounds.length < 2 && (
-            <p className="text-xs text-slate-500">Upload at least 2 sounds to use random mode.</p>
-          )}
-
-          {randomCfg.enabled && sounds.length >= 2 && (
-            <div className="space-y-3">
-              <div className="flex gap-2">
-                <button
-                  onClick={() => handleSaveRandomConfig({ ...randomCfg, mode: "on_connect" })}
-                  disabled={savingRandom}
-                  className={`flex-1 flex items-center gap-2 rounded-lg border px-3 py-2.5 text-xs transition-colors ${
-                    randomCfg.mode === "on_connect"
-                      ? "border-amber-500/40 bg-amber-500/10 text-amber-300"
-                      : "border-white/10 text-slate-400 hover:border-white/20"
-                  }`}
-                >
-                  <Zap className="h-3.5 w-3.5 shrink-0" />
-                  <div className="text-left">
-                    <p className="font-medium">On Connect</p>
-                    <p className="mt-0.5 text-[10px] opacity-60">Random sound each time Tesla connects</p>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => {
-                    if (!randomCfg.has_rtc) {
-                      showToast("Scheduled mode requires a Pi with RTC (real-time clock)", "error")
-                      return
-                    }
-                    handleSaveRandomConfig({ ...randomCfg, mode: "scheduled", interval: randomCfg.interval || "daily" })
-                  }}
-                  disabled={savingRandom}
-                  className={`flex-1 flex items-center gap-2 rounded-lg border px-3 py-2.5 text-xs transition-colors ${
-                    randomCfg.mode === "scheduled"
-                      ? "border-amber-500/40 bg-amber-500/10 text-amber-300"
-                      : !randomCfg.has_rtc
-                        ? "border-white/5 text-slate-600 cursor-not-allowed"
-                        : "border-white/10 text-slate-400 hover:border-white/20"
-                  }`}
-                >
-                  <Clock className="h-3.5 w-3.5 shrink-0" />
-                  <div className="text-left">
-                    <p className="font-medium">Scheduled</p>
-                    <p className="mt-0.5 text-[10px] opacity-60">
-                      {randomCfg.has_rtc ? "Change on a time schedule" : "Requires RTC hardware"}
-                    </p>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => {
-                    if (!randomCfg.has_rtc || !randomCfg.has_ble) {
-                      showToast(
-                        !randomCfg.has_ble
-                          ? "Smart mode requires a paired BLE key — pair your Pi in Settings first"
-                          : "Smart mode requires a Pi with RTC (real-time clock)",
-                        "error"
-                      )
-                      return
-                    }
-                    handleSaveRandomConfig({ ...randomCfg, mode: "smart", interval: randomCfg.interval || "daily" })
-                  }}
-                  disabled={savingRandom}
-                  className={`flex-1 flex items-center gap-2 rounded-lg border px-3 py-2.5 text-xs transition-colors ${
-                    randomCfg.mode === "smart"
-                      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
-                      : !randomCfg.has_rtc || !randomCfg.has_ble
-                        ? "border-white/5 text-slate-600 cursor-not-allowed"
-                        : "border-white/10 text-slate-400 hover:border-white/20"
-                  }`}
-                >
-                  <Shield className="h-3.5 w-3.5 shrink-0" />
-                  <div className="text-left">
-                    <p className="font-medium">Smart</p>
-                    <p className="mt-0.5 text-[10px] opacity-60">
-                      {!randomCfg.has_ble
-                        ? "Requires BLE pairing"
-                        : !randomCfg.has_rtc
-                          ? "Requires RTC hardware"
-                          : "Only changes while parked via BLE"}
-                    </p>
-                  </div>
-                </button>
-              </div>
-
-              {randomCfg.mode === "smart" && (
-                <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/[0.06] p-3 space-y-3">
-                  <p className="text-xs text-emerald-200/80 leading-relaxed">
-                    Smart mode uses your BLE key to check if the vehicle is in Park before changing the lock sound.
-                    If the car is in Drive, Reverse, or Neutral the change is skipped and retried later.
-                    Sentry footage recording during Park may still be briefly interrupted (~5 seconds) during the USB reconnect.
-                  </p>
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={async () => {
-                        setBleTestLoading(true)
-                        setBleTestResult(null)
-                        try {
-                          const res = await fetch(`${API_BASE}/lockchime/ble-shift-state`)
-                          const data = await res.json()
-                          setBleTestResult(data)
-                        } catch {
-                          setBleTestResult({ success: false, error: "Request failed — is the server running?" })
-                        } finally {
-                          setBleTestLoading(false)
-                        }
-                      }}
-                      disabled={bleTestLoading}
-                      className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-300 transition-colors hover:bg-emerald-500/20 disabled:opacity-50"
-                    >
-                      {bleTestLoading ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Shield className="h-3.5 w-3.5" />
-                      )}
-                      {bleTestLoading ? "Querying..." : "Test BLE"}
-                    </button>
-                    {bleTestResult && (
-                      <span className={`text-xs font-medium ${bleTestResult.success ? "text-emerald-300" : "text-red-400"}`}>
-                        {bleTestResult.success
-                          ? `Vehicle is in ${bleTestResult.label} (${bleTestResult.shift_state})`
-                          : bleTestResult.error}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {(randomCfg.mode === "scheduled" || randomCfg.mode === "smart") && randomCfg.has_rtc && (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-slate-400">Change every:</span>
-                  {(["hourly", "daily", "weekly"] as const).map((int) => (
-                    <button
-                      key={int}
-                      onClick={() => handleSaveRandomConfig({ ...randomCfg, interval: int })}
-                      disabled={savingRandom}
-                      className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
-                        randomCfg.interval === int
-                          ? randomCfg.mode === "smart"
-                            ? "bg-emerald-500/20 text-emerald-300 font-medium"
-                            : "bg-amber-500/20 text-amber-300 font-medium"
-                          : "text-slate-500 hover:text-slate-300"
-                      }`}
-                    >
-                      {int.charAt(0).toUpperCase() + int.slice(1)}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              <button
-                onClick={handleRandomizeNow}
-                disabled={randomizing}
-                className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-300 transition-colors hover:bg-amber-500/20 disabled:opacity-50"
-              >
-                <Shuffle className="h-3.5 w-3.5" />
-                {randomizing ? "Randomizing..." : "Randomize Now"}
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Upload area / rename-and-confirm */}
-      {pendingFile ? (
-        <div className="rounded-xl border-2 border-violet-500/40 bg-violet-500/[0.06] p-4 space-y-3">
-          <div className="flex items-start gap-3 rounded-lg bg-white/[0.04] border border-white/10 px-3 py-2.5">
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
-            <p className="text-xs text-slate-400">
-              This name will be the file name on your Pi and what shows in the community if you share it.
-            </p>
-          </div>
-          <div>
-            <label className="text-xs font-medium text-slate-500">Sound Name</label>
-            <input
-              type="text"
-              value={pendingName}
-              onChange={(e) => setPendingName(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleUploadConfirm()}
-              maxLength={50}
-              autoFocus
-              className="mt-1 w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:border-violet-500/50 focus:outline-none"
-            />
-            <p className="mt-1 text-xs text-slate-600">Will be saved as <code className="text-slate-400">{pendingName.trim() || "…"}.wav</code></p>
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={handleUploadConfirm}
-              disabled={!pendingName.trim() || uploading}
-              className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-violet-500 disabled:opacity-50"
-            >
-              {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
-              {uploading ? "Uploading..." : "Upload"}
-            </button>
-            <button
-              onClick={() => { setPendingFile(null); setPendingName(""); if (fileInputRef.current) fileInputRef.current.value = "" }}
-              className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-400 transition-colors hover:bg-white/5"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div
-          className={`relative rounded-xl border-2 border-dashed transition-colors cursor-pointer ${
-            uploadDragging
-              ? "border-violet-500/60 bg-violet-500/10"
-              : "border-white/10 hover:border-white/20 bg-white/[0.02]"
-          }`}
-          onDragOver={(e) => { e.preventDefault(); setUploadDragging(true) }}
-          onDragLeave={() => setUploadDragging(false)}
-          onDrop={(e) => {
-            e.preventDefault()
-            setUploadDragging(false)
-            const file = e.dataTransfer.files[0]
-            if (file) handleFileSelected(file)
-          }}
-          onClick={() => !uploading && fileInputRef.current?.click()}
-        >
-          <div className="flex flex-col items-center gap-3 py-8 px-4 text-center">
-            {uploading ? (
-              <>
-                <Loader2 className="h-5 w-5 animate-spin text-violet-400" />
-                <p className="text-sm text-slate-400">Uploading...</p>
-              </>
-            ) : (
-              <>
-                <Upload className="h-8 w-8 text-slate-600" />
-                <div>
-                  <p className="text-sm font-medium text-slate-300">Drop a .wav file or click to browse</p>
-                  <p className="mt-1 text-xs text-slate-500">WAV only · max {MAX_DURATION_SECONDS}s · max 5 MB</p>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".wav,audio/wav,audio/x-wav"
-        className="hidden"
-        onChange={(e) => {
-          const file = e.target.files?.[0]
-          if (file) handleFileSelected(file)
-        }}
-      />
 
       {/* Sound library */}
       <div>
@@ -995,6 +724,430 @@ function MyLibraryTab({ volume }: { volume: number }) {
           )
         })()}
       </div>
+
+      {/* Random Mode */}
+      {!randomLoading && (
+        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5 min-w-0">
+              {/* Clickable header to expand/collapse when enabled */}
+              <div
+                onClick={() => randomCfg.enabled && setRandomExpanded((v) => !v)}
+                className={`flex items-center gap-2.5 min-w-0 ${randomCfg.enabled ? "cursor-pointer" : "cursor-default"}`}
+              >
+                <Shuffle className={`h-4 w-4 shrink-0 ${randomCfg.enabled ? "text-amber-400" : "text-slate-500"}`} />
+                <h2 className="text-sm font-medium text-slate-200">Random Mode</h2>
+                {randomCfg.enabled && (
+                  <>
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-md ${
+                      randomCfg.mode === "smart"
+                        ? "bg-emerald-500/15 text-emerald-400"
+                        : "bg-amber-500/15 text-amber-400"
+                    }`}>
+                      {randomCfg.mode === "on_connect" ? "On Connect" : randomCfg.mode === "scheduled" ? "Scheduled" : "Smart"}
+                    </span>
+                    {!randomExpanded && sounds.length >= 2 && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleRandomizeNow()
+                        }}
+                        disabled={randomizing}
+                        className="flex items-center gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[11px] font-medium text-amber-300 transition-colors hover:bg-amber-500/20 disabled:opacity-50"
+                      >
+                        <Shuffle className="h-3 w-3" />
+                        {randomizing ? "..." : "Randomize"}
+                      </button>
+                    )}
+                    <ChevronDown className={`h-3.5 w-3.5 text-slate-500 transition-transform ${randomExpanded ? "rotate-180" : ""}`} />
+                  </>
+                )}
+              </div>
+            </div>
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                if (!randomCfg.enabled) {
+                  // Enabling — show disclaimer first
+                  setPendingRandomCfg({ ...randomCfg, enabled: true })
+                  setShowRandomDisclaimer(true)
+                } else {
+                  // Disabling — no disclaimer needed, collapse too
+                  setRandomExpanded(false)
+                  handleSaveRandomConfig({ ...randomCfg, enabled: false })
+                }
+              }}
+              disabled={savingRandom || sounds.length < 2}
+              className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+                randomCfg.enabled ? "bg-amber-500" : "bg-white/10"
+              } ${sounds.length < 2 ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}`}
+              title={sounds.length < 2 ? "Upload at least 2 sounds to use random mode" : ""}
+            >
+              <span className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${
+                randomCfg.enabled ? "translate-x-6" : "translate-x-1"
+              }`} />
+            </button>
+          </div>
+
+          {sounds.length < 2 && (
+            <p className="text-xs text-slate-500">Upload at least 2 sounds to use random mode.</p>
+          )}
+
+          {randomCfg.enabled && randomExpanded && sounds.length >= 2 && (
+            <div className="space-y-3">
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleSaveRandomConfig({ ...randomCfg, mode: "on_connect" })}
+                  disabled={savingRandom}
+                  className={`flex-1 flex items-center gap-2 rounded-lg border px-3 py-2.5 text-xs transition-colors ${
+                    randomCfg.mode === "on_connect"
+                      ? "border-amber-500/40 bg-amber-500/10 text-amber-300"
+                      : "border-white/10 text-slate-400 hover:border-white/20"
+                  }`}
+                >
+                  <Zap className="h-3.5 w-3.5 shrink-0" />
+                  <div className="text-left">
+                    <p className="font-medium">On Connect</p>
+                    <p className="mt-0.5 text-[10px] opacity-60">Random sound each time Tesla connects</p>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => {
+                    if (!randomCfg.has_rtc) {
+                      showToast("Scheduled mode requires a Pi with RTC (real-time clock)", "error")
+                      return
+                    }
+                    if (randomCfg.mode !== "scheduled") {
+                      setPendingRandomCfg({ ...randomCfg, mode: "scheduled", interval: randomCfg.interval || "daily" })
+                      setShowRandomDisclaimer(true)
+                      return
+                    }
+                  }}
+                  disabled={savingRandom}
+                  className={`flex-1 flex items-center gap-2 rounded-lg border px-3 py-2.5 text-xs transition-colors ${
+                    randomCfg.mode === "scheduled"
+                      ? "border-amber-500/40 bg-amber-500/10 text-amber-300"
+                      : !randomCfg.has_rtc
+                        ? "border-white/5 text-slate-600 cursor-not-allowed"
+                        : "border-white/10 text-slate-400 hover:border-white/20"
+                  }`}
+                >
+                  <Clock className="h-3.5 w-3.5 shrink-0" />
+                  <div className="text-left">
+                    <p className="font-medium">Scheduled</p>
+                    <p className="mt-0.5 text-[10px] opacity-60">
+                      {randomCfg.has_rtc ? "Change on a time schedule" : "Requires RTC hardware"}
+                    </p>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => {
+                    if (!randomCfg.has_rtc || !randomCfg.has_ble) {
+                      showToast(
+                        !randomCfg.has_ble
+                          ? "Smart mode requires a paired BLE key — pair your Pi in Settings first"
+                          : "Smart mode requires a Pi with RTC (real-time clock)",
+                        "error"
+                      )
+                      return
+                    }
+                    if (randomCfg.mode !== "smart") {
+                      setPendingRandomCfg({ ...randomCfg, mode: "smart", interval: randomCfg.interval || "daily" })
+                      setShowRandomDisclaimer(true)
+                      return
+                    }
+                  }}
+                  disabled={savingRandom}
+                  className={`flex-1 flex items-center gap-2 rounded-lg border px-3 py-2.5 text-xs transition-colors ${
+                    randomCfg.mode === "smart"
+                      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+                      : !randomCfg.has_rtc || !randomCfg.has_ble
+                        ? "border-white/5 text-slate-600 cursor-not-allowed"
+                        : "border-white/10 text-slate-400 hover:border-white/20"
+                  }`}
+                >
+                  <Shield className="h-3.5 w-3.5 shrink-0" />
+                  <div className="text-left">
+                    <p className="font-medium">Smart</p>
+                    <p className="mt-0.5 text-[10px] opacity-60">
+                      {!randomCfg.has_ble
+                        ? "Requires BLE pairing"
+                        : !randomCfg.has_rtc
+                          ? "Requires RTC hardware"
+                          : "Only changes while parked via BLE"}
+                    </p>
+                  </div>
+                </button>
+              </div>
+
+              {randomCfg.mode === "smart" && (
+                <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/[0.06] p-3 space-y-3">
+                  <p className="text-xs text-emerald-200/80 leading-relaxed">
+                    Smart mode uses your BLE key to check if the vehicle is in Park before changing the lock sound.
+                    If the car is in Drive, Reverse, or Neutral the change is skipped and retried later.
+                    Sentry footage recording during Park may still be briefly interrupted (~5 seconds) during the USB reconnect.
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={async () => {
+                        setBleTestLoading(true)
+                        setBleTestResult(null)
+                        try {
+                          const res = await fetch(`${API_BASE}/lockchime/ble-shift-state`)
+                          const data = await res.json()
+                          setBleTestResult(data)
+                        } catch {
+                          setBleTestResult({ success: false, error: "Request failed — is the server running?" })
+                        } finally {
+                          setBleTestLoading(false)
+                        }
+                      }}
+                      disabled={bleTestLoading}
+                      className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-300 transition-colors hover:bg-emerald-500/20 disabled:opacity-50"
+                    >
+                      {bleTestLoading ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Shield className="h-3.5 w-3.5" />
+                      )}
+                      {bleTestLoading ? "Querying..." : "Test BLE"}
+                    </button>
+                    {bleTestResult && (
+                      <span className={`text-xs font-medium ${bleTestResult.success ? "text-emerald-300" : "text-red-400"}`}>
+                        {bleTestResult.success
+                          ? `Vehicle is in ${bleTestResult.label} (${bleTestResult.shift_state})`
+                          : bleTestResult.error}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Scheduled mode: time-based schedule with hour/day pickers */}
+              {randomCfg.mode === "scheduled" && randomCfg.has_rtc && (
+                <div className="space-y-2.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-400">Change every:</span>
+                    {(["hourly", "daily", "weekly"] as const).map((int) => (
+                      <button
+                        key={int}
+                        onClick={() => handleSaveRandomConfig({ ...randomCfg, interval: int })}
+                        disabled={savingRandom}
+                        className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
+                          randomCfg.interval === int
+                            ? "bg-amber-500/20 text-amber-300 font-medium"
+                            : "text-slate-500 hover:text-slate-300"
+                        }`}
+                      >
+                        {int.charAt(0).toUpperCase() + int.slice(1)}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Day picker for weekly */}
+                  {randomCfg.interval === "weekly" && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-400">On:</span>
+                      {(["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const).map((dayName, i) => (
+                        <button
+                          key={dayName}
+                          onClick={() => handleSaveRandomConfig({ ...randomCfg, day: i })}
+                          disabled={savingRandom}
+                          className={`rounded-md px-2 py-1 text-xs transition-colors ${
+                            randomCfg.day === i
+                              ? "bg-amber-500/20 text-amber-300 font-medium"
+                              : "text-slate-500 hover:text-slate-300"
+                          }`}
+                        >
+                          {dayName}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Hour picker for daily and weekly */}
+                  {(randomCfg.interval === "daily" || randomCfg.interval === "weekly") && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-400">At:</span>
+                      <select
+                        value={randomCfg.hour}
+                        onChange={(e) => handleSaveRandomConfig({ ...randomCfg, hour: Number(e.target.value) })}
+                        disabled={savingRandom}
+                        className="rounded-md border border-white/10 bg-white/[0.03] px-2 py-1 text-xs text-slate-300 focus:border-violet-500/50 focus:outline-none"
+                      >
+                        {Array.from({ length: 24 }, (_, h) => {
+                          const ampm = h === 0 ? "12 AM" : h < 12 ? `${h} AM` : h === 12 ? "12 PM" : `${h - 12} PM`
+                          return (
+                            <option key={h} value={h}>
+                              {ampm}
+                            </option>
+                          )
+                        })}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Smart mode: same schedule options as scheduled but with emerald accent */}
+              {randomCfg.mode === "smart" && (
+                <div className="space-y-2.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-400">Change every:</span>
+                    {(["hourly", "daily", "weekly"] as const).map((int) => (
+                      <button
+                        key={int}
+                        onClick={() => handleSaveRandomConfig({ ...randomCfg, interval: int })}
+                        disabled={savingRandom}
+                        className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
+                          randomCfg.interval === int
+                            ? "bg-emerald-500/20 text-emerald-300 font-medium"
+                            : "text-slate-500 hover:text-slate-300"
+                        }`}
+                      >
+                        {int.charAt(0).toUpperCase() + int.slice(1)}
+                      </button>
+                    ))}
+                  </div>
+
+                  {randomCfg.interval === "weekly" && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-400">On:</span>
+                      {(["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const).map((dayName, i) => (
+                        <button
+                          key={dayName}
+                          onClick={() => handleSaveRandomConfig({ ...randomCfg, day: i })}
+                          disabled={savingRandom}
+                          className={`rounded-md px-2 py-1 text-xs transition-colors ${
+                            randomCfg.day === i
+                              ? "bg-emerald-500/20 text-emerald-300 font-medium"
+                              : "text-slate-500 hover:text-slate-300"
+                          }`}
+                        >
+                          {dayName}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {(randomCfg.interval === "daily" || randomCfg.interval === "weekly") && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-400">At:</span>
+                      <select
+                        value={randomCfg.hour}
+                        onChange={(e) => handleSaveRandomConfig({ ...randomCfg, hour: Number(e.target.value) })}
+                        disabled={savingRandom}
+                        className="rounded-md border border-white/10 bg-white/[0.03] px-2 py-1 text-xs text-slate-300 focus:border-violet-500/50 focus:outline-none"
+                      >
+                        {Array.from({ length: 24 }, (_, h) => {
+                          const ampm = h === 0 ? "12 AM" : h < 12 ? `${h} AM` : h === 12 ? "12 PM" : `${h - 12} PM`
+                          return <option key={h} value={h}>{ampm}</option>
+                        })}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <button
+                onClick={handleRandomizeNow}
+                disabled={randomizing}
+                className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-300 transition-colors hover:bg-amber-500/20 disabled:opacity-50"
+              >
+                <Shuffle className="h-3.5 w-3.5" />
+                {randomizing ? "Randomizing..." : "Randomize Now"}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Upload area / rename-and-confirm */}
+      {pendingFile ? (
+        <div className="rounded-xl border-2 border-violet-500/40 bg-violet-500/[0.06] p-4 space-y-3">
+          <div className="flex items-start gap-3 rounded-lg bg-white/[0.04] border border-white/10 px-3 py-2.5">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+            <p className="text-xs text-slate-400">
+              This name will be the file name on your Pi and what shows in the community if you share it.
+            </p>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500">Sound Name</label>
+            <input
+              type="text"
+              value={pendingName}
+              onChange={(e) => setPendingName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleUploadConfirm()}
+              maxLength={50}
+              autoFocus
+              className="mt-1 w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:border-violet-500/50 focus:outline-none"
+            />
+            <p className="mt-1 text-xs text-slate-600">Will be saved as <code className="text-slate-400">{pendingName.trim() || "…"}.wav</code></p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={handleUploadConfirm}
+              disabled={!pendingName.trim() || uploading}
+              className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-violet-500 disabled:opacity-50"
+            >
+              {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+              {uploading ? "Uploading..." : "Upload"}
+            </button>
+            <button
+              onClick={() => { setPendingFile(null); setPendingName(""); if (fileInputRef.current) fileInputRef.current.value = "" }}
+              className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-400 transition-colors hover:bg-white/5"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div
+          className={`relative rounded-xl border-2 border-dashed transition-colors cursor-pointer ${
+            uploadDragging
+              ? "border-violet-500/60 bg-violet-500/10"
+              : "border-white/10 hover:border-white/20 bg-white/[0.02]"
+          }`}
+          onDragOver={(e) => { e.preventDefault(); setUploadDragging(true) }}
+          onDragLeave={() => setUploadDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault()
+            setUploadDragging(false)
+            const file = e.dataTransfer.files[0]
+            if (file) handleFileSelected(file)
+          }}
+          onClick={() => !uploading && fileInputRef.current?.click()}
+        >
+          <div className="flex flex-col items-center gap-3 py-8 px-4 text-center">
+            {uploading ? (
+              <>
+                <Loader2 className="h-5 w-5 animate-spin text-violet-400" />
+                <p className="text-sm text-slate-400">Uploading...</p>
+              </>
+            ) : (
+              <>
+                <Upload className="h-8 w-8 text-slate-600" />
+                <div>
+                  <p className="text-sm font-medium text-slate-300">Drop a .wav file or click to browse</p>
+                  <p className="mt-1 text-xs text-slate-500">WAV only · max {MAX_DURATION_SECONDS}s · max 5 MB</p>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".wav,audio/wav,audio/x-wav"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          if (file) handleFileSelected(file)
+        }}
+      />
 
       {/* Info */}
       <div className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/[0.02] p-4">
