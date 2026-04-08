@@ -17,6 +17,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/Scottmg1/Sentry-USB/server/shell"
 )
 
 const lockChimeDir = "/mutable/LockChime"
@@ -34,9 +36,6 @@ const lockChimeConfigFile = "/mutable/LockChime/.random_config.json"
 const lockChimeActiveFile = "/mutable/LockChime/.active_name"
 
 var validLockChimeFile = regexp.MustCompile(`^[a-zA-Z0-9 _.-]+\.wav$`)
-
-// gadgetRoot is the configfs path for the SentryUSB gadget.
-const gadgetRoot = "/sys/kernel/config/usb_gadget/sentryusb"
 
 // writeChimeFileAtomic writes data to destPath using the same atomic pattern as
 // the old TeslaUSB codebase: write to temp → fsync file → rename → fsync dir →
@@ -84,38 +83,136 @@ func writeChimeFileAtomic(destPath string, data []byte) error {
 	return nil
 }
 
-// rebindUSBGadget simulates a USB unplug/replug by unbinding and rebinding
-// the UDC controller.  This forces Tesla to drop its file cache and re-read
-// LockChime.wav.  Returns nil if the gadget is not active (drives disconnected).
-func rebindUSBGadget() error {
-	udcPath := filepath.Join(gadgetRoot, "UDC")
+// camDiskImage is the backing file for the cam USB drive that Tesla reads.
+const camDiskImage = "/backingfiles/cam_disk.bin"
+const camMountPoint = "/mnt/cam"
 
-	// Read current UDC — if empty or missing, gadget isn't active; nothing to rebind.
-	udcBytes, err := os.ReadFile(udcPath)
+// gadgetConfigDir is the configfs path for the SentryUSB gadget.
+const gadgetConfigDir = "/sys/kernel/config/usb_gadget/sentryusb"
+
+// camDiskMu serializes all operations that disable/enable the USB gadget and
+// mount/unmount the cam disk to prevent races from concurrent goroutines.
+var camDiskMu sync.Mutex
+
+// isGadgetActive returns true if the USB gadget is currently configured.
+func isGadgetActive() bool {
+	_, err := os.Stat(gadgetConfigDir)
+	return err == nil
+}
+
+// copyLockChimeToCamMount copies /mutable/LockChime.wav to the root of the cam
+// disk so Tesla can read it via USB mass storage.  The cam disk must NOT be in
+// use by the USB gadget — the caller is responsible for ensuring the gadget is
+// disabled before calling this function.  The function mounts the cam disk,
+// copies the file, and unmounts.
+func copyLockChimeToCamMount() error {
+	data, err := os.ReadFile(lockChimeTarget)
 	if err != nil {
-		log.Printf("lockchime: rebind skipped — gadget not active (%v)", err)
-		return nil
-	}
-	udc := strings.TrimSpace(string(udcBytes))
-	if udc == "" {
-		log.Printf("lockchime: rebind skipped — UDC is empty (drives disconnected)")
+		// No staged LockChime.wav — nothing to copy
 		return nil
 	}
 
-	// Unbind: write empty string
-	if err := os.WriteFile(udcPath, []byte("\n"), 0644); err != nil {
-		return fmt.Errorf("unbind UDC: %w", err)
+	if _, err := os.Stat(camDiskImage); os.IsNotExist(err) {
+		log.Printf("lockchime: cam disk image not found, skipping cam sync")
+		return nil
 	}
 
-	// Brief pause so Tesla's USB stack registers the disconnect
-	time.Sleep(2 * time.Second)
-
-	// Rebind: write UDC name back
-	if err := os.WriteFile(udcPath, []byte(udc), 0644); err != nil {
-		return fmt.Errorf("rebind UDC: %w", err)
+	if _, err := shell.RunWithTimeout(10*time.Second, "mount", camMountPoint); err != nil {
+		return fmt.Errorf("mount cam disk: %w", err)
 	}
 
-	log.Printf("lockchime: USB gadget rebound (UDC=%s) — Tesla will re-read files", udc)
+	camTarget := filepath.Join(camMountPoint, "LockChime.wav")
+	writeErr := writeChimeFileAtomic(camTarget, data)
+
+	if _, err := shell.RunWithTimeout(10*time.Second, "umount", camMountPoint); err != nil {
+		log.Printf("lockchime: umount cam disk failed: %v", err)
+	}
+
+	if writeErr != nil {
+		return fmt.Errorf("write LockChime.wav to cam disk: %w", writeErr)
+	}
+
+	log.Printf("lockchime: synced LockChime.wav to cam disk (%d bytes)", len(data))
+	return nil
+}
+
+// syncLockChimeToCamDisk is used when the USB gadget may be active (e.g. manual
+// activate or scheduled randomize).  It disables the gadget, copies the file
+// into the cam disk, and re-enables the gadget so Tesla reads the new sound.
+// Only re-enables the gadget if it was active before the operation.
+func syncLockChimeToCamDisk() error {
+	camDiskMu.Lock()
+	defer camDiskMu.Unlock()
+
+	if _, err := os.Stat(camDiskImage); os.IsNotExist(err) {
+		log.Printf("lockchime: cam disk image not found, skipping cam sync")
+		return nil
+	}
+
+	// Remember gadget state so we only re-enable if it was active
+	gadgetWasActive := isGadgetActive()
+
+	if gadgetWasActive {
+		if _, err := shell.RunWithTimeout(10*time.Second, "bash", "/root/bin/disable_gadget.sh"); err != nil {
+			log.Printf("lockchime: disable_gadget.sh failed: %v", err)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	copyErr := copyLockChimeToCamMount()
+
+	if gadgetWasActive {
+		if _, err := shell.RunWithTimeout(10*time.Second, "bash", "/root/bin/enable_gadget.sh"); err != nil {
+			log.Printf("lockchime: enable_gadget.sh failed: %v", err)
+			return fmt.Errorf("re-enable gadget: %w", err)
+		}
+		log.Printf("lockchime: USB gadget re-enabled — Tesla will read the new lock sound")
+	}
+
+	return copyErr
+}
+
+// clearLockChimeFromCamDisk removes LockChime.wav from the cam disk image.
+// Same gadget disable/mount/unmount/enable cycle as syncLockChimeToCamDisk.
+func clearLockChimeFromCamDisk() error {
+	camDiskMu.Lock()
+	defer camDiskMu.Unlock()
+
+	if _, err := os.Stat(camDiskImage); os.IsNotExist(err) {
+		return nil
+	}
+
+	gadgetWasActive := isGadgetActive()
+
+	if gadgetWasActive {
+		if _, err := shell.RunWithTimeout(10*time.Second, "bash", "/root/bin/disable_gadget.sh"); err != nil {
+			log.Printf("lockchime: disable_gadget.sh failed: %v", err)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	if _, err := shell.RunWithTimeout(10*time.Second, "mount", camMountPoint); err != nil {
+		if gadgetWasActive {
+			shell.RunWithTimeout(10*time.Second, "bash", "/root/bin/enable_gadget.sh")
+		}
+		return fmt.Errorf("mount cam disk: %w", err)
+	}
+
+	camTarget := filepath.Join(camMountPoint, "LockChime.wav")
+	os.Remove(camTarget)
+	syscall.Sync()
+
+	if _, err := shell.RunWithTimeout(10*time.Second, "umount", camMountPoint); err != nil {
+		log.Printf("lockchime: umount cam disk failed: %v", err)
+	}
+
+	if gadgetWasActive {
+		if _, err := shell.RunWithTimeout(10*time.Second, "bash", "/root/bin/enable_gadget.sh"); err != nil {
+			return fmt.Errorf("re-enable gadget: %w", err)
+		}
+	}
+
+	log.Printf("lockchime: cleared LockChime.wav from cam disk")
 	return nil
 }
 
@@ -247,8 +344,9 @@ func listWavFiles() []string {
 }
 
 // pickAndActivateRandom selects a random .wav from the library (avoiding the
-// currently active chime when possible) and copies it to the Tesla target path
-// using atomic writes + USB rebind.  Returns the chosen filename or empty string.
+// currently active chime when possible) and stages it at /mutable/LockChime.wav.
+// The caller is responsible for syncing the file to the cam disk and managing
+// the USB gadget lifecycle.  Returns the chosen filename or empty string.
 func pickAndActivateRandom() string {
 	wavs := listWavFiles()
 	if len(wavs) == 0 {
@@ -290,11 +388,6 @@ func pickAndActivateRandom() string {
 	}
 	os.WriteFile(lockChimeActiveFile, []byte(chosen), 0644)
 	log.Printf("lockchime: random mode activated %q", chosen)
-
-	// Rebind USB so Tesla picks up the new file
-	if err := rebindUSBGadget(); err != nil {
-		log.Printf("lockchime: USB rebind failed after random: %v", err)
-	}
 
 	return chosen
 }
@@ -349,7 +442,11 @@ func lockChimeSchedulerLoop(stop chan struct{}) {
 			}
 
 			if lastRun.IsZero() || now.Sub(lastRun) >= interval {
-				pickAndActivateRandom()
+				if chosen := pickAndActivateRandom(); chosen != "" {
+					if err := syncLockChimeToCamDisk(); err != nil {
+						log.Printf("lockchime: scheduled cam sync failed: %v", err)
+					}
+				}
 				lastRun = now
 			}
 		}
@@ -538,11 +635,12 @@ func (h *handlers) lockChimeActivate(w http.ResponseWriter, r *http.Request) {
 	// Record the active filename in sidecar metadata
 	os.WriteFile(lockChimeActiveFile, []byte(filename), 0644)
 
-	// Rebind USB gadget so Tesla re-reads the file (runs in background to avoid
-	// blocking the HTTP response — the 2-second sleep is internal)
+	// Sync the file into the cam disk image and re-enable the USB gadget so
+	// Tesla actually reads the new sound (runs in background to avoid blocking
+	// the HTTP response — the gadget cycle takes several seconds).
 	go func() {
-		if err := rebindUSBGadget(); err != nil {
-			log.Printf("lockchime: USB rebind failed after activate: %v", err)
+		if err := syncLockChimeToCamDisk(); err != nil {
+			log.Printf("lockchime: cam disk sync failed after activate: %v", err)
 		}
 	}()
 
@@ -560,12 +658,12 @@ func (h *handlers) lockChimeClear(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	os.Remove(lockChimeActiveFile)
-
-	// Sync directory so removal is durable, then rebind USB
 	syscall.Sync()
+
+	// Also remove from the cam disk so Tesla no longer has a lock sound
 	go func() {
-		if err := rebindUSBGadget(); err != nil {
-			log.Printf("lockchime: USB rebind failed after clear: %v", err)
+		if err := clearLockChimeFromCamDisk(); err != nil {
+			log.Printf("lockchime: cam disk clear failed: %v", err)
 		}
 	}()
 
@@ -594,6 +692,20 @@ func (h *handlers) lockChimeDelete(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "Failed to delete file")
 		}
 		return
+	}
+
+	// If the deleted file was the active chime, clear it from staging and cam disk
+	if data, err := os.ReadFile(lockChimeActiveFile); err == nil {
+		if strings.TrimSpace(string(data)) == filename {
+			os.Remove(lockChimeTarget)
+			os.Remove(lockChimeActiveFile)
+			syscall.Sync()
+			go func() {
+				if err := clearLockChimeFromCamDisk(); err != nil {
+					log.Printf("lockchime: cam disk clear after delete failed: %v", err)
+				}
+			}()
+		}
 	}
 
 	writeOK(w)
@@ -649,6 +761,28 @@ func (h *handlers) lockChimeSaveRandomConfig(w http.ResponseWriter, r *http.Requ
 	})
 }
 
+// POST /api/lockchime/randomize-on-connect — conditionally randomize if on_connect mode is active.
+// Called by archiveloop before enabling the USB gadget so Tesla reads a fresh file on mount.
+func (h *handlers) lockChimeRandomizeOnConnect(w http.ResponseWriter, r *http.Request) {
+	cfg := loadLockChimeRandomConfig()
+	if !cfg.Enabled || cfg.Mode != "on_connect" {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"skipped": true,
+			"reason":  "random on_connect mode not active",
+		})
+		return
+	}
+	chosen := pickAndActivateRandom()
+	if chosen == "" {
+		writeError(w, http.StatusBadRequest, "No sounds in library to randomize")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"active":  chosen,
+	})
+}
+
 // POST /api/lockchime/randomize — manually trigger a random selection
 func (h *handlers) lockChimeRandomize(w http.ResponseWriter, r *http.Request) {
 	chosen := pickAndActivateRandom()
@@ -656,6 +790,14 @@ func (h *handlers) lockChimeRandomize(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "No sounds in library to randomize")
 		return
 	}
+
+	// Sync to cam disk in background (gadget may be active)
+	go func() {
+		if err := syncLockChimeToCamDisk(); err != nil {
+			log.Printf("lockchime: cam disk sync failed after manual randomize: %v", err)
+		}
+	}()
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"success":     true,
 		"active":      chosen,

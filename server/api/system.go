@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -31,6 +32,12 @@ func (h *handlers) toggleDrives(w http.ResponseWriter, r *http.Request) {
 	} else {
 		// Randomize lock chime before enabling gadget (if random on_connect mode is active)
 		RandomizeOnConnect()
+		// Sync LockChime.wav into the cam disk image so Tesla reads the correct
+		// sound when the gadget comes up. The gadget is not active at this point
+		// so we can safely mount/unmount the cam disk.
+		if err := copyLockChimeToCamMount(); err != nil {
+			log.Printf("lockchime: cam sync before gadget enable failed: %v", err)
+		}
 		shell.Run("bash", "/root/bin/enable_gadget.sh")
 	}
 	writeOK(w)
