@@ -640,7 +640,7 @@ function MyLibraryTab({ volume }: { volume: number }) {
                       showToast("Scheduled mode requires a Pi with RTC (real-time clock)", "error")
                       return
                     }
-                    handleSaveRandomConfig({ ...randomCfg, mode: "scheduled" })
+                    handleSaveRandomConfig({ ...randomCfg, mode: "scheduled", interval: randomCfg.interval || "daily" })
                   }}
                   disabled={savingRandom}
                   className={`flex-1 flex items-center gap-2 rounded-lg border px-3 py-2.5 text-xs transition-colors ${
@@ -671,7 +671,7 @@ function MyLibraryTab({ volume }: { volume: number }) {
                       )
                       return
                     }
-                    handleSaveRandomConfig({ ...randomCfg, mode: "smart" })
+                    handleSaveRandomConfig({ ...randomCfg, mode: "smart", interval: randomCfg.interval || "daily" })
                   }}
                   disabled={savingRandom}
                   className={`flex-1 flex items-center gap-2 rounded-lg border px-3 py-2.5 text-xs transition-colors ${

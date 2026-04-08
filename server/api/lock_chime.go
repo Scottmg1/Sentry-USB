@@ -364,8 +364,14 @@ func saveLockChimeRandomConfig(cfg lockChimeRandomConfig) error {
 	if cfg.Mode != "on_connect" && cfg.Mode != "scheduled" && cfg.Mode != "smart" && cfg.Mode != "" {
 		return fmt.Errorf("invalid mode: must be on_connect, scheduled, or smart")
 	}
-	if (cfg.Mode == "scheduled" || cfg.Mode == "smart") && cfg.Interval != "hourly" && cfg.Interval != "daily" && cfg.Interval != "weekly" {
-		return fmt.Errorf("invalid interval: must be hourly, daily, or weekly")
+	if cfg.Mode == "scheduled" || cfg.Mode == "smart" {
+		// Default to daily if no interval was set (e.g. switching from on_connect)
+		if cfg.Interval == "" {
+			cfg.Interval = "daily"
+		}
+		if cfg.Interval != "hourly" && cfg.Interval != "daily" && cfg.Interval != "weekly" {
+			return fmt.Errorf("invalid interval: must be hourly, daily, or weekly")
+		}
 	}
 	os.MkdirAll(lockChimeDir, 0755)
 	data, err := json.MarshalIndent(cfg, "", "  ")
