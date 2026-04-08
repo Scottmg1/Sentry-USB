@@ -9,6 +9,7 @@ import {
   Volume2,
   X,
   AlertCircle,
+  AlertTriangle,
   Shuffle,
   Clock,
   Zap,
@@ -19,6 +20,7 @@ import {
   Loader2,
   Shield,
   Pencil,
+  Unplug,
 } from "lucide-react"
 
 const API_BASE = "/api"
@@ -314,6 +316,8 @@ function MyLibraryTab({ volume }: { volume: number }) {
   const [randomLoading, setRandomLoading] = useState(true)
   const [savingRandom, setSavingRandom] = useState(false)
   const [randomizing, setRandomizing] = useState(false)
+  const [showRandomDisclaimer, setShowRandomDisclaimer] = useState(false)
+  const [pendingRandomCfg, setPendingRandomCfg] = useState<RandomConfig | null>(null)
 
   const { showToast, ToastView } = useToast()
 
@@ -528,6 +532,15 @@ function MyLibraryTab({ volume }: { volume: number }) {
 
   return (
     <div className="space-y-5">
+      {/* USB Disconnect Disclaimer */}
+      <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.06] p-3.5 flex items-start gap-3">
+        <Unplug className="h-4 w-4 shrink-0 mt-0.5 text-amber-400" />
+        <p className="text-xs text-amber-200/80 leading-relaxed">
+          Changing or clearing the active lock chime requires a brief USB disconnect (~5 seconds).
+          Tesla will temporarily lose access to the drives during this time.
+        </p>
+      </div>
+
       {/* Active Sound Banner */}
       <div
         className={`rounded-xl border p-4 flex items-center justify-between gap-4 ${
@@ -572,7 +585,16 @@ function MyLibraryTab({ volume }: { volume: number }) {
               <h2 className="text-sm font-medium text-slate-200">Random Mode</h2>
             </div>
             <button
-              onClick={() => handleSaveRandomConfig({ ...randomCfg, enabled: !randomCfg.enabled })}
+              onClick={() => {
+                if (!randomCfg.enabled) {
+                  // Enabling — show disclaimer first
+                  setPendingRandomCfg({ ...randomCfg, enabled: true })
+                  setShowRandomDisclaimer(true)
+                } else {
+                  // Disabling — no disclaimer needed
+                  handleSaveRandomConfig({ ...randomCfg, enabled: false })
+                }
+              }}
               disabled={savingRandom || sounds.length < 2}
               className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                 randomCfg.enabled ? "bg-amber-500" : "bg-white/10"
@@ -900,6 +922,69 @@ function MyLibraryTab({ volume }: { volume: number }) {
           "Scheduled" requires a Pi with a real-time clock (RTC).
         </p>
       </div>
+
+      {/* Random Mode Disclaimer Modal */}
+      {showRandomDisclaimer && pendingRandomCfg && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setShowRandomDisclaimer(false)}>
+          <div
+            className="w-full max-w-md overflow-hidden rounded-2xl border border-white/10 bg-slate-900 p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/15">
+                <AlertTriangle className="h-5 w-5 text-amber-400" />
+              </div>
+              <h3 className="text-lg font-semibold text-slate-100">Potential Recording Loss</h3>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              <p className="text-sm text-slate-300 leading-relaxed">
+                Random and Scheduled modes require a brief USB disconnect (~5 seconds) each time the lock
+                sound is changed. During this window, Tesla cannot write dashcam or sentry footage.
+              </p>
+              <div className="rounded-lg border border-amber-500/20 bg-amber-500/[0.06] p-3">
+                <p className="text-xs text-amber-200/80 leading-relaxed">
+                  <strong className="text-amber-300">By enabling this feature you acknowledge:</strong>{" "}
+                  Any dashcam or sentry clips in progress during the USB reconnect may be lost.
+                  The Sentry Six team is not responsible for any data loss while this feature is active.
+                </p>
+              </div>
+              <ul className="space-y-1.5 text-xs text-slate-400">
+                <li className="flex items-start gap-2">
+                  <Zap className="h-3.5 w-3.5 shrink-0 mt-0.5 text-slate-500" />
+                  <span><strong className="text-slate-300">On Connect</strong> — changes the sound when the Pi reconnects to Tesla (during normal archive cycles)</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <Clock className="h-3.5 w-3.5 shrink-0 mt-0.5 text-slate-500" />
+                  <span><strong className="text-slate-300">Scheduled</strong> — changes on a timer which may disconnect USB at any time, including while driving</span>
+                </li>
+              </ul>
+            </div>
+
+            <div className="mt-5 flex gap-3">
+              <button
+                onClick={() => {
+                  setShowRandomDisclaimer(false)
+                  handleSaveRandomConfig(pendingRandomCfg)
+                  setPendingRandomCfg(null)
+                }}
+                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-amber-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-amber-500"
+              >
+                I Understand, Enable
+              </button>
+              <button
+                onClick={() => {
+                  setShowRandomDisclaimer(false)
+                  setPendingRandomCfg(null)
+                }}
+                className="rounded-lg border border-white/10 px-4 py-2.5 text-sm text-slate-400 transition-colors hover:bg-white/5"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {ToastView}
     </div>
