@@ -59,7 +59,7 @@ func NewStore(path string) *Store {
 	if path == "" {
 		path = DefaultDataPath
 	}
-	return &Store{path: path}
+	return &Store{path: path, processedIndex: make(map[string]bool)}
 }
 
 // Load reads the data file from disk. Returns empty data if file doesn't exist.
@@ -174,9 +174,6 @@ func (s *Store) AddRoute(relativePath, dateDir string, points []GPSPoint, gears 
 	// Only add to processed list if not already present (O(1) lookup)
 	if !s.processedIndex[norm] {
 		s.data.ProcessedFiles = append(s.data.ProcessedFiles, relativePath)
-		if s.processedIndex == nil {
-			s.processedIndex = make(map[string]bool)
-		}
 		s.processedIndex[norm] = true
 	}
 
@@ -216,9 +213,6 @@ func (s *Store) MarkProcessed(relativePath string) {
 		return
 	}
 	s.data.ProcessedFiles = append(s.data.ProcessedFiles, relativePath)
-	if s.processedIndex == nil {
-		s.processedIndex = make(map[string]bool)
-	}
 	s.processedIndex[norm] = true
 }
 
@@ -339,7 +333,7 @@ func (s *Store) ClearProcessedForReprocess() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.data.ProcessedFiles = nil
-	s.processedIndex = nil
+	s.processedIndex = make(map[string]bool)
 }
 
 // ArchivePath returns the path where drive data is backed up on the archive mount.
