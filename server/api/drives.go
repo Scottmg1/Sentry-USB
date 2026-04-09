@@ -342,7 +342,7 @@ func (dh *DriveHandlers) processFiles(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		archiveLog("Drive processing complete. Files: %d, GPS: %d, Drives: %d, Errors: %d (%s)",
+		archiveLog("Drive processing complete. Files: %d, GPS: %d, Routes: %d, Errors: %d (%s)",
 			result.FilesNew, result.FilesWithGPS, result.RoutesFound, result.Errors, result.Duration)
 
 		dh.hub.Broadcast("drive_process", map[string]interface{}{
@@ -407,7 +407,7 @@ func (dh *DriveHandlers) reprocessAll(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		archiveLog("Reprocess complete. Files: %d, GPS: %d, Drives: %d, Errors: %d (%s)",
+		archiveLog("Reprocess complete. Files: %d, GPS: %d, Routes: %d, Errors: %d (%s)",
 			result.FilesNew, result.FilesWithGPS, result.RoutesFound, result.Errors, result.Duration)
 
 		dh.hub.Broadcast("drive_process", map[string]interface{}{

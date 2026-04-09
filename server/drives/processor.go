@@ -101,8 +101,7 @@ func (p *Processor) ProcessDirectory(ctx context.Context, clipsDir string, throt
 	}
 	result.FilesScanned = len(allFiles)
 
-	// Filter out already-processed files
-	// ProcessedSet indexes both original and normalized paths to handle mixed separators
+	// Filter out already-processed files (set uses normalized forward-slash paths)
 	processedSet := p.store.ProcessedSet()
 	var newFiles []fileInfo
 	for _, f := range allFiles {
