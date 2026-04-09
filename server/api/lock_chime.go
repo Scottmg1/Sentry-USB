@@ -26,8 +26,8 @@ const lockChimeDir = "/mutable/LockChime"
 // lockChimeTarget is the path Tesla reads the lock sound from (root of USB drive).
 const lockChimeTarget = "/mutable/LockChime.wav"
 
-// lockChimeMaxBytes is the max upload size (5 MB — well above any 7-second WAV).
-const lockChimeMaxBytes = 5 * 1024 * 1024
+// lockChimeMaxBytes is the max upload size (1 MB).
+const lockChimeMaxBytes = 1 * 1024 * 1024
 
 // lockChimeMaxSeconds is Tesla's documented maximum lock sound duration.
 const lockChimeMaxSeconds = 7.0
@@ -692,7 +692,7 @@ func (h *handlers) lockChimeUpload(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, lockChimeMaxBytes)
 
 	if err := r.ParseMultipartForm(lockChimeMaxBytes); err != nil {
-		writeError(w, http.StatusBadRequest, "Upload too large (max 5 MB)")
+		writeError(w, http.StatusBadRequest, "Upload too large (max 1 MB)")
 		return
 	}
 
@@ -1150,6 +1150,23 @@ func (h *handlers) communityLockChimeUpload(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Validate WAV format, duration, and size (client converts to WAV before upload)
+	if len(fileData) > lockChimeMaxBytes {
+		writeError(w, http.StatusBadRequest,
+			fmt.Sprintf("File is too large (%d KB) — max 1 MB", len(fileData)/1024))
+		return
+	}
+	duration, err := parseWAVDuration(fileData)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if duration > lockChimeMaxSeconds {
+		writeError(w, http.StatusBadRequest,
+			fmt.Sprintf("Sound is %.1f seconds — must be %.0f seconds or less", duration, lockChimeMaxSeconds))
+		return
+	}
+
 	// Build multipart request to support server
 	var buf bytes.Buffer
 	writer := multipart.NewWriter(&buf)
@@ -1238,7 +1255,7 @@ func (h *handlers) communityLockChimeDownload(w http.ResponseWriter, r *http.Req
 		return
 	}
 	if len(data) > lockChimeMaxBytes {
-		writeError(w, http.StatusBadRequest, "Downloaded sound exceeds 5 MB size limit")
+		writeError(w, http.StatusBadRequest, "Downloaded sound exceeds 1 MB size limit")
 		return
 	}
 

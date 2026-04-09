@@ -27,7 +27,7 @@ import MultiFileUploader, { type FileEntry, useObjectUrl } from "../components/u
 
 const API_BASE = "/api"
 const MAX_DURATION_SECONDS = 7
-const MAX_FILE_BYTES = 5 * 1024 * 1024 // 5 MB
+const MAX_FILE_BYTES = 1 * 1024 * 1024 // 1 MB
 const COMMUNITY_PAGE_SIZE = 20
 const LIBRARY_PAGE_SIZE = 15
 
@@ -388,23 +388,23 @@ function MyLibraryTab({ volume }: { volume: number }) {
       showToast("Only audio files are supported", "error")
       return
     }
-    if (file.size > MAX_FILE_BYTES) {
-      showToast("File is too large (max 5 MB)", "error")
-      return
-    }
     try {
       const duration = await getAudioDuration(file)
       if (duration > MAX_DURATION_SECONDS) {
-        showToast(`Sound is ${duration.toFixed(1)}s — Tesla requires ${MAX_DURATION_SECONDS}s or less`, "error")
+        showToast(`Sound is ${duration.toFixed(1)}s — must be ${MAX_DURATION_SECONDS}s or less`, "error")
         return
       }
     } catch {
       showToast("Unsupported audio format", "error")
       return
     }
-    // Convert to WAV if needed, then show rename dialog
+    // Convert to WAV if needed, then check converted size
     try {
       const wavFile = await convertToWav(file)
+      if (wavFile.size > MAX_FILE_BYTES) {
+        showToast(`Converted WAV is too large (${(wavFile.size / 1024).toFixed(0)} KB) — max 1 MB`, "error")
+        return
+      }
       setPendingFile(wavFile)
     } catch {
       showToast("Failed to convert audio to WAV", "error")
@@ -1118,7 +1118,7 @@ function MyLibraryTab({ volume }: { volume: number }) {
                 <Upload className="h-8 w-8 text-slate-600" />
                 <div>
                   <p className="text-sm font-medium text-slate-300">Drop an audio file or click to browse</p>
-                  <p className="mt-1 text-xs text-slate-500">Any audio format · max {MAX_DURATION_SECONDS}s · max 5 MB · converted to WAV</p>
+                  <p className="mt-1 text-xs text-slate-500">Any audio format · max {MAX_DURATION_SECONDS}s · max 1 MB WAV · auto-converted</p>
                 </div>
               </>
             )}
@@ -1604,13 +1604,10 @@ function CommunityUpload({ adminPasscode }: { adminPasscode: string | null }) {
     if (!file.type.startsWith("audio/")) {
       return { ok: false, error: "Only audio files are supported" }
     }
-    if (file.size > MAX_FILE_BYTES) {
-      return { ok: false, error: "File is too large (max 5 MB)" }
-    }
     try {
       const duration = await getAudioDuration(file)
       if (duration > MAX_DURATION_SECONDS) {
-        return { ok: false, error: `Sound is ${duration.toFixed(1)}s — max ${MAX_DURATION_SECONDS}s` }
+        return { ok: false, error: `Sound is ${duration.toFixed(1)}s — must be ${MAX_DURATION_SECONDS}s or less` }
       }
     } catch {
       return { ok: false, error: "Unsupported audio format" }
@@ -1633,6 +1630,9 @@ function CommunityUpload({ adminPasscode }: { adminPasscode: string | null }) {
       wavFile = await convertToWav(entry.file)
     } catch {
       return { success: false, message: "Failed to convert audio to WAV" }
+    }
+    if (wavFile.size > MAX_FILE_BYTES) {
+      return { success: false, message: `Converted WAV is too large (${(wavFile.size / 1024).toFixed(0)} KB) — max 1 MB` }
     }
 
     onStep("Uploading sound...")
