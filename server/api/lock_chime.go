@@ -46,7 +46,7 @@ func lockChimeLog(format string, args ...interface{}) {
 	}
 	defer f.Close()
 	msg := fmt.Sprintf(format, args...)
-	fmt.Fprintf(f, "%s: [lock-chime] %s\n", time.Now().Format("Mon Jan _2 15:04:05 MST 2006"), msg)
+	fmt.Fprintf(f, "%s: [lock-chime] %s\n", time.Now().Format("Mon _2 Jan 15:04:05 MST 2006"), msg)
 }
 
 // writeChimeFileAtomic writes data to destPath using the same atomic pattern as

@@ -202,7 +202,7 @@ func archiveLog(format string, args ...interface{}) {
 	}
 	defer f.Close()
 	msg := fmt.Sprintf(format, args...)
-	fmt.Fprintf(f, "%s: [drive-map] %s\n", time.Now().Format("Mon Jan _2 15:04:05 MST 2006"), msg)
+	fmt.Fprintf(f, "%s: [drive-map] %s\n", time.Now().Format("Mon _2 Jan 15:04:05 MST 2006"), msg)
 }
 
 // IsArchiving returns true if the archiveloop is currently archiving files.
