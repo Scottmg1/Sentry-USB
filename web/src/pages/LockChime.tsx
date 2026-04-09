@@ -82,15 +82,85 @@ function formatDuration(seconds: number): string {
   return `${seconds.toFixed(1)}s`
 }
 
-async function getWavDuration(file: File): Promise<number> {
+async function decodeAudio(file: File): Promise<AudioBuffer> {
   const buffer = await file.arrayBuffer()
   const ctx = new AudioContext()
   try {
-    const decoded = await ctx.decodeAudioData(buffer)
-    return decoded.duration
+    return await ctx.decodeAudioData(buffer)
   } finally {
     ctx.close()
   }
+}
+
+async function getAudioDuration(file: File): Promise<number> {
+  const decoded = await decodeAudio(file)
+  return decoded.duration
+}
+
+function encodeWav(audioBuffer: AudioBuffer): Blob {
+  const numChannels = audioBuffer.numberOfChannels
+  const sampleRate = audioBuffer.sampleRate
+  const format = 1 // PCM
+  const bitsPerSample = 16
+
+  // Interleave channels
+  const length = audioBuffer.length
+  const interleaved = new Int16Array(length * numChannels)
+  for (let ch = 0; ch < numChannels; ch++) {
+    const channelData = audioBuffer.getChannelData(ch)
+    for (let i = 0; i < length; i++) {
+      // Clamp to [-1, 1] and convert to 16-bit integer
+      const s = Math.max(-1, Math.min(1, channelData[i]))
+      interleaved[i * numChannels + ch] = s < 0 ? s * 0x8000 : s * 0x7fff
+    }
+  }
+
+  const dataSize = interleaved.length * 2
+  const headerSize = 44
+  const buffer = new ArrayBuffer(headerSize + dataSize)
+  const view = new DataView(buffer)
+
+  // RIFF header
+  writeString(view, 0, "RIFF")
+  view.setUint32(4, 36 + dataSize, true)
+  writeString(view, 8, "WAVE")
+
+  // fmt chunk
+  writeString(view, 12, "fmt ")
+  view.setUint32(16, 16, true) // chunk size
+  view.setUint16(20, format, true)
+  view.setUint16(22, numChannels, true)
+  view.setUint32(24, sampleRate, true)
+  view.setUint32(28, sampleRate * numChannels * bitsPerSample / 8, true) // byte rate
+  view.setUint16(32, numChannels * bitsPerSample / 8, true) // block align
+  view.setUint16(34, bitsPerSample, true)
+
+  // data chunk
+  writeString(view, 36, "data")
+  view.setUint32(40, dataSize, true)
+
+  // Write PCM samples
+  const output = new Int16Array(buffer, headerSize)
+  output.set(interleaved)
+
+  return new Blob([buffer], { type: "audio/wav" })
+}
+
+function writeString(view: DataView, offset: number, str: string) {
+  for (let i = 0; i < str.length; i++) {
+    view.setUint8(offset + i, str.charCodeAt(i))
+  }
+}
+
+async function convertToWav(file: File): Promise<File> {
+  // Already a WAV — skip conversion
+  if (file.name.toLowerCase().endsWith(".wav")) {
+    return file
+  }
+  const audioBuffer = await decodeAudio(file)
+  const wavBlob = encodeWav(audioBuffer)
+  const baseName = file.name.replace(/\.[^/.]+$/, "")
+  return new File([wavBlob], baseName + ".wav", { type: "audio/wav" })
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -314,8 +384,8 @@ function MyLibraryTab({ volume }: { volume: number }) {
   }
 
   async function handleFileSelected(file: File) {
-    if (!file.name.toLowerCase().endsWith(".wav")) {
-      showToast("Only .wav files are supported", "error")
+    if (!file.type.startsWith("audio/")) {
+      showToast("Only audio files are supported", "error")
       return
     }
     if (file.size > MAX_FILE_BYTES) {
@@ -323,18 +393,24 @@ function MyLibraryTab({ volume }: { volume: number }) {
       return
     }
     try {
-      const duration = await getWavDuration(file)
+      const duration = await getAudioDuration(file)
       if (duration > MAX_DURATION_SECONDS) {
         showToast(`Sound is ${duration.toFixed(1)}s — Tesla requires ${MAX_DURATION_SECONDS}s or less`, "error")
         return
       }
     } catch {
-      showToast("Could not read WAV file — is it a valid .wav?", "error")
+      showToast("Unsupported audio format", "error")
       return
     }
-    // Show rename dialog before uploading
-    setPendingFile(file)
-    setPendingName(file.name.replace(/\.wav$/i, ""))
+    // Convert to WAV if needed, then show rename dialog
+    try {
+      const wavFile = await convertToWav(file)
+      setPendingFile(wavFile)
+    } catch {
+      showToast("Failed to convert audio to WAV", "error")
+      return
+    }
+    setPendingName(file.name.replace(/\.[^/.]+$/, ""))
   }
 
   async function handleUploadConfirm() {
@@ -1041,8 +1117,8 @@ function MyLibraryTab({ volume }: { volume: number }) {
               <>
                 <Upload className="h-8 w-8 text-slate-600" />
                 <div>
-                  <p className="text-sm font-medium text-slate-300">Drop a .wav file or click to browse</p>
-                  <p className="mt-1 text-xs text-slate-500">WAV only · max {MAX_DURATION_SECONDS}s · max 5 MB</p>
+                  <p className="text-sm font-medium text-slate-300">Drop an audio file or click to browse</p>
+                  <p className="mt-1 text-xs text-slate-500">Any audio format · max {MAX_DURATION_SECONDS}s · max 5 MB · converted to WAV</p>
                 </div>
               </>
             )}
@@ -1052,7 +1128,7 @@ function MyLibraryTab({ volume }: { volume: number }) {
       <input
         ref={fileInputRef}
         type="file"
-        accept=".wav,audio/wav,audio/x-wav"
+        accept="audio/*"
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0]
@@ -1525,19 +1601,19 @@ function CommunityUpload({ adminPasscode }: { adminPasscode: string | null }) {
   const { ToastView } = useToast()
 
   const validateFile = useCallback(async (file: File) => {
-    if (!file.name.toLowerCase().endsWith(".wav")) {
-      return { ok: false, error: "Only .wav files are supported" }
+    if (!file.type.startsWith("audio/")) {
+      return { ok: false, error: "Only audio files are supported" }
     }
     if (file.size > MAX_FILE_BYTES) {
       return { ok: false, error: "File is too large (max 5 MB)" }
     }
     try {
-      const duration = await getWavDuration(file)
+      const duration = await getAudioDuration(file)
       if (duration > MAX_DURATION_SECONDS) {
         return { ok: false, error: `Sound is ${duration.toFixed(1)}s — max ${MAX_DURATION_SECONDS}s` }
       }
     } catch {
-      return { ok: false, error: "Could not read WAV file" }
+      return { ok: false, error: "Unsupported audio format" }
     }
     return { ok: true }
   }, [])
@@ -1551,10 +1627,18 @@ function CommunityUpload({ adminPasscode }: { adminPasscode: string | null }) {
       return { success: false, message: 'Sound name cannot be "lockchime"' }
     }
 
+    onStep("Converting to WAV...")
+    let wavFile: File
+    try {
+      wavFile = await convertToWav(entry.file)
+    } catch {
+      return { success: false, message: "Failed to convert audio to WAV" }
+    }
+
     onStep("Uploading sound...")
 
     const form = new FormData()
-    form.append("sound", entry.file)
+    form.append("sound", wavFile)
     form.append("name", entry.name.trim())
 
     const headers: HeadersInit = {}
@@ -1577,13 +1661,13 @@ function CommunityUpload({ adminPasscode }: { adminPasscode: string | null }) {
       <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 space-y-4">
         <h3 className="text-sm font-medium text-slate-200">Share Lock Sounds</h3>
         <p className="text-xs text-slate-500">
-          Upload .wav files to share with the Sentry USB community. Submissions are reviewed before appearing in the library.
+          Upload audio files to share with the Sentry USB community. Any format is accepted and automatically converted to WAV. Submissions are reviewed before appearing in the library.
         </p>
 
         <MultiFileUploader
-          accept=".wav,audio/wav,audio/x-wav"
+          accept="audio/*"
           maxFiles={5}
-          rateLimitText="Up to 5 sounds per hour. Submissions are reviewed before appearing in the library."
+          rateLimitText="Up to 5 sounds per hour. Any audio format accepted — converted to WAV automatically."
           accentColor="violet"
           validateFile={validateFile}
           renderPreview={(file) => <AudioPreview file={file} />}
