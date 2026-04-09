@@ -23,6 +23,7 @@ import {
   Pencil,
   Unplug,
 } from "lucide-react"
+import MultiFileUploader, { type FileEntry } from "../components/upload/MultiFileUploader"
 
 const API_BASE = "/api"
 const MAX_DURATION_SECONDS = 7
@@ -1521,158 +1522,128 @@ function EditSoundModal({ sound, onSave, onClose }: { sound: CommunitySound; onS
 }
 
 function CommunityUpload({ adminPasscode }: { adminPasscode: string | null }) {
-  const [file, setFile] = useState<File | null>(null)
-  const [name, setName] = useState("")
-  const [uploading, setUploading] = useState(false)
-  const [duration, setDuration] = useState<number | null>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const { showToast, ToastView } = useToast()
 
-  async function handleFile(f: File) {
-    if (!f.name.toLowerCase().endsWith(".wav")) {
-      showToast("Only .wav files are supported", "error")
-      return
+  const validateFile = useCallback(async (file: File) => {
+    if (!file.name.toLowerCase().endsWith(".wav")) {
+      return { ok: false, error: "Only .wav files are supported" }
     }
-    if (f.size > MAX_FILE_BYTES) {
-      showToast("File is too large (max 5 MB)", "error")
-      return
+    if (file.size > MAX_FILE_BYTES) {
+      return { ok: false, error: "File is too large (max 5 MB)" }
     }
     try {
-      const dur = await getWavDuration(f)
-      if (dur > MAX_DURATION_SECONDS) {
-        showToast(`Sound is ${dur.toFixed(1)}s — Tesla requires ${MAX_DURATION_SECONDS}s or less`, "error")
-        return
+      const duration = await getWavDuration(file)
+      if (duration > MAX_DURATION_SECONDS) {
+        return { ok: false, error: `Sound is ${duration.toFixed(1)}s — max ${MAX_DURATION_SECONDS}s` }
       }
-      setDuration(dur)
     } catch {
-      showToast("Could not read WAV file", "error")
-      return
+      return { ok: false, error: "Could not read WAV file" }
     }
-    setFile(f)
-    setName(f.name.replace(/\.wav$/i, ""))
-  }
+    return { ok: true }
+  }, [])
 
-  async function handleSubmit() {
-    if (!file || !name.trim()) return
-    if (name.trim().toLowerCase().replace(/\.wav$/i, "") === "lockchime") {
-      showToast("Sound name cannot be \"lockchime\" — please choose a different name", "error")
-      return
+  const handleUpload = useCallback(async (
+    entry: FileEntry,
+    onStep: (step: string) => void
+  ): Promise<{ success: boolean; message: string }> => {
+    if (!entry.name.trim()) return { success: false, message: "Name is required" }
+    if (entry.name.trim().toLowerCase() === "lockchime") {
+      return { success: false, message: 'Sound name cannot be "lockchime"' }
     }
-    setUploading(true)
-    try {
-      const form = new FormData()
-      form.append("sound", file)
-      form.append("name", name.trim())
 
-      const headers: HeadersInit = {}
-      if (adminPasscode) headers["x-passcode"] = adminPasscode
+    onStep("Uploading sound...")
 
-      const res = await fetch(`${API_BASE}/lockchime/community/upload`, {
-        method: "POST",
-        headers,
-        body: form,
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-      showToast("Sound submitted! It will appear in the library after review.", "success")
-      setFile(null)
-      setName("")
-      setDuration(null)
-      if (fileInputRef.current) fileInputRef.current.value = ""
-    } catch (e: unknown) {
-      showToast(e instanceof Error ? e.message : "Upload failed", "error")
-    } finally {
-      setUploading(false)
+    const form = new FormData()
+    form.append("sound", entry.file)
+    form.append("name", entry.name.trim())
+
+    const headers: HeadersInit = {}
+    if (adminPasscode) headers["x-passcode"] = adminPasscode
+
+    const res = await fetch(`${API_BASE}/lockchime/community/upload`, {
+      method: "POST",
+      headers,
+      body: form,
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      return { success: false, message: data.error || `HTTP ${res.status}` }
     }
-  }
+    return { success: true, message: "Sound submitted!" }
+  }, [adminPasscode])
 
   return (
     <div className="space-y-5">
       <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 space-y-4">
-        <h3 className="text-sm font-medium text-slate-200">Share a Lock Sound</h3>
+        <h3 className="text-sm font-medium text-slate-200">Share Lock Sounds</h3>
         <p className="text-xs text-slate-500">
-          Upload a .wav file to share with the Sentry USB community. Submissions are reviewed before appearing in the library.
+          Upload .wav files to share with the Sentry USB community. Submissions are reviewed before appearing in the library.
         </p>
 
-        {/* File selection */}
-        {!file ? (
-          <div
-            className="rounded-xl border-2 border-dashed border-white/10 hover:border-white/20 bg-white/[0.01] cursor-pointer transition-colors"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <div className="flex flex-col items-center gap-2 py-10 text-center">
-              <Upload className="h-6 w-6 text-slate-600" />
-              <p className="text-sm text-slate-400">Click to select a .wav file</p>
-              <p className="text-xs text-slate-600">Max {MAX_DURATION_SECONDS}s · max 5 MB</p>
-            </div>
-          </div>
-        ) : (
-          <div className="rounded-xl border border-violet-500/30 bg-violet-500/[0.06] p-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-violet-500/20">
-                <Music className="h-5 w-5 text-violet-400" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="truncate text-sm font-medium text-slate-200">{file.name}</p>
-                <p className="text-xs text-slate-500">
-                  {formatSize(file.size)}{duration !== null ? ` · ${formatDuration(duration)}` : ""}
-                </p>
-              </div>
-              <button
-                onClick={() => { setFile(null); setDuration(null); if (fileInputRef.current) fileInputRef.current.value = "" }}
-                className="text-slate-500 hover:text-slate-300"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        )}
-        <input
-          ref={fileInputRef}
-          type="file"
+        <MultiFileUploader
           accept=".wav,audio/wav,audio/x-wav"
-          className="hidden"
-          onChange={(e) => {
-            const f = e.target.files?.[0]
-            if (f) handleFile(f)
-          }}
-        />
-
-        {/* Name */}
-        <div>
-          <label className="text-xs font-medium text-slate-400">Sound name</label>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            maxLength={50}
-            placeholder="e.g. Sci-Fi Beep"
-            className="mt-1 w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:border-violet-500/50 focus:outline-none"
-          />
-          <p className="mt-1 text-xs text-slate-600">{name.length}/50 characters</p>
-        </div>
-
-        {/* Submit */}
-        <button
-          onClick={handleSubmit}
-          disabled={!file || !name.trim() || uploading}
-          className="flex w-full items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-violet-500 disabled:opacity-50"
-        >
-          {uploading ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Submitting...
-            </>
-          ) : (
-            <>
-              <Upload className="h-4 w-4" />
-              Submit Sound
-            </>
+          maxFiles={5}
+          rateLimitText="Up to 5 sounds per hour. Submissions are reviewed before appearing in the library."
+          accentColor="violet"
+          validateFile={validateFile}
+          renderPreview={(file) => <AudioPreview file={file} />}
+          renderFields={(entry, onChange) => (
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-400">Sound Name</label>
+              <input
+                type="text"
+                value={entry.name}
+                onChange={(e) => onChange({ name: e.target.value.slice(0, 50) })}
+                placeholder="e.g. Sci-Fi Beep"
+                className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:border-violet-500/50 focus:outline-none"
+              />
+              <p className="mt-1 text-xs text-slate-600">
+                Will be saved as <code className="text-slate-400">{entry.name.trim() || "..."}.wav</code> · {entry.name.length}/50
+              </p>
+            </div>
           )}
-        </button>
+          isEntryReady={(entry) => entry.name.trim().length > 0}
+          onUpload={handleUpload}
+        />
       </div>
 
       {ToastView}
+    </div>
+  )
+}
+
+function AudioPreview({ file }: { file: File }) {
+  const [playing, setPlaying] = useState(false)
+  const audioRef = useRef<HTMLAudioElement>(null)
+  const [url] = useState(() => URL.createObjectURL(file))
+
+  const togglePlay = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation()
+    const audio = audioRef.current
+    if (!audio) return
+    if (playing) {
+      audio.pause()
+      audio.currentTime = 0
+      setPlaying(false)
+    } else {
+      audio.play()
+      setPlaying(true)
+    }
+  }, [playing])
+
+  return (
+    <div className="flex flex-col items-center justify-center gap-1.5 p-2">
+      <button
+        onClick={togglePlay}
+        className="flex h-10 w-10 items-center justify-center rounded-full bg-violet-500/20 text-violet-400 transition-colors hover:bg-violet-500/30"
+      >
+        {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+      </button>
+      <audio
+        ref={audioRef}
+        src={url}
+        onEnded={() => setPlaying(false)}
+      />
     </div>
   )
 }
