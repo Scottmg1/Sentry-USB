@@ -124,7 +124,12 @@ func (p *Processor) ProcessDirectory(ctx context.Context, clipsDir string, throt
 	p.total = len(newFiles)
 	p.mu.Unlock()
 
+	// Scale save interval: save less frequently as dataset grows to reduce
+	// I/O overhead and serialization cost on low-RAM devices.
 	saveInterval := 50
+	if len(newFiles) > 500 {
+		saveInterval = 200
+	}
 	throttle := time.Duration(throttleMs) * time.Millisecond
 	if throttleMs <= 0 {
 		// Default: 10ms between files on Pi to avoid CPU hogging
@@ -209,6 +214,11 @@ func (p *Processor) ProcessDirectory(ctx context.Context, clipsDir string, throt
 	if err := p.store.SyncToArchive(); err != nil {
 		log.Printf("[drives] Warning: failed to sync to archive: %v", err)
 	}
+
+	// Hint the GC to reclaim memory from processing before computing results.
+	// On 1GB Pi devices this prevents the post-processing result computation
+	// from hitting peak memory on top of unreleased processing allocations.
+	runtime.GC()
 
 	result.Duration = time.Since(start).Round(time.Millisecond).String()
 
