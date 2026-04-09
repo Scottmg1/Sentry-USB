@@ -101,12 +101,24 @@ func (s *Store) Load() error {
 	return nil
 }
 
-// rebuildProcessedIndex rebuilds the in-memory processed file index.
+// rebuildProcessedIndex rebuilds the in-memory processed file index and
+// deduplicates the ProcessedFiles list. The old code appended without
+// checking for duplicates, so existing data files may contain many dupes
+// that bloat both the JSON file and memory usage.
 // Caller must hold the write lock.
 func (s *Store) rebuildProcessedIndex() {
 	s.processedIndex = make(map[string]bool, len(s.data.ProcessedFiles))
+	deduped := make([]string, 0, len(s.data.ProcessedFiles))
 	for _, f := range s.data.ProcessedFiles {
-		s.processedIndex[strings.ReplaceAll(f, "\\", "/")] = true
+		norm := strings.ReplaceAll(f, "\\", "/")
+		if !s.processedIndex[norm] {
+			s.processedIndex[norm] = true
+			deduped = append(deduped, f)
+		}
+	}
+	if len(deduped) < len(s.data.ProcessedFiles) {
+		log.Printf("[drives] Deduplicated ProcessedFiles: %d → %d entries", len(s.data.ProcessedFiles), len(deduped))
+		s.data.ProcessedFiles = deduped
 	}
 }
 
@@ -137,7 +149,17 @@ func (s *Store) saveLocked() error {
 		os.Remove(tmp)
 		return err
 	}
-	f.Close()
+	// Flush to disk before rename to prevent data loss if the process is
+	// killed (OOM, power loss) between write and rename.
+	if err := f.Sync(); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
+		return err
+	}
 
 	return os.Rename(tmp, s.path)
 }

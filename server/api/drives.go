@@ -504,8 +504,7 @@ func (dh *DriveHandlers) uploadData(w http.ResponseWriter, r *http.Request) {
 // GET /api/drives/stats — aggregate statistics
 func (dh *DriveHandlers) driveStats(w http.ResponseWriter, r *http.Request) {
 	routes := dh.store.GetRoutes()
-	summaries := drives.GroupSummaries(routes)
-	stats := drives.ComputeAggregateStats(summaries)
+	stats := drives.ComputeAggregateStatsFromRoutes(routes)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"drives_count":            stats.DrivesCount,

@@ -843,6 +843,13 @@ func Downsample(points [][2]float64, maxPoints int) [][2]float64 {
 	return result
 }
 
+// routeTimestamp pairs a parsed timestamp with its index into the routes slice.
+// Used by lightweight aggregate stats to avoid copying route data.
+type routeTimestamp struct {
+	ts  time.Time
+	idx int
+}
+
 // AggregateStats holds computed aggregate statistics across all drives.
 type AggregateStats struct {
 	DrivesCount          int
@@ -892,4 +899,229 @@ func ComputeAggregateStats(summaries []DriveSummary) AggregateStats {
 		s.AssistedPercent = math.Round(totalAssistedKm/s.TotalDistanceKm*1000) / 10
 	}
 	return s
+}
+
+// ComputeAggregateStatsFromRoutes computes aggregate statistics directly from
+// routes WITHOUT calling GroupIntoDrives. This avoids the massive memory spike
+// of building full Drive objects with merged point arrays — critical for 1GB Pi
+// devices where GroupIntoDrives can trigger the OOM killer.
+//
+// Drive count is determined by a lightweight timestamp-gap grouping (no point
+// data copied). Distance, duration, and autopilot stats are computed per-route
+// and summed.
+func ComputeAggregateStatsFromRoutes(routes []Route) AggregateStats {
+	var s AggregateStats
+
+	if len(routes) == 0 {
+		return s
+	}
+
+	// Deduplicate by normalized file path (same as GroupIntoDrives)
+	seen := make(map[string]bool, len(routes))
+	var timed []routeTimestamp
+	for i, r := range routes {
+		norm := strings.ReplaceAll(r.File, "\\", "/")
+		if seen[norm] {
+			continue
+		}
+		seen[norm] = true
+		if t := parseFileTimestamp(r.File); !t.IsZero() {
+			timed = append(timed, routeTimestamp{ts: t, idx: i})
+		}
+	}
+	sort.Slice(timed, func(i, j int) bool {
+		return timed[i].ts.Before(timed[j].ts)
+	})
+
+	// --- Lightweight drive count + duration via timestamp + gear-state grouping ---
+	if len(timed) > 0 {
+		groupStart := 0
+		for i := 1; i <= len(timed); i++ {
+			isEnd := i == len(timed)
+			isGap := !isEnd && timed[i].ts.Sub(timed[i-1].ts).Milliseconds() > driveGapMs
+			if isEnd || isGap {
+				group := timed[groupStart:i]
+				// Count gear-based splits within this time group
+				s.DrivesCount += countGearSplitsInGroup(routes, group)
+				// Duration: first clip start → last clip start + 60s
+				s.TotalDurationMs += group[len(group)-1].ts.Add(time.Minute).Sub(group[0].ts).Milliseconds()
+				if !isEnd {
+					groupStart = i
+				}
+			}
+		}
+	}
+
+	// --- Per-route distance and autopilot stats ---
+	var totalDistanceM float64
+	var totalFSDDistM, totalAutosteerDistM, totalTACCDistM float64
+
+	for ti := range timed {
+		r := &routes[timed[ti].idx]
+		n := len(r.Points)
+		if n < 2 {
+			continue
+		}
+
+		clipDurationMs := float64(60000)
+		clipStartMs := float64(timed[ti].ts.UnixMilli())
+		hasAP := len(r.AutopilotStates) == n
+		hasGears := len(r.GearStates) == n
+		hasAccel := len(r.AccelPositions) == n
+		hasSEISpeeds := false
+		if len(r.Speeds) == n {
+			for _, sp := range r.Speeds {
+				if sp > 0 {
+					hasSEISpeeds = true
+					break
+				}
+			}
+		}
+
+		inAccelPress := false
+
+		for i := 1; i < n; i++ {
+			d := haversineM(r.Points[i-1][0], r.Points[i-1][1], r.Points[i][0], r.Points[i][1])
+
+			// Skip GPS teleportation artifacts
+			if !hasSEISpeeds {
+				dtSec := (clipDurationMs / float64(n-1)) / 1000.0
+				if dtSec > 0 && d/dtSec > 70 {
+					continue
+				}
+			}
+
+			totalDistanceM += d
+			dtMs := clipDurationMs / float64(n-1)
+
+			if hasAP {
+				prevAP := r.AutopilotStates[i-1]
+				curAP := r.AutopilotStates[i]
+
+				switch curAP {
+				case AutopilotFSD:
+					s.FSDEngagedMs += int64(dtMs)
+					totalFSDDistM += d
+				case AutopilotAutosteer:
+					s.AutosteerEngagedMs += int64(dtMs)
+					totalAutosteerDistM += d
+				case AutopilotTACC:
+					s.TACCEngagedMs += int64(dtMs)
+					totalTACCDistM += d
+				}
+
+				// FSD disengagement: FSD → non-FSD
+				if prevAP == AutopilotFSD && curAP != AutopilotFSD {
+					skipDisengage := false
+					if hasGears {
+						tCur := clipStartMs + (clipDurationMs * float64(i) / float64(n-1))
+						for j := i; j < n; j++ {
+							tJ := clipStartMs + (clipDurationMs * float64(j) / float64(n-1))
+							if (tJ - tCur) > 2000.0 {
+								break
+							}
+							if r.GearStates[j] == GearPark {
+								skipDisengage = true
+								break
+							}
+						}
+					}
+					if !skipDisengage {
+						s.FSDDisengagements++
+					}
+					inAccelPress = false
+				}
+
+				// FSD accel push detection
+				if curAP == AutopilotFSD && hasAccel {
+					accelPct := float64(r.AccelPositions[i])
+					if accelPct <= 1.0 {
+						accelPct *= 100.0
+					}
+					if !inAccelPress && accelPct > 1.0 {
+						inAccelPress = true
+					} else if inAccelPress && accelPct <= 0.0 {
+						s.FSDAccelPushes++
+						inAccelPress = false
+					}
+				} else if curAP != AutopilotFSD {
+					inAccelPress = false
+				}
+			}
+		}
+	}
+
+	s.TotalDistanceKm = totalDistanceM / 1000.0
+	s.TotalDistanceMi = totalDistanceM / 1609.344
+	s.FSDDistanceKm = totalFSDDistM / 1000.0
+	s.FSDDistanceMi = totalFSDDistM / 1609.344
+	s.AutosteerDistanceKm = totalAutosteerDistM / 1000.0
+	s.AutosteerDistanceMi = totalAutosteerDistM / 1609.344
+	s.TACCDistanceKm = totalTACCDistM / 1000.0
+	s.TACCDistanceMi = totalTACCDistM / 1609.344
+
+	if s.TotalDistanceKm > 0 {
+		s.FSDPercent = math.Round(s.FSDDistanceKm/s.TotalDistanceKm*1000) / 10
+		totalAssistedKm := s.FSDDistanceKm + s.AutosteerDistanceKm + s.TACCDistanceKm
+		s.AssistedPercent = math.Round(totalAssistedKm/s.TotalDistanceKm*1000) / 10
+	}
+
+	return s
+}
+
+// countGearSplitsInGroup counts how many drives result from gear-state
+// splitting within a single time group. Mirrors splitByGearState logic but
+// only counts — no Drive objects or point arrays are allocated.
+func countGearSplitsInGroup(routes []Route, group []routeTimestamp) int {
+	if len(group) == 0 {
+		return 0
+	}
+
+	hasGearRuns := false
+	for _, entry := range group {
+		if len(routes[entry.idx].GearRuns) > 0 {
+			hasGearRuns = true
+			break
+		}
+	}
+
+	if !hasGearRuns {
+		count := 1
+		prevAllPark := false
+		for _, entry := range group {
+			r := &routes[entry.idx]
+			if r.RawFrameCount > 0 && r.RawParkCount > 0 {
+				isAllPark := float64(r.RawParkCount)/float64(r.RawFrameCount) > 0.6
+				if prevAllPark && !isAllPark {
+					count++
+				}
+				prevAllPark = isAllPark
+			} else {
+				prevAllPark = false
+			}
+		}
+		return count
+	}
+
+	count := 1
+	for _, entry := range group {
+		r := &routes[entry.idx]
+		totalFrames := 0
+		for _, run := range r.GearRuns {
+			totalFrames += run.Frames
+		}
+		if totalFrames == 0 {
+			continue
+		}
+		secPerFrame := 60.0 / float64(totalFrames)
+		for _, run := range r.GearRuns {
+			if run.Gear == GearPark {
+				duration := float64(run.Frames) * secPerFrame
+				if duration >= parkGapSeconds {
+					count++
+				}
+			}
+		}
+	}
+	return count
 }
