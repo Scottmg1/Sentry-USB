@@ -1522,7 +1522,7 @@ function EditSoundModal({ sound, onSave, onClose }: { sound: CommunitySound; onS
 }
 
 function CommunityUpload({ adminPasscode }: { adminPasscode: string | null }) {
-  const { showToast, ToastView } = useToast()
+  const { ToastView } = useToast()
 
   const validateFile = useCallback(async (file: File) => {
     if (!file.name.toLowerCase().endsWith(".wav")) {

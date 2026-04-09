@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react"
-import { Search, Upload, Download, Paintbrush, ChevronLeft, ChevronRight, Loader2, CheckCircle, AlertCircle, Trash2, Pencil } from "lucide-react"
+import { Search, Download, Paintbrush, ChevronLeft, ChevronRight, Loader2, CheckCircle, AlertCircle, Trash2, Pencil } from "lucide-react"
 import GodotRenderer, { type GodotRendererHandle } from "../components/wraps/GodotRenderer"
 import MultiFileUploader, { type FileEntry, useObjectUrl } from "../components/upload/MultiFileUploader"
 
