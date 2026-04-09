@@ -212,12 +212,11 @@ func (p *Processor) ProcessDirectory(ctx context.Context, clipsDir string, throt
 
 	result.Duration = time.Since(start).Round(time.Millisecond).String()
 
-	// Count drives
-	routes := p.store.GetRoutes()
-	drives := GroupIntoDrives(routes)
-	result.DrivesFound = len(drives)
+	// Report route count — GroupIntoDrives is too memory-expensive to call
+	// here on low-RAM devices. Actual drive count is available via /api/drives/stats.
+	result.DrivesFound = p.store.RouteCount()
 
-	log.Printf("[drives] Done: %d files, %d with GPS, %d points, %d drives, %d errors in %s",
+	log.Printf("[drives] Done: %d files, %d with GPS, %d points, %d routes, %d errors in %s",
 		result.FilesNew, result.FilesWithGPS, result.TotalPoints, result.DrivesFound, result.Errors, result.Duration)
 
 	return result, nil
