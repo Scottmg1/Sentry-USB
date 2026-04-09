@@ -70,7 +70,7 @@ export default function MultiFileUploader({
       const result = await validateFile(f)
       if (result.ok) {
         validated.push({
-          id: crypto.randomUUID(),
+          id: Math.random().toString(36).slice(2) + Date.now().toString(36),
           file: f,
           name: f.name.replace(/\.[^/.]+$/, ""),
           fields: {},
