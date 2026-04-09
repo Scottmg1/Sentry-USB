@@ -96,7 +96,7 @@ async function getWavDuration(file: File): Promise<number> {
 // Main component
 // ─────────────────────────────────────────────────────────────
 
-export default function LockChime({ adminPasscode, onAdminPasscodeChange }: { adminPasscode: string | null; onAdminPasscodeChange: (v: string | null) => void }) {
+export default function LockChime({ adminPasscode }: { adminPasscode: string | null; onAdminPasscodeChange: (v: string | null) => void }) {
   const [tab, setTab] = useState<Tab>("library")
   const [volume, setVolume] = useState(() => {
     const saved = localStorage.getItem("lockchime-preview-volume")
