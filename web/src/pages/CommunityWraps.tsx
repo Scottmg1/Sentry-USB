@@ -132,7 +132,7 @@ function BrowseTab({ adminPasscode, onAdminExit }: { adminPasscode: string | nul
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null)
   const [editingWrap, setEditingWrap] = useState<CommunityWrap | null>(null)
   const [deletingWrap, setDeletingWrap] = useState<CommunityWrap | null>(null)
-  const limit = 20
+  const limit = 24
 
   const fetchWraps = useCallback(async () => {
     setLoading(true)
@@ -309,7 +309,7 @@ function BrowseTab({ adminPasscode, onAdminExit }: { adminPasscode: string | nul
       ) : (
         <>
           {/* Grid */}
-          <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+          <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 xl:grid-cols-6">
             {wraps.map((wrap) => (
               <div
                 key={wrap.code}

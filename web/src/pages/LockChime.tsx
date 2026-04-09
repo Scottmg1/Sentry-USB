@@ -28,7 +28,7 @@ import MultiFileUploader, { type FileEntry, useObjectUrl } from "../components/u
 const API_BASE = "/api"
 const MAX_DURATION_SECONDS = 5
 const MAX_FILE_BYTES = 1 * 1024 * 1024 // 1 MB
-const COMMUNITY_PAGE_SIZE = 20
+const COMMUNITY_PAGE_SIZE = 18
 const LIBRARY_PAGE_SIZE = 15
 
 interface SoundEntry {
