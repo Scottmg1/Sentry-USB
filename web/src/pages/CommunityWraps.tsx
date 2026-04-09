@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from "react"
 import { Search, Upload, Download, Paintbrush, ChevronLeft, ChevronRight, Loader2, CheckCircle, AlertCircle, Trash2, Pencil } from "lucide-react"
 import GodotRenderer, { type GodotRendererHandle } from "../components/wraps/GodotRenderer"
+import MultiFileUploader, { type FileEntry } from "../components/upload/MultiFileUploader"
 
 const API_BASE = "/api"
 
@@ -606,16 +607,8 @@ interface UploadTabProps {
 }
 
 function UploadTab({ godotReadyRef, godotRef, adminPasscode }: UploadTabProps) {
-  const [file, setFile] = useState<File | null>(null)
-  const [preview, setPreview] = useState<string | null>(null)
-  const [name, setName] = useState("")
-  const [model, setModel] = useState("")
-  const [uploading, setUploading] = useState(false)
-  const [uploadStep, setUploadStep] = useState<"preview" | "uploading" | null>(null)
-  const [hasPreviewStep, setHasPreviewStep] = useState(false)
-  const [result, setResult] = useState<{ success: boolean; message: string } | null>(null)
+  const [defaultModel, setDefaultModel] = useState("")
 
-  // Wait for Godot engine to finish loading (polls the ref)
   const waitForGodotReady = useCallback((timeoutMs: number): Promise<boolean> => {
     return new Promise((resolve) => {
       if (godotReadyRef.current) { resolve(true); return }
@@ -627,7 +620,6 @@ function UploadTab({ godotReadyRef, godotRef, adminPasscode }: UploadTabProps) {
     })
   }, [godotReadyRef])
 
-  // Generate a 3D preview by sending commands to Godot and capturing the result
   const generate3DPreview = useCallback((imageFile: File, godotId: string): Promise<string> => {
     return new Promise((resolve, reject) => {
       let textureDataUrl: string | null = null
@@ -646,12 +638,9 @@ function UploadTab({ godotReadyRef, godotRef, adminPasscode }: UploadTabProps) {
       const handler = (e: MessageEvent) => {
         if (!e.data?.type) return
 
-        // Step 2: Scene loaded → wait for materials to initialize, then apply texture
         if ((e.data.type === "car_loaded" || e.data.type === "scene_loaded") && phase === "loading_scene") {
           phase = "applying_texture"
           if (textureDataUrl) {
-            // Delay texture application to let the scene's materials fully initialize —
-            // complex models (Highland, Juniper, Cybertruck) need more time than base models
             setTimeout(() => {
               godotRef.current?.setTexture(textureDataUrl!)
               phase = "capturing"
@@ -661,11 +650,8 @@ function UploadTab({ godotReadyRef, godotRef, adminPasscode }: UploadTabProps) {
           }
         }
 
-        // Step 3: Capture result → crop to 1:1
         if (e.data.type === "capture_result" && e.data.dataUrl) {
           cleanup()
-
-          // Crop to 1:1 (1024×1024) for consistent thumbnails
           const img = new Image()
           img.onload = () => {
             const size = Math.min(img.width, img.height)
@@ -678,7 +664,7 @@ function UploadTab({ godotReadyRef, godotRef, adminPasscode }: UploadTabProps) {
             ctx.drawImage(img, sx, sy, size, size, 0, 0, 1024, 1024)
             resolve(canvas.toDataURL("image/png"))
           }
-          img.onerror = () => resolve(e.data.dataUrl) // fallback to raw if crop fails
+          img.onerror = () => resolve(e.data.dataUrl)
           img.src = e.data.dataUrl
         } else if (e.data.type === "capture_error") {
           cleanup()
@@ -687,21 +673,14 @@ function UploadTab({ godotReadyRef, godotRef, adminPasscode }: UploadTabProps) {
       }
       window.addEventListener("message", handler)
 
-      // Step 1: Read the file, then load the scene
       const reader = new FileReader()
       reader.onload = () => {
         textureDataUrl = reader.result as string
-
-        // Always explicitly load the scene — even if it's the same model,
-        // Godot needs to re-init for back-to-back uploads
         godotRef.current?.loadScene(godotId)
-
-        // Fallback: if scene_loaded/car_loaded never fires, apply texture after timeout
         setTimeout(() => {
           if (phase === "loading_scene") {
             console.warn("Scene load event not received, applying texture anyway")
             phase = "applying_texture"
-            // Same material-init delay as the normal path
             setTimeout(() => {
               godotRef.current?.setTexture(textureDataUrl!)
               phase = "capturing"
@@ -715,141 +694,81 @@ function UploadTab({ godotReadyRef, godotRef, adminPasscode }: UploadTabProps) {
     })
   }, [godotRef])
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0]
-    if (!f) return
-
-    if (f.type !== "image/png") {
-      setResult({ success: false, message: "Only PNG files are supported." })
-      return
+  const validateFile = useCallback(async (file: File) => {
+    if (file.type !== "image/png") {
+      return { ok: false, error: "Only PNG files are supported" }
     }
-    if (f.size > 1024 * 1024) {
-      setResult({ success: false, message: "File must be under 1 MB." })
-      return
+    if (file.size > 1024 * 1024) {
+      return { ok: false, error: "File must be under 1 MB" }
     }
+    return { ok: true }
+  }, [])
 
-    setFile(f)
-    setResult(null)
-    const url = URL.createObjectURL(f)
-    setPreview(url)
-  }
+  const handleUpload = useCallback(async (
+    entry: FileEntry,
+    onStep: (step: string) => void
+  ): Promise<{ success: boolean; message: string }> => {
+    const model = entry.fields.tesla_model || defaultModel
+    if (!model) return { success: false, message: "No Tesla model selected" }
 
-  const handleSubmit = async () => {
-    if (!file || !name.trim() || !model) return
+    let previewDataUrl: string | null = null
+    const godotId = MODEL_TO_GODOT_ID[model]
+    const willGeneratePreview = !!(godotId && godotRef.current)
 
-    setUploading(true)
-    setResult(null)
-
-    try {
-      let previewDataUrl: string | null = null
-      const godotId = MODEL_TO_GODOT_ID[model]
-      const willGeneratePreview = !!(godotId && godotRef.current)
-      setHasPreviewStep(willGeneratePreview)
-
-      // Generate 3D preview if model has a Godot counterpart
-      if (willGeneratePreview) {
-        setUploadStep("preview")
-
-        // Wait for Godot to be ready (may still be downloading the 283MB .pck)
-        if (!godotReadyRef.current) {
-          const ready = await waitForGodotReady(60000)
-          if (!ready) {
-            // Godot didn't load in time — skip preview
-            setUploadStep("uploading")
-          }
-        }
-
-        if (godotReadyRef.current) {
-          try {
-            previewDataUrl = await generate3DPreview(file, godotId!)
-          } catch (previewErr) {
-            console.warn("[WRAPS] 3D preview generation failed:", previewErr)
-          }
+    if (willGeneratePreview) {
+      onStep("Generating 3D preview...")
+      if (!godotReadyRef.current) {
+        const ready = await waitForGodotReady(60000)
+        if (!ready) {
+          onStep("Uploading wrap...")
         }
       }
-
-      setUploadStep("uploading")
-
-      const formData = new FormData()
-      formData.append("image", file)
-      formData.append("name", name.trim())
-      formData.append("tesla_model", model)
-
-      if (previewDataUrl) {
-        const previewBlob = await (await fetch(previewDataUrl)).blob()
-        formData.append("preview", previewBlob, "preview.png")
+      if (godotReadyRef.current) {
+        try {
+          previewDataUrl = await generate3DPreview(entry.file, godotId!)
+        } catch (previewErr) {
+          console.warn("[WRAPS] 3D preview generation failed:", previewErr)
+        }
       }
-
-      const headers: Record<string, string> = {}
-      if (adminPasscode) headers["x-passcode"] = adminPasscode
-
-      const res = await fetch(`${API_BASE}/wraps/upload`, {
-        method: "POST",
-        headers,
-        body: formData,
-      })
-
-      const data = await res.json()
-
-      if (!res.ok) {
-        throw new Error(data.error || `HTTP ${res.status}`)
-      }
-
-      setResult({ success: true, message: data.message || "Wrap submitted! It will appear in the library once reviewed." })
-      setFile(null)
-      setPreview(null)
-      setName("")
-      setModel("")
-    } catch (err: any) {
-      setResult({ success: false, message: err.message || "Upload failed" })
-    } finally {
-      setUploading(false)
-      setUploadStep(null)
     }
-  }
+
+    onStep("Uploading wrap...")
+
+    const formData = new FormData()
+    formData.append("image", entry.file)
+    formData.append("name", entry.name.trim())
+    formData.append("tesla_model", model)
+
+    if (previewDataUrl) {
+      const previewBlob = await (await fetch(previewDataUrl)).blob()
+      formData.append("preview", previewBlob, "preview.png")
+    }
+
+    const headers: Record<string, string> = {}
+    if (adminPasscode) headers["x-passcode"] = adminPasscode
+
+    const res = await fetch(`${API_BASE}/wraps/upload`, {
+      method: "POST",
+      headers,
+      body: formData,
+    })
+
+    const data = await res.json()
+    if (!res.ok) {
+      return { success: false, message: data.error || `HTTP ${res.status}` }
+    }
+
+    return { success: true, message: data.message || "Wrap submitted!" }
+  }, [defaultModel, godotRef, godotReadyRef, waitForGodotReady, generate3DPreview, adminPasscode])
 
   return (
     <div className="mx-auto max-w-lg space-y-5">
-      {/* File picker */}
+      {/* Default Tesla model selector */}
       <div>
-        <label className="mb-1.5 block text-sm font-medium text-slate-300">Wrap Image</label>
-        <div className="relative">
-          <input
-            type="file"
-            accept=".png,image/png"
-            onChange={handleFileChange}
-            className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-200 file:mr-3 file:rounded file:border-0 file:bg-blue-500/20 file:px-3 file:py-1 file:text-xs file:font-medium file:text-blue-400"
-          />
-        </div>
-        <p className="mt-1 text-xs text-slate-600">PNG, 512x512 to 1024x1024, max 1 MB</p>
-      </div>
-
-      {/* Flat preview */}
-      {preview && (
-        <div className="overflow-hidden rounded-xl border border-white/10">
-          <img src={preview} alt="Preview" className="h-48 w-full object-contain bg-slate-800/50" />
-        </div>
-      )}
-
-      {/* Name */}
-      <div>
-        <label className="mb-1.5 block text-sm font-medium text-slate-300">Wrap Name</label>
-        <input
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value.slice(0, 50))}
-          placeholder="e.g. Red Carbon Fiber"
-          className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:border-blue-500/50 focus:outline-none"
-        />
-        <p className="mt-1 text-xs text-slate-600">{name.length}/50 characters. Letters, numbers, spaces, hyphens only.</p>
-      </div>
-
-      {/* Tesla Model */}
-      <div>
-        <label className="mb-1.5 block text-sm font-medium text-slate-300">Tesla Model</label>
+        <label className="mb-1.5 block text-sm font-medium text-slate-300">Default Tesla Model</label>
         <select
-          value={model}
-          onChange={(e) => setModel(e.target.value)}
+          value={defaultModel}
+          onChange={(e) => setDefaultModel(e.target.value)}
           className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-200 focus:border-blue-500/50 focus:outline-none"
         >
           <option value="" className="bg-slate-900">Select model...</option>
@@ -857,70 +776,56 @@ function UploadTab({ godotReadyRef, godotRef, adminPasscode }: UploadTabProps) {
             <option key={m} value={m} className="bg-slate-900">{m}</option>
           ))}
         </select>
+        <p className="mt-1 text-xs text-slate-600">Applied to all files unless overridden per file</p>
       </div>
 
-      {/* Multi-step upload progress */}
-      {uploading && uploadStep && (
-        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 space-y-3">
-          {hasPreviewStep && (
-            <div className="flex items-center gap-3">
-              {uploadStep === "preview" ? (
-                <Loader2 className="h-5 w-5 animate-spin text-blue-400 shrink-0" />
-              ) : (
-                <CheckCircle className="h-5 w-5 text-emerald-400 shrink-0" />
-              )}
-              <span className={`text-sm font-medium ${
-                uploadStep === "preview" ? "text-blue-300" : "text-emerald-400/70"
-              }`}>
-                {uploadStep === "preview" ? "Generating 3D preview..." : "3D preview generated"}
-              </span>
-            </div>
-          )}
-          <div className="flex items-center gap-3">
-            {uploadStep === "uploading" ? (
-              <Loader2 className="h-5 w-5 animate-spin text-blue-400 shrink-0" />
-            ) : (
-              <div className="flex h-5 w-5 items-center justify-center shrink-0">
-                <div className="h-2 w-2 rounded-full bg-slate-600" />
-              </div>
-            )}
-            <span className={`text-sm font-medium ${
-              uploadStep === "uploading" ? "text-blue-300" : "text-slate-600"
-            }`}>
-              {uploadStep === "uploading" ? "Uploading wrap..." : "Upload wrap"}
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* Submit */}
-      <button
-        onClick={handleSubmit}
-        disabled={!file || !name.trim() || !model || uploading}
-        className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed"
-      >
-        {uploading ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : (
-          <Upload className="h-4 w-4" />
+      <MultiFileUploader
+        accept=".png,image/png"
+        maxFiles={10}
+        rateLimitText="Up to 10 wraps per hour. Submissions are reviewed before appearing in the library."
+        accentColor="blue"
+        validateFile={validateFile}
+        renderPreview={(file) => (
+          <img
+            src={URL.createObjectURL(file)}
+            alt={file.name}
+            className="h-full w-full object-cover"
+          />
         )}
-        {uploading
-          ? uploadStep === "preview" ? "Generating preview..." : "Uploading..."
-          : "Submit Wrap"
+        renderFields={(entry, onChange) => (
+          <div className="space-y-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-400">Wrap Name</label>
+              <input
+                type="text"
+                value={entry.name}
+                onChange={(e) => onChange({ name: e.target.value.slice(0, 50) })}
+                placeholder="e.g. Red Carbon Fiber"
+                className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:border-blue-500/50 focus:outline-none"
+              />
+              <p className="mt-1 text-xs text-slate-600">{entry.name.length}/50</p>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-400">Tesla Model</label>
+              <select
+                value={entry.fields.tesla_model || defaultModel}
+                onChange={(e) => onChange({ fields: { tesla_model: e.target.value } })}
+                className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-200 focus:border-blue-500/50 focus:outline-none"
+              >
+                <option value="" className="bg-slate-900">Select model...</option>
+                {TESLA_MODELS.map((m) => (
+                  <option key={m} value={m} className="bg-slate-900">{m}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+        isEntryReady={(entry) =>
+          entry.name.trim().length > 0 &&
+          !!(entry.fields.tesla_model || defaultModel)
         }
-      </button>
-
-      {/* Result message */}
-      {result && (
-        <div className={`flex items-center gap-2 rounded-lg px-4 py-3 text-sm ${
-          result.success
-            ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-            : "bg-red-500/10 text-red-400 border border-red-500/20"
-        }`}>
-          {result.success ? <CheckCircle className="h-4 w-4 shrink-0" /> : <AlertCircle className="h-4 w-4 shrink-0" />}
-          {result.message}
-        </div>
-      )}
+        onUpload={handleUpload}
+      />
     </div>
   )
 }
