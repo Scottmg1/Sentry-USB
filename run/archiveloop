@@ -1047,7 +1047,7 @@ function set_time () {
   local -r clocktime_start=$(date +%s.%N)
   for _ in {1..5}
   do
-    if sntp -S time.google.com || ntpdig -S time.google.com || sntp -S 129.6.15.28 || ntpdig -S 129.6.15.28
+    if ntpdig -S time.google.com || sntp -S 129.6.15.28
     # Fall back to NIST time server if DNS resolution fails (DNS over TLS & Cert is invalid because of wrong time)
     then
       local -r uptime_end=$(awk '{print $1}' /proc/uptime)
@@ -1066,7 +1066,7 @@ function timesyncloop {
   while true
   do
     sleep "${TIME_SYNC_INTERVAL:-3600}"
-    if ping -c 1 -W 3 time.google.com &>/dev/null; then
+    if ping -c 1 -W 3 time.google.com &>/dev/null || ping -c 1 -W 3 129.6.15.28 &>/dev/null; then
       set_time
       # Sync NTP-corrected time to RTC battery (Pi never shuts down gracefully)
       if [ "${RTC_BATTERY_ENABLED:-false}" = "true" ] && isPi5; then
