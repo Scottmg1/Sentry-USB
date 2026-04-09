@@ -26,7 +26,7 @@ import {
 import MultiFileUploader, { type FileEntry, useObjectUrl } from "../components/upload/MultiFileUploader"
 
 const API_BASE = "/api"
-const MAX_DURATION_SECONDS = 7
+const MAX_DURATION_SECONDS = 5
 const MAX_FILE_BYTES = 1 * 1024 * 1024 // 1 MB
 const COMMUNITY_PAGE_SIZE = 20
 const LIBRARY_PAGE_SIZE = 15
@@ -97,68 +97,90 @@ async function getAudioDuration(file: File): Promise<number> {
   return decoded.duration
 }
 
-function encodeWav(audioBuffer: AudioBuffer): Blob {
-  const numChannels = audioBuffer.numberOfChannels
-  const sampleRate = audioBuffer.sampleRate
-  const format = 1 // PCM
-  const bitsPerSample = 16
+const TARGET_SAMPLE_RATE = 44100
 
-  // Interleave channels
+// Mix down to mono by averaging all channels
+function mixToMono(audioBuffer: AudioBuffer): Float32Array {
   const length = audioBuffer.length
-  const interleaved = new Int16Array(length * numChannels)
+  const mono = new Float32Array(length)
+  const numChannels = audioBuffer.numberOfChannels
   for (let ch = 0; ch < numChannels; ch++) {
     const channelData = audioBuffer.getChannelData(ch)
     for (let i = 0; i < length; i++) {
-      // Clamp to [-1, 1] and convert to 16-bit integer
-      const s = Math.max(-1, Math.min(1, channelData[i]))
-      interleaved[i * numChannels + ch] = s < 0 ? s * 0x8000 : s * 0x7fff
+      mono[i] += channelData[i]
     }
   }
+  if (numChannels > 1) {
+    for (let i = 0; i < length; i++) {
+      mono[i] /= numChannels
+    }
+  }
+  return mono
+}
 
-  const dataSize = interleaved.length * 2
-  const headerSize = 44
-  const buffer = new ArrayBuffer(headerSize + dataSize)
-  const view = new DataView(buffer)
+// Resample mono audio to target sample rate using OfflineAudioContext
+async function resampleMono(samples: Float32Array, srcRate: number, targetRate: number): Promise<Float32Array> {
+  if (srcRate === targetRate) return samples
+
+  const duration = samples.length / srcRate
+  const offlineCtx = new OfflineAudioContext(1, Math.ceil(duration * targetRate), targetRate)
+  const buf = offlineCtx.createBuffer(1, samples.length, srcRate)
+  buf.getChannelData(0).set(samples)
+  const src = offlineCtx.createBufferSource()
+  src.buffer = buf
+  src.connect(offlineCtx.destination)
+  src.start()
+  const rendered = await offlineCtx.startRendering()
+  return rendered.getChannelData(0)
+}
+
+// Encode mono Float32Array samples to 16-bit PCM WAV at given sample rate
+function encodeMonoWav(samples: Float32Array, sampleRate: number): Blob {
+  const bitsPerSample = 16
+  const numChannels = 1
+  const pcm = new Int16Array(samples.length)
+  for (let i = 0; i < samples.length; i++) {
+    const s = Math.max(-1, Math.min(1, samples[i]))
+    pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff
+  }
+
+  const dataSize = pcm.length * 2
+  const buffer = new ArrayBuffer(44 + dataSize)
+  const v = new DataView(buffer)
 
   // RIFF header
-  writeString(view, 0, "RIFF")
-  view.setUint32(4, 36 + dataSize, true)
-  writeString(view, 8, "WAVE")
-
+  writeStr(v, 0, "RIFF")
+  v.setUint32(4, 36 + dataSize, true)
+  writeStr(v, 8, "WAVE")
   // fmt chunk
-  writeString(view, 12, "fmt ")
-  view.setUint32(16, 16, true) // chunk size
-  view.setUint16(20, format, true)
-  view.setUint16(22, numChannels, true)
-  view.setUint32(24, sampleRate, true)
-  view.setUint32(28, sampleRate * numChannels * bitsPerSample / 8, true) // byte rate
-  view.setUint16(32, numChannels * bitsPerSample / 8, true) // block align
-  view.setUint16(34, bitsPerSample, true)
-
+  writeStr(v, 12, "fmt ")
+  v.setUint32(16, 16, true)
+  v.setUint16(20, 1, true) // PCM
+  v.setUint16(22, numChannels, true)
+  v.setUint32(24, sampleRate, true)
+  v.setUint32(28, sampleRate * numChannels * bitsPerSample / 8, true)
+  v.setUint16(32, numChannels * bitsPerSample / 8, true)
+  v.setUint16(34, bitsPerSample, true)
   // data chunk
-  writeString(view, 36, "data")
-  view.setUint32(40, dataSize, true)
-
-  // Write PCM samples
-  const output = new Int16Array(buffer, headerSize)
-  output.set(interleaved)
+  writeStr(v, 36, "data")
+  v.setUint32(40, dataSize, true)
+  new Int16Array(buffer, 44).set(pcm)
 
   return new Blob([buffer], { type: "audio/wav" })
 }
 
-function writeString(view: DataView, offset: number, str: string) {
+function writeStr(view: DataView, offset: number, str: string) {
   for (let i = 0; i < str.length; i++) {
     view.setUint8(offset + i, str.charCodeAt(i))
   }
 }
 
+// Convert any audio file to mono 44.1kHz 16-bit WAV
 async function convertToWav(file: File): Promise<File> {
-  // Already a WAV — skip conversion
-  if (file.name.toLowerCase().endsWith(".wav")) {
-    return file
-  }
   const audioBuffer = await decodeAudio(file)
-  const wavBlob = encodeWav(audioBuffer)
+  const mono = mixToMono(audioBuffer)
+  const resampled = await resampleMono(mono, audioBuffer.sampleRate, TARGET_SAMPLE_RATE)
+  const wavBlob = encodeMonoWav(resampled, TARGET_SAMPLE_RATE)
   const baseName = file.name.replace(/\.[^/.]+$/, "")
   return new File([wavBlob], baseName + ".wav", { type: "audio/wav" })
 }
