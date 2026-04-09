@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from "react"
 import { Search, Upload, Download, Paintbrush, ChevronLeft, ChevronRight, Loader2, CheckCircle, AlertCircle, Trash2, Pencil } from "lucide-react"
 import GodotRenderer, { type GodotRendererHandle } from "../components/wraps/GodotRenderer"
-import MultiFileUploader, { type FileEntry } from "../components/upload/MultiFileUploader"
+import MultiFileUploader, { type FileEntry, useObjectUrl } from "../components/upload/MultiFileUploader"
 
 const API_BASE = "/api"
 
@@ -606,6 +606,12 @@ interface UploadTabProps {
   adminPasscode: string | null
 }
 
+function WrapPreview({ file }: { file: File }) {
+  const url = useObjectUrl(file)
+  if (!url) return null
+  return <img src={url} alt={file.name} className="h-full w-full object-cover" />
+}
+
 function UploadTab({ godotReadyRef, godotRef, adminPasscode }: UploadTabProps) {
   const [defaultModel, setDefaultModel] = useState("")
 
@@ -785,13 +791,7 @@ function UploadTab({ godotReadyRef, godotRef, adminPasscode }: UploadTabProps) {
         rateLimitText="Up to 10 wraps per hour. Submissions are reviewed before appearing in the library."
         accentColor="blue"
         validateFile={validateFile}
-        renderPreview={(file) => (
-          <img
-            src={URL.createObjectURL(file)}
-            alt={file.name}
-            className="h-full w-full object-cover"
-          />
-        )}
+        renderPreview={(file) => <WrapPreview file={file} />}
         renderFields={(entry, onChange) => (
           <div className="space-y-3">
             <div>

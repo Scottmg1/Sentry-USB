@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react"
+import { useState, useRef, useCallback, useEffect } from "react"
 import { Upload, X, CheckCircle, Loader2, AlertCircle, Plus } from "lucide-react"
 
 export interface FileEntry {
@@ -476,4 +476,14 @@ export default function MultiFileUploader({
       )}
     </div>
   )
+}
+
+export function useObjectUrl(file: File): string {
+  const [url, setUrl] = useState("")
+  useEffect(() => {
+    const u = URL.createObjectURL(file)
+    setUrl(u)
+    return () => URL.revokeObjectURL(u)
+  }, [file])
+  return url
 }

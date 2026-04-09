@@ -23,7 +23,7 @@ import {
   Pencil,
   Unplug,
 } from "lucide-react"
-import MultiFileUploader, { type FileEntry } from "../components/upload/MultiFileUploader"
+import MultiFileUploader, { type FileEntry, useObjectUrl } from "../components/upload/MultiFileUploader"
 
 const API_BASE = "/api"
 const MAX_DURATION_SECONDS = 7
@@ -1615,7 +1615,7 @@ function CommunityUpload({ adminPasscode }: { adminPasscode: string | null }) {
 function AudioPreview({ file }: { file: File }) {
   const [playing, setPlaying] = useState(false)
   const audioRef = useRef<HTMLAudioElement>(null)
-  const [url] = useState(() => URL.createObjectURL(file))
+  const url = useObjectUrl(file)
 
   const togglePlay = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
