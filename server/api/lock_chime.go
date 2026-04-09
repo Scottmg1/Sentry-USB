@@ -1092,8 +1092,19 @@ func (h *handlers) communityLockChimeStream(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	req, err := http.NewRequest("GET", supportServerURL+"/lockchime/download/"+code, nil)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to create request")
+		return
+	}
+
+	// Forward passcode if present (admin bypasses rate limiting)
+	if passcode := r.Header.Get("X-Passcode"); passcode != "" {
+		req.Header.Set("X-Passcode", passcode)
+	}
+
 	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Get(supportServerURL + "/lockchime/download/" + code)
+	resp, err := client.Do(req)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "Failed to fetch sound")
 		return
@@ -1199,6 +1210,11 @@ func (h *handlers) communityLockChimeDownload(w http.ResponseWriter, r *http.Req
 		return
 	}
 	req.Header.Set("X-Fingerprint", getFingerprint())
+
+	// Forward passcode if present (admin bypasses rate limiting)
+	if passcode := r.Header.Get("X-Passcode"); passcode != "" {
+		req.Header.Set("X-Passcode", passcode)
+	}
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
