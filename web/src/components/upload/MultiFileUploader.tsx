@@ -1,5 +1,5 @@
-import { useState, useRef, useCallback, useEffect } from "react"
-import { Upload, X, CheckCircle, Loader2, AlertCircle, Plus } from "lucide-react"
+import { useState, useRef, useCallback, useEffect, useMemo } from "react"
+import { Upload, X, CheckCircle, Loader2, AlertCircle, Plus, RotateCcw } from "lucide-react"
 
 export interface FileEntry {
   id: string
@@ -47,10 +47,12 @@ export default function MultiFileUploader({
   const [currentStep, setCurrentStep] = useState<string | null>(null)
   const [errors, setErrors] = useState<string[]>([])
   const inputRef = useRef<HTMLInputElement>(null)
+  const filesRef = useRef(files)
+  filesRef.current = files
 
   const addFiles = useCallback(async (incoming: File[]) => {
     setErrors([])
-    const currentCount = files.length
+    const currentCount = filesRef.current.length
     const available = maxFiles - currentCount
     if (available <= 0) {
       setErrors([`Maximum ${maxFiles} files allowed`])
@@ -83,15 +85,10 @@ export default function MultiFileUploader({
       setErrors((prev) => [...prev, ...validationErrors])
     }
     if (validated.length > 0) {
-      setFiles((prev) => {
-        const next = [...prev, ...validated]
-        if (!expandedId && validated.length > 0) {
-          setExpandedId(validated[0].id)
-        }
-        return next
-      })
+      setFiles((prev) => [...prev, ...validated])
+      setExpandedId((prev) => prev ?? validated[0].id)
     }
-  }, [files.length, maxFiles, validateFile, expandedId])
+  }, [maxFiles, validateFile])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -124,15 +121,18 @@ export default function MultiFileUploader({
   }, [])
 
   const uploadSingle = useCallback(async (id: string) => {
-    const entry = files.find((f) => f.id === id)
-    if (!entry || entry.status !== "pending") return
+    const entry = filesRef.current.find((f) => f.id === id)
+    if (!entry || (entry.status !== "pending" && entry.status !== "error")) return
 
-    setFiles((prev) => prev.map((f) => f.id === id ? { ...f, status: "uploading" } : f))
+    setFiles((prev) => prev.map((f) => f.id === id ? { ...f, status: "uploading", error: undefined } : f))
     setExpandedId(id)
     setCurrentStep(null)
 
+    // Re-read entry fresh in case name/fields were edited
+    const freshEntry = filesRef.current.find((f) => f.id === id) ?? entry
+
     try {
-      const result = await onUpload(entry, (step) => setCurrentStep(step))
+      const result = await onUpload(freshEntry, (step) => setCurrentStep(step))
       setFiles((prev) =>
         prev.map((f) =>
           f.id === id
@@ -141,7 +141,7 @@ export default function MultiFileUploader({
         )
       )
       if (result.success) {
-        const nextPending = files.find((f) => f.id !== id && f.status === "pending")
+        const nextPending = filesRef.current.find((f) => f.id !== id && f.status === "pending")
         setExpandedId(nextPending?.id ?? null)
       }
     } catch (err: any) {
@@ -151,18 +151,22 @@ export default function MultiFileUploader({
     } finally {
       setCurrentStep(null)
     }
-  }, [files, onUpload])
+  }, [onUpload])
 
   const uploadAll = useCallback(async () => {
-    const toUpload = files.filter((f) => f.status === "pending" && isEntryReady(f))
-    if (toUpload.length === 0) return
+    const ids = filesRef.current
+      .filter((f) => f.status === "pending" && isEntryReady(f))
+      .map((f) => f.id)
+    if (ids.length === 0) return
 
     setUploadingAll(true)
-    setUploadProgress({ current: 0, total: toUpload.length })
+    setUploadProgress({ current: 0, total: ids.length })
 
-    for (let i = 0; i < toUpload.length; i++) {
-      const entry = toUpload[i]
-      setUploadProgress({ current: i + 1, total: toUpload.length })
+    for (let i = 0; i < ids.length; i++) {
+      const entry = filesRef.current.find((f) => f.id === ids[i])
+      if (!entry) continue
+
+      setUploadProgress({ current: i + 1, total: ids.length })
       setFiles((prev) => prev.map((f) => f.id === entry.id ? { ...f, status: "uploading" } : f))
       setExpandedId(entry.id)
       setCurrentStep(null)
@@ -190,7 +194,7 @@ export default function MultiFileUploader({
     setUploadingAll(false)
     setUploadProgress(null)
     setExpandedId(null)
-  }, [files, isEntryReady, onUpload])
+  }, [isEntryReady, onUpload])
 
   const clearAll = useCallback(() => {
     setFiles([])
@@ -200,8 +204,8 @@ export default function MultiFileUploader({
   }, [])
 
   const accent = accentColor === "blue"
-    ? { border: "border-blue-500/60", bg: "bg-blue-500/10", text: "text-blue-400" }
-    : { border: "border-violet-500/60", bg: "bg-violet-500/10", text: "text-violet-400" }
+    ? { border: "border-blue-500/60", borderLight: "border-blue-500/30", bg: "bg-blue-500/10", text: "text-blue-400" }
+    : { border: "border-violet-500/60", borderLight: "border-violet-500/30", bg: "bg-violet-500/10", text: "text-violet-400" }
 
   const hasFiles = files.length > 0
   const allDone = files.length > 0 && files.every((f) => f.status === "done" || f.status === "error")
@@ -362,7 +366,7 @@ export default function MultiFileUploader({
           <div className={`rounded-xl border p-4 space-y-4 ${
             isError
               ? "border-red-500/30 bg-red-500/[0.04]"
-              : `${accent.border.replace("/60", "/30")} bg-white/[0.02]`
+              : `${accent.borderLight} bg-white/[0.02]`
           }`}>
             {/* Full preview */}
             <div className="overflow-hidden rounded-lg border border-white/10 bg-slate-800/50">
@@ -398,7 +402,7 @@ export default function MultiFileUploader({
               </div>
             )}
 
-            {/* Individual upload button */}
+            {/* Individual upload / retry button */}
             {!isDone && !uploadingAll && (
               <button
                 onClick={() => uploadSingle(entry.id)}
@@ -411,10 +415,12 @@ export default function MultiFileUploader({
               >
                 {isUploading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
+                ) : isError ? (
+                  <RotateCcw className="h-4 w-4" />
                 ) : (
                   <Upload className="h-4 w-4" />
                 )}
-                {isUploading ? "Uploading..." : "Upload"}
+                {isUploading ? "Uploading..." : isError ? "Retry" : "Upload"}
               </button>
             )}
           </div>
@@ -479,11 +485,9 @@ export default function MultiFileUploader({
 }
 
 export function useObjectUrl(file: File): string {
-  const [url, setUrl] = useState("")
+  const url = useMemo(() => URL.createObjectURL(file), [file])
   useEffect(() => {
-    const u = URL.createObjectURL(file)
-    setUrl(u)
-    return () => URL.revokeObjectURL(u)
-  }, [file])
+    return () => URL.revokeObjectURL(url)
+  }, [url])
   return url
 }
