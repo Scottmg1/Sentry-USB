@@ -48,9 +48,10 @@ type StoreData struct {
 
 // Store manages the drive data file with thread-safe access.
 type Store struct {
-	mu   sync.RWMutex
-	path string
-	data StoreData
+	mu             sync.RWMutex
+	path           string
+	data           StoreData
+	processedIndex map[string]bool // normalized path → present; rebuilt on Load
 }
 
 // NewStore creates a store at the given path.
@@ -79,11 +80,13 @@ func (s *Store) Load() error {
 						log.Printf("[drives] Migrated drive data from %s to %s", legacyDataPath, s.path)
 						// Best-effort: write to new path so future loads find it
 						s.saveLocked()
+						s.rebuildProcessedIndex()
 						return nil
 					}
 				}
 			}
 			s.data = StoreData{}
+			s.rebuildProcessedIndex()
 			return nil
 		}
 		return err
@@ -91,7 +94,20 @@ func (s *Store) Load() error {
 	defer f.Close()
 
 	dec := json.NewDecoder(f)
-	return dec.Decode(&s.data)
+	if err := dec.Decode(&s.data); err != nil {
+		return err
+	}
+	s.rebuildProcessedIndex()
+	return nil
+}
+
+// rebuildProcessedIndex rebuilds the in-memory processed file index.
+// Caller must hold the write lock.
+func (s *Store) rebuildProcessedIndex() {
+	s.processedIndex = make(map[string]bool, len(s.data.ProcessedFiles))
+	for _, f := range s.data.ProcessedFiles {
+		s.processedIndex[strings.ReplaceAll(f, "\\", "/")] = true
+	}
 }
 
 // Save writes the current data to disk.
@@ -126,19 +142,15 @@ func (s *Store) saveLocked() error {
 	return os.Rename(tmp, s.path)
 }
 
-// ProcessedSet returns a set of already-processed file paths.
-// Paths are stored with both original and normalized (forward-slash) forms
-// so lookups work regardless of OS path separator.
+// ProcessedSet returns a set of already-processed file paths (normalized to forward slashes).
 func (s *Store) ProcessedSet() map[string]bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	set := make(map[string]bool, len(s.data.ProcessedFiles)*2)
-	for _, f := range s.data.ProcessedFiles {
-		set[f] = true
-		// Also index the normalized form so Windows \ paths match Linux / paths
-		norm := strings.ReplaceAll(f, "\\", "/")
-		set[norm] = true
+	// Return a copy of the index so callers can't mutate it
+	set := make(map[string]bool, len(s.processedIndex))
+	for k, v := range s.processedIndex {
+		set[k] = v
 	}
 	return set
 }
@@ -157,7 +169,17 @@ func (s *Store) AddRoute(relativePath, dateDir string, points []GPSPoint, gears 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.data.ProcessedFiles = append(s.data.ProcessedFiles, relativePath)
+	norm := strings.ReplaceAll(relativePath, "\\", "/")
+
+	// Only add to processed list if not already present (O(1) lookup)
+	if !s.processedIndex[norm] {
+		s.data.ProcessedFiles = append(s.data.ProcessedFiles, relativePath)
+		if s.processedIndex == nil {
+			s.processedIndex = make(map[string]bool)
+		}
+		s.processedIndex[norm] = true
+	}
+
 	if len(points) == 0 {
 		return
 	}
@@ -176,7 +198,6 @@ func (s *Store) AddRoute(relativePath, dateDir string, points []GPSPoint, gears 
 	}
 
 	// Upsert: replace existing route for this file path if present.
-	norm := strings.ReplaceAll(relativePath, "\\", "/")
 	for i, r := range s.data.Routes {
 		if strings.ReplaceAll(r.File, "\\", "/") == norm {
 			s.data.Routes[i] = newRoute
@@ -190,7 +211,15 @@ func (s *Store) AddRoute(relativePath, dateDir string, points []GPSPoint, gears 
 func (s *Store) MarkProcessed(relativePath string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	norm := strings.ReplaceAll(relativePath, "\\", "/")
+	if s.processedIndex[norm] {
+		return
+	}
 	s.data.ProcessedFiles = append(s.data.ProcessedFiles, relativePath)
+	if s.processedIndex == nil {
+		s.processedIndex = make(map[string]bool)
+	}
+	s.processedIndex[norm] = true
 }
 
 // RouteCount returns the number of routes stored.
@@ -227,6 +256,7 @@ func (s *Store) ReplaceData(data StoreData) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.data = data
+	s.rebuildProcessedIndex()
 }
 
 // GetData returns a copy of the store data.
@@ -309,6 +339,7 @@ func (s *Store) ClearProcessedForReprocess() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.data.ProcessedFiles = nil
+	s.processedIndex = nil
 }
 
 // ArchivePath returns the path where drive data is backed up on the archive mount.
