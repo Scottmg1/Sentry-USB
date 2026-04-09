@@ -202,7 +202,7 @@ func archiveLog(format string, args ...interface{}) {
 	}
 	defer f.Close()
 	msg := fmt.Sprintf(format, args...)
-	fmt.Fprintf(f, "%s: [drive-map] %s\n", time.Now().Format("Mon Jan _2 15:04:05 MST 2006"), msg)
+	fmt.Fprintf(f, "%s: [drive-map] %s\n", time.Now().Format("Mon _2 Jan 15:04:05 MST 2006"), msg)
 }
 
 // IsArchiving returns true if the archiveloop is currently archiving files.
@@ -342,8 +342,8 @@ func (dh *DriveHandlers) processFiles(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		archiveLog("Drive processing complete. Files: %d, GPS: %d, Drives: %d, Errors: %d (%s)",
-			result.FilesNew, result.FilesWithGPS, result.DrivesFound, result.Errors, result.Duration)
+		archiveLog("Drive processing complete. Files: %d, GPS: %d, Routes: %d, Errors: %d (%s)",
+			result.FilesNew, result.FilesWithGPS, result.RoutesFound, result.Errors, result.Duration)
 
 		dh.hub.Broadcast("drive_process", map[string]interface{}{
 			"status": "complete", "result": result,
@@ -407,8 +407,8 @@ func (dh *DriveHandlers) reprocessAll(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		archiveLog("Reprocess complete. Files: %d, GPS: %d, Drives: %d, Errors: %d (%s)",
-			result.FilesNew, result.FilesWithGPS, result.DrivesFound, result.Errors, result.Duration)
+		archiveLog("Reprocess complete. Files: %d, GPS: %d, Routes: %d, Errors: %d (%s)",
+			result.FilesNew, result.FilesWithGPS, result.RoutesFound, result.Errors, result.Duration)
 
 		dh.hub.Broadcast("drive_process", map[string]interface{}{
 			"status": "complete", "result": result,
@@ -504,65 +504,29 @@ func (dh *DriveHandlers) uploadData(w http.ResponseWriter, r *http.Request) {
 // GET /api/drives/stats — aggregate statistics
 func (dh *DriveHandlers) driveStats(w http.ResponseWriter, r *http.Request) {
 	routes := dh.store.GetRoutes()
-	allDrives := drives.GroupIntoDrives(routes)
-
-	var totalDistKm, totalDistMi float64
-	var totalDurationMs int64
-	var totalFSDEngagedMs int64
-	var totalFSDDistKm, totalFSDDistMi float64
-	var totalDisengagements, totalAccelPushes int
-	var totalAutosteerEngagedMs, totalTACCEngagedMs int64
-	var totalAutosteerDistKm, totalAutosteerDistMi float64
-	var totalTACCDistKm, totalTACCDistMi float64
-	for _, d := range allDrives {
-		totalDistKm += d.DistanceKm
-		totalDistMi += d.DistanceMi
-		totalDurationMs += d.DurationMs
-		totalFSDEngagedMs += d.FSDEngagedMs
-		totalFSDDistKm += d.FSDDistanceKm
-		totalFSDDistMi += d.FSDDistanceMi
-		totalDisengagements += d.FSDDisengagements
-		totalAccelPushes += d.FSDAccelPushes
-		totalAutosteerEngagedMs += d.AutosteerEngagedMs
-		totalAutosteerDistKm += d.AutosteerDistanceKm
-		totalAutosteerDistMi += d.AutosteerDistanceMi
-		totalTACCEngagedMs += d.TACCEngagedMs
-		totalTACCDistKm += d.TACCDistanceKm
-		totalTACCDistMi += d.TACCDistanceMi
-	}
-
-	var fsdPercent float64
-	if totalDistKm > 0 {
-		fsdPercent = math.Round(totalFSDDistKm/totalDistKm*1000) / 10
-	}
-
-	// Assisted = FSD + Autosteer + TACC
-	totalAssistedDistKm := totalFSDDistKm + totalAutosteerDistKm + totalTACCDistKm
-	var assistedPercent float64
-	if totalDistKm > 0 {
-		assistedPercent = math.Round(totalAssistedDistKm/totalDistKm*1000) / 10
-	}
+	summaries := drives.GroupSummaries(routes)
+	stats := drives.ComputeAggregateStats(summaries)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"drives_count":            len(allDrives),
+		"drives_count":            stats.DrivesCount,
 		"routes_count":            len(routes),
 		"processed_count":         dh.store.ProcessedCount(),
-		"total_distance_km":       math.Round(totalDistKm*100) / 100,
-		"total_distance_mi":       math.Round(totalDistMi*100) / 100,
-		"total_duration_ms":       totalDurationMs,
-		"fsd_engaged_ms":          totalFSDEngagedMs,
-		"fsd_distance_km":         math.Round(totalFSDDistKm*100) / 100,
-		"fsd_distance_mi":         math.Round(totalFSDDistMi*100) / 100,
-		"fsd_percent":             fsdPercent,
-		"fsd_disengagements":      totalDisengagements,
-		"fsd_accel_pushes":        totalAccelPushes,
-		"autosteer_engaged_ms":    totalAutosteerEngagedMs,
-		"autosteer_distance_km":   math.Round(totalAutosteerDistKm*100) / 100,
-		"autosteer_distance_mi":   math.Round(totalAutosteerDistMi*100) / 100,
-		"tacc_engaged_ms":         totalTACCEngagedMs,
-		"tacc_distance_km":        math.Round(totalTACCDistKm*100) / 100,
-		"tacc_distance_mi":        math.Round(totalTACCDistMi*100) / 100,
-		"assisted_percent":        assistedPercent,
+		"total_distance_km":       math.Round(stats.TotalDistanceKm*100) / 100,
+		"total_distance_mi":       math.Round(stats.TotalDistanceMi*100) / 100,
+		"total_duration_ms":       stats.TotalDurationMs,
+		"fsd_engaged_ms":          stats.FSDEngagedMs,
+		"fsd_distance_km":         math.Round(stats.FSDDistanceKm*100) / 100,
+		"fsd_distance_mi":         math.Round(stats.FSDDistanceMi*100) / 100,
+		"fsd_percent":             stats.FSDPercent,
+		"fsd_disengagements":      stats.FSDDisengagements,
+		"fsd_accel_pushes":        stats.FSDAccelPushes,
+		"autosteer_engaged_ms":    stats.AutosteerEngagedMs,
+		"autosteer_distance_km":   math.Round(stats.AutosteerDistanceKm*100) / 100,
+		"autosteer_distance_mi":   math.Round(stats.AutosteerDistanceMi*100) / 100,
+		"tacc_engaged_ms":         stats.TACCEngagedMs,
+		"tacc_distance_km":        math.Round(stats.TACCDistanceKm*100) / 100,
+		"tacc_distance_mi":        math.Round(stats.TACCDistanceMi*100) / 100,
+		"assisted_percent":        stats.AssistedPercent,
 	})
 }
 

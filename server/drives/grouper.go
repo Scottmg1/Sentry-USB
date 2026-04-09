@@ -842,3 +842,54 @@ func Downsample(points [][2]float64, maxPoints int) [][2]float64 {
 	result = append(result, points[len(points)-1])
 	return result
 }
+
+// AggregateStats holds computed aggregate statistics across all drives.
+type AggregateStats struct {
+	DrivesCount          int
+	RoutesCount          int
+	TotalDistanceKm      float64
+	TotalDistanceMi      float64
+	TotalDurationMs      int64
+	FSDEngagedMs         int64
+	FSDDistanceKm        float64
+	FSDDistanceMi        float64
+	FSDPercent           float64
+	FSDDisengagements    int
+	FSDAccelPushes       int
+	AutosteerEngagedMs   int64
+	AutosteerDistanceKm  float64
+	AutosteerDistanceMi  float64
+	TACCEngagedMs        int64
+	TACCDistanceKm       float64
+	TACCDistanceMi       float64
+	AssistedPercent      float64
+}
+
+// ComputeAggregateStats computes aggregate statistics from drive summaries
+// without needing full point arrays in memory.
+func ComputeAggregateStats(summaries []DriveSummary) AggregateStats {
+	var s AggregateStats
+	s.DrivesCount = len(summaries)
+	for _, d := range summaries {
+		s.TotalDistanceKm += d.DistanceKm
+		s.TotalDistanceMi += d.DistanceMi
+		s.TotalDurationMs += d.DurationMs
+		s.FSDEngagedMs += d.FSDEngagedMs
+		s.FSDDistanceKm += d.FSDDistanceKm
+		s.FSDDistanceMi += d.FSDDistanceMi
+		s.FSDDisengagements += d.FSDDisengagements
+		s.FSDAccelPushes += d.FSDAccelPushes
+		s.AutosteerEngagedMs += d.AutosteerEngagedMs
+		s.AutosteerDistanceKm += d.AutosteerDistanceKm
+		s.AutosteerDistanceMi += d.AutosteerDistanceMi
+		s.TACCEngagedMs += d.TACCEngagedMs
+		s.TACCDistanceKm += d.TACCDistanceKm
+		s.TACCDistanceMi += d.TACCDistanceMi
+	}
+	if s.TotalDistanceKm > 0 {
+		s.FSDPercent = math.Round(s.FSDDistanceKm/s.TotalDistanceKm*1000) / 10
+		totalAssistedKm := s.FSDDistanceKm + s.AutosteerDistanceKm + s.TACCDistanceKm
+		s.AssistedPercent = math.Round(totalAssistedKm/s.TotalDistanceKm*1000) / 10
+	}
+	return s
+}

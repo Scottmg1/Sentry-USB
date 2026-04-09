@@ -50,8 +50,10 @@ export default function Login({ onLogin }: LoginProps) {
 
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
-            <label className="mb-1 block text-xs font-medium text-slate-400">Username</label>
+            <label htmlFor="username" className="mb-1 block text-xs font-medium text-slate-400">Username</label>
             <input
+              id="username"
+              name="username"
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
@@ -62,8 +64,10 @@ export default function Login({ onLogin }: LoginProps) {
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-slate-400">Password</label>
+            <label htmlFor="password" className="mb-1 block text-xs font-medium text-slate-400">Password</label>
             <input
+              id="password"
+              name="password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
