@@ -118,6 +118,29 @@ export default function CommunityWraps({ adminPasscode, onAdminPasscodeChange }:
   )
 }
 
+// Detect the actual number of CSS grid columns and trim items to fill complete rows
+function useFullRows<T>(items: T[], gridRef: React.RefObject<HTMLDivElement | null>): T[] {
+  const [cols, setCols] = useState(0)
+
+  useEffect(() => {
+    const el = gridRef.current
+    if (!el) return
+    const detect = () => {
+      const style = getComputedStyle(el)
+      const c = style.gridTemplateColumns.split(" ").length
+      setCols(c)
+    }
+    detect()
+    const ro = new ResizeObserver(detect)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [gridRef])
+
+  if (cols === 0 || items.length === 0) return items
+  const fullRowCount = Math.floor(items.length / cols) * cols
+  return fullRowCount > 0 ? items.slice(0, fullRowCount) : items
+}
+
 function BrowseTab({ adminPasscode, onAdminExit }: { adminPasscode: string | null; onAdminExit: () => void }) {
   const [wraps, setWraps] = useState<CommunityWrap[]>([])
   const [total, setTotal] = useState(0)
@@ -132,6 +155,8 @@ function BrowseTab({ adminPasscode, onAdminExit }: { adminPasscode: string | nul
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null)
   const [editingWrap, setEditingWrap] = useState<CommunityWrap | null>(null)
   const [deletingWrap, setDeletingWrap] = useState<CommunityWrap | null>(null)
+  const gridRef = useRef<HTMLDivElement>(null)
+  const visibleWraps = useFullRows(wraps, gridRef)
   const limit = 24
 
   const fetchWraps = useCallback(async () => {
@@ -309,8 +334,8 @@ function BrowseTab({ adminPasscode, onAdminExit }: { adminPasscode: string | nul
       ) : (
         <>
           {/* Grid */}
-          <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 xl:grid-cols-6">
-            {wraps.map((wrap) => (
+          <div ref={gridRef} className="grid grid-cols-3 gap-3 sm:grid-cols-4 xl:grid-cols-6">
+            {visibleWraps.map((wrap) => (
               <div
                 key={wrap.code}
                 className="group relative overflow-hidden rounded-lg border border-white/5 bg-white/[0.02] transition-colors hover:border-white/10 hover:bg-white/[0.04]"

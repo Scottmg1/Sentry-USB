@@ -1283,6 +1283,26 @@ function CommunityTab({ adminPasscode, volume }: { adminPasscode: string | null;
   )
 }
 
+function useFullRows<T>(items: T[], gridRef: React.RefObject<HTMLDivElement | null>): T[] {
+  const [cols, setCols] = useState(0)
+  useEffect(() => {
+    const el = gridRef.current
+    if (!el) return
+    const detect = () => {
+      const style = getComputedStyle(el)
+      const c = style.gridTemplateColumns.split(" ").length
+      setCols(c)
+    }
+    detect()
+    const ro = new ResizeObserver(detect)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [gridRef])
+  if (cols === 0 || items.length === 0) return items
+  const fullRowCount = Math.floor(items.length / cols) * cols
+  return fullRowCount > 0 ? items.slice(0, fullRowCount) : items
+}
+
 function CommunityBrowse({ adminPasscode, volume }: { adminPasscode: string | null; volume: number }) {
   const [sounds, setSounds] = useState<CommunitySound[]>([])
   const [total, setTotal] = useState(0)
@@ -1297,6 +1317,8 @@ function CommunityBrowse({ adminPasscode, volume }: { adminPasscode: string | nu
   const [editingSound, setEditingSound] = useState<CommunitySound | null>(null)
   const [deletingSound, setDeletingSound] = useState<CommunitySound | null>(null)
   const { showToast, ToastView } = useToast()
+  const gridRef = useRef<HTMLDivElement>(null)
+  const visibleSounds = useFullRows(sounds, gridRef)
 
   useEffect(() => {
     return () => { audioRef.current?.pause() }
@@ -1458,8 +1480,8 @@ function CommunityBrowse({ adminPasscode, volume }: { adminPasscode: string | nu
       )}
 
       {!loading && !error && sounds.length > 0 && (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {sounds.map((sound) => (
+        <div ref={gridRef} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {visibleSounds.map((sound) => (
             <div
               key={sound.code}
               className="group relative rounded-xl border border-white/10 bg-white/[0.02] p-4 transition-colors hover:bg-white/[0.04]"
