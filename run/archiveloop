@@ -663,6 +663,8 @@ function clean_cam_mount {
       fi
       rm "${CAM_MOUNT}/$line"
     done < /tmp/rmcandidatesbytime.txt
+    # Clean up temp files from RAM-backed /tmp
+    rm -f /tmp/rmcandidates.txt /tmp/rmcandidatesbytime.txt
   fi
 
   # delete directories that are now empty

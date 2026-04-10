@@ -479,8 +479,9 @@ func (dh *DriveHandlers) uploadData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Limit to 100MB
-	r.Body = http.MaxBytesReader(w, r.Body, 100*1024*1024)
+	// 20MB limit — drive-data.json is typically 1-10MB. JSON decoding uses
+	// 2-3x file size in peak RAM, so 100MB would OOM a 512MB Pi.
+	r.Body = http.MaxBytesReader(w, r.Body, 20*1024*1024)
 
 	var data drives.StoreData
 	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {

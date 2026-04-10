@@ -2,6 +2,7 @@ package drives
 
 import (
 	"encoding/json"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -380,20 +381,38 @@ func (s *Store) SyncToArchive() error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	src, err := os.ReadFile(s.path)
+	src, err := os.Open(s.path)
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+
+	tmp := archiveDataPath + ".tmp"
+	dst, err := os.Create(tmp)
 	if err != nil {
 		return err
 	}
 
-	tmp := archiveDataPath + ".tmp"
-	if err := os.WriteFile(tmp, src, 0644); err != nil {
+	n, err := io.Copy(dst, src)
+	if err != nil {
+		dst.Close()
 		os.Remove(tmp)
 		return err
 	}
+	if err := dst.Sync(); err != nil {
+		dst.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := dst.Close(); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+
 	if err := os.Rename(tmp, archiveDataPath); err != nil {
 		return err
 	}
-	log.Printf("[drives] Synced drive data to archive (%d bytes)", len(src))
+	log.Printf("[drives] Synced drive data to archive (%d bytes)", n)
 	return nil
 }
 

@@ -235,8 +235,10 @@ func (h *handlers) communityWrapsDownload(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Read the PNG data
-	data, err := io.ReadAll(resp.Body)
+	// Read the PNG data — cap at 20MB to prevent OOM from malicious/broken responses.
+	// Wraps are PNG images, typically <5MB.
+	const maxWrapBytes = 20 * 1024 * 1024
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxWrapBytes))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to download wrap")
 		return
