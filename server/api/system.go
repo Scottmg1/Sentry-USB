@@ -159,7 +159,10 @@ func (h *handlers) bleStatus(w http.ResponseWriter, r *http.Request) {
 		"/root/bin/tesla-control", "-ble", "-vin", strings.ToUpper(vin),
 		"session-info", "/root/.ble/key_private.pem", "infotainment")
 	if err != nil {
-		// Keys exist but pairing not confirmed — could be out of range or not paired
+		// Keys exist but pairing not confirmed — could be out of range or
+		// not paired.  Clear any stale "paired" flag so a device that is no
+		// longer paired (e.g. old Pi swapped out) stops showing BLE Paired.
+		_ = os.Remove("/root/.ble/paired")
 		writeJSON(w, http.StatusOK, map[string]string{"status": "keys_generated", "note": "Car not reachable or key not paired"})
 		return
 	}

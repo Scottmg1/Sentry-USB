@@ -223,6 +223,19 @@ function BlePairButton() {
         } else if (data.status === "keys_generated") {
           setBleState("idle")
           setBleMsg("")
+          // Keys exist but not flagged as paired — run a full (non-quick)
+          // verification in the background.  If the car is actually paired
+          // (e.g. user paired outside the UI flow), this will detect it and
+          // write the paired flag so the status updates.
+          fetch("/api/system/ble-status")
+            .then(r => r.json())
+            .then(d => {
+              if (d.status === "paired") {
+                setBleState("paired")
+                setBleMsg("Paired — click to re-pair")
+              }
+            })
+            .catch(() => { })
         }
       })
       .catch(() => { })
