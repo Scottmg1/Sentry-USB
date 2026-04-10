@@ -1461,6 +1461,7 @@ export default function Settings() {
   const [piConfig, setPiConfig] = useState<{ uses_ble: string } | null>(null)
   const [stableUpdate, setStableUpdate] = useState<{ version: string; release_url: string; release_notes: string } | null>(null)
   const [prereleaseUpdate, setPrereleaseUpdate] = useState<{ version: string; release_url: string; release_notes: string } | null>(null)
+  const [revertStable, setRevertStable] = useState<{ version: string; release_url: string; release_notes: string } | null>(null)
   const [autoUpdateEnabled, setAutoUpdateEnabled] = useState(true)
   const [includePrerelease, setIncludePrerelease] = useState(false)
 
@@ -1487,6 +1488,9 @@ export default function Settings() {
         if (data.prerelease?.available) {
           setPrereleaseUpdate({ version: data.prerelease.version, release_url: data.prerelease.release_url, release_notes: data.prerelease.release_notes })
         }
+        if (data.revert_stable) {
+          setRevertStable({ version: data.revert_stable.version, release_url: data.revert_stable.release_url, release_notes: data.revert_stable.release_notes })
+        }
       })
       .catch(() => { })
     fetch("/api/config/preference?key=auto_update_check")
@@ -1503,6 +1507,7 @@ export default function Settings() {
     setIsCheckingUpdate(true)
     setStableUpdate(null)
     setPrereleaseUpdate(null)
+    setRevertStable(null)
     setUpdateError(null)
     try {
       const wantPrerelease = includePrerelease || oneTimePrerelease
@@ -1523,6 +1528,10 @@ export default function Settings() {
         }
         if (data.prerelease?.available) {
           setPrereleaseUpdate({ version: data.prerelease.version, release_url: data.prerelease.release_url, release_notes: data.prerelease.release_notes })
+          foundAny = true
+        }
+        if (data.revert_stable) {
+          setRevertStable({ version: data.revert_stable.version, release_url: data.revert_stable.release_url, release_notes: data.revert_stable.release_notes })
           foundAny = true
         }
         if (!foundAny) {
@@ -1601,6 +1610,7 @@ export default function Settings() {
               clearInterval(pollInterval)
               setStableUpdate(null)
               setPrereleaseUpdate(null)
+              setRevertStable(null)
               setUpdateStatus("done")
               setUpdateMessage(`Update complete — now running ${data.version || "latest"}`)
               setVersion(data.version || "unknown")
@@ -1624,6 +1634,7 @@ export default function Settings() {
       setUpdateStatus("error")
       setUpdateError(err instanceof Error ? err.message : "Update failed")
       setUpdateMessage(null)
+      setRevertStable(null)
     }
   }
 
@@ -1855,6 +1866,27 @@ export default function Settings() {
                     className="shrink-0 rounded-lg bg-amber-500 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-amber-600"
                   >
                     Install
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {revertStable && updateStatus === "idle" && (
+              <div className="border-b border-white/5 bg-blue-500/5 px-3 py-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-blue-300">Revert to Stable: {revertStable.version}</p>
+                    <p className="mt-0.5 text-[11px] text-slate-400">
+                      Downgrade from pre-release to latest stable.{" "}
+                      <a href={revertStable.release_url} target="_blank" rel="noopener noreferrer"
+                        className="text-blue-400 hover:text-blue-300 underline">Notes</a>
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => handleInstallUpdate(revertStable.version)}
+                    className="shrink-0 rounded-lg bg-blue-500 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-blue-600"
+                  >
+                    Revert
                   </button>
                 </div>
               </div>

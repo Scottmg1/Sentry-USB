@@ -190,6 +190,7 @@ type releaseInfo struct {
 	HTMLURL    string `json:"html_url"`
 	Body       string `json:"body"`
 	Prerelease bool   `json:"prerelease"`
+	Draft      bool   `json:"draft"`
 }
 
 // fetchReleases fetches the most recent GitHub releases (both stable and prerelease).
@@ -207,8 +208,12 @@ func fetchReleases() ([]releaseInfo, error) {
 }
 
 // findLatestReleases picks the first stable and first prerelease from a list.
+// Draft releases are skipped — only published releases are considered.
 func findLatestReleases(releases []releaseInfo) (stable *releaseInfo, prerelease *releaseInfo) {
 	for i := range releases {
+		if releases[i].Draft {
+			continue
+		}
 		if releases[i].Prerelease {
 			if prerelease == nil {
 				prerelease = &releases[i]
@@ -528,6 +533,10 @@ func (h *handlers) checkForUpdate(w http.ResponseWriter, r *http.Request) {
 		"checked_at":      time.Now().UTC().Format(time.RFC3339),
 	}
 
+	// Detect if user is currently on a prerelease
+	_, _, _, currentPre, currentOK := parseSemver(currentVersion)
+	onPrerelease := currentOK && currentPre != ""
+
 	if latestStable != nil {
 		stableAvailable := canUpdate && isVersionNewer(latestStable.TagName, currentVersion)
 		result["update_available"] = stableAvailable
@@ -539,6 +548,17 @@ func (h *handlers) checkForUpdate(w http.ResponseWriter, r *http.Request) {
 			"release_url":   latestStable.HTMLURL,
 			"release_notes": latestStable.Body,
 			"available":     stableAvailable,
+		}
+
+		// If user is on a prerelease and the latest stable isn't flagged as
+		// a newer version (e.g. prerelease has a higher base), offer the
+		// stable release as a revert/downgrade option.
+		if onPrerelease && canUpdate && !stableAvailable {
+			result["revert_stable"] = map[string]interface{}{
+				"version":       latestStable.TagName,
+				"release_url":   latestStable.HTMLURL,
+				"release_notes": latestStable.Body,
+			}
 		}
 	} else {
 		result["update_available"] = false
