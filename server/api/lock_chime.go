@@ -460,8 +460,8 @@ func parseWAVInfo(data []byte) (*wavInfo, error) {
 	return nil, fmt.Errorf("could not determine WAV format")
 }
 
-// ensureMonoWav validates a WAV is 44.1kHz 16-bit PCM and converts stereo to mono if needed.
-// Returns the (possibly modified) WAV data.
+// ensureMonoWav validates a WAV is PCM 16-bit, resamples to 44.1kHz if needed,
+// and converts stereo/multi-channel to mono. Returns the (possibly modified) WAV data.
 func ensureMonoWav(data []byte) ([]byte, error) {
 	info, err := parseWAVInfo(data)
 	if err != nil {
@@ -471,46 +471,80 @@ func ensureMonoWav(data []byte) ([]byte, error) {
 	if info.audioFormat != 1 {
 		return nil, fmt.Errorf("only PCM WAV is supported (got format %d)", info.audioFormat)
 	}
-	if info.sampleRate != 44100 {
-		return nil, fmt.Errorf("sample rate must be 44100 Hz (got %d Hz)", info.sampleRate)
-	}
 	if info.bitsPerSample != 16 {
 		return nil, fmt.Errorf("bit depth must be 16-bit (got %d-bit)", info.bitsPerSample)
 	}
 
-	// Already mono — return as-is
-	if info.numChannels == 1 {
-		return data, nil
-	}
-
-	// Convert stereo (or multi-channel) to mono by averaging channels
-	if info.numChannels < 2 {
-		return data, nil
-	}
-
-	numSamples := int(info.dataSize) / (int(info.numChannels) * 2) // 2 bytes per 16-bit sample
-	monoData := make([]int16, numSamples)
-	srcOffset := info.dataOffset
 	channels := int(info.numChannels)
+	numFrames := int(info.dataSize) / (channels * 2) // frames (one sample per channel)
+	srcOffset := info.dataOffset
+	needsResample := info.sampleRate != 44100
+	needsMono := channels > 1
 
-	for i := 0; i < numSamples; i++ {
-		var sum int32
-		for ch := 0; ch < channels; ch++ {
-			idx := srcOffset + (i*channels+ch)*2
-			if idx+2 > len(data) {
-				break
-			}
-			sample := int16(binary.LittleEndian.Uint16(data[idx : idx+2]))
-			sum += int32(sample)
-		}
-		monoData[i] = int16(sum / int32(channels))
+	// Nothing to do — already mono 44100Hz 16-bit
+	if !needsResample && !needsMono {
+		return data, nil
 	}
 
-	// Build new WAV file: mono 44100Hz 16-bit
-	monoDataSize := uint32(numSamples * 2)
-	out := make([]byte, 44+monoDataSize)
+	// Step 1: Read all samples as interleaved int16
+	samples := make([]int16, numFrames*channels)
+	for i := range samples {
+		idx := srcOffset + i*2
+		if idx+2 > len(data) {
+			break
+		}
+		samples[i] = int16(binary.LittleEndian.Uint16(data[idx : idx+2]))
+	}
+
+	// Step 2: Mix down to mono if multi-channel
+	var mono []int16
+	if needsMono {
+		mono = make([]int16, numFrames)
+		for i := 0; i < numFrames; i++ {
+			var sum int32
+			for ch := 0; ch < channels; ch++ {
+				sum += int32(samples[i*channels+ch])
+			}
+			mono[i] = int16(sum / int32(channels))
+		}
+		log.Printf("[lockchime] Mixed %d-channel WAV to mono", channels)
+	} else {
+		mono = samples
+	}
+
+	// Step 3: Resample to 44100Hz if needed (linear interpolation)
+	var resampled []int16
+	if needsResample {
+		srcRate := float64(info.sampleRate)
+		dstRate := 44100.0
+		ratio := srcRate / dstRate
+		outLen := int(float64(len(mono)) / ratio)
+		resampled = make([]int16, outLen)
+
+		for i := 0; i < outLen; i++ {
+			srcPos := float64(i) * ratio
+			idx := int(srcPos)
+			frac := srcPos - float64(idx)
+
+			if idx+1 < len(mono) {
+				// Linear interpolation between two nearest samples
+				s0 := float64(mono[idx])
+				s1 := float64(mono[idx+1])
+				resampled[i] = int16(s0 + frac*(s1-s0))
+			} else if idx < len(mono) {
+				resampled[i] = mono[idx]
+			}
+		}
+		log.Printf("[lockchime] Resampled WAV from %d Hz to 44100 Hz (%d → %d samples)", info.sampleRate, len(mono), outLen)
+	} else {
+		resampled = mono
+	}
+
+	// Step 4: Build new WAV file: mono 44100Hz 16-bit
+	outDataSize := uint32(len(resampled) * 2)
+	out := make([]byte, 44+outDataSize)
 	copy(out[0:4], "RIFF")
-	binary.LittleEndian.PutUint32(out[4:8], 36+monoDataSize)
+	binary.LittleEndian.PutUint32(out[4:8], 36+outDataSize)
 	copy(out[8:12], "WAVE")
 	// fmt chunk
 	copy(out[12:16], "fmt ")
@@ -523,12 +557,12 @@ func ensureMonoWav(data []byte) ([]byte, error) {
 	binary.LittleEndian.PutUint16(out[34:36], 16)            // bits per sample
 	// data chunk
 	copy(out[36:40], "data")
-	binary.LittleEndian.PutUint32(out[40:44], monoDataSize)
-	for i, s := range monoData {
+	binary.LittleEndian.PutUint32(out[40:44], outDataSize)
+	for i, s := range resampled {
 		binary.LittleEndian.PutUint16(out[44+i*2:44+i*2+2], uint16(s))
 	}
 
-	log.Printf("[lockchime] Converted %d-channel WAV to mono (%d → %d bytes)", channels, len(data), len(out))
+	log.Printf("[lockchime] Normalized WAV to mono 44100Hz 16-bit (%d → %d bytes)", len(data), len(out))
 	return out, nil
 }
 
