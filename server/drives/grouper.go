@@ -1103,7 +1103,12 @@ func countGearSplitsInGroup(routes []Route, group []routeTimestamp) int {
 		return count
 	}
 
-	count := 1
+	// Mirror splitByGearState: count non-parked segments separated by park
+	// gaps. A park run >= parkGapSeconds ends the current drive; a subsequent
+	// non-park run starts a new one. All-park groups count as 1 (fallback).
+	count := 0
+	inDrive := false
+
 	for _, entry := range group {
 		r := &routes[entry.idx]
 		totalFrames := 0
@@ -1111,6 +1116,11 @@ func countGearSplitsInGroup(routes []Route, group []routeTimestamp) int {
 			totalFrames += run.Frames
 		}
 		if totalFrames == 0 {
+			// No gear data — treat as driving (same as splitByGearState)
+			if !inDrive {
+				inDrive = true
+				count++
+			}
 			continue
 		}
 		secPerFrame := 60.0 / float64(totalFrames)
@@ -1118,10 +1128,20 @@ func countGearSplitsInGroup(routes []Route, group []routeTimestamp) int {
 			if run.Gear == GearPark {
 				duration := float64(run.Frames) * secPerFrame
 				if duration >= parkGapSeconds {
+					inDrive = false
+				}
+			} else {
+				if !inDrive {
+					inDrive = true
 					count++
 				}
 			}
 		}
+	}
+
+	// If everything was parked, count as 1 (matches splitByGearState fallback)
+	if count == 0 {
+		return 1
 	}
 	return count
 }
