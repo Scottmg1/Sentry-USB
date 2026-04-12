@@ -390,14 +390,17 @@ function MyLibraryTab({ volume }: { volume: number }) {
     }
     audioRef.current?.pause()
     const url = `${API_BASE}/files/download?path=/mutable/LockChime/${encodeURIComponent(name)}`
-    const audio = new Audio(url)
-    audio.volume = volume
-    audioRef.current = audio
+    // Reuse a single Audio element — creating new Audio() on each tap breaks the
+    // user-gesture chain on mobile Safari, causing play() to be rejected.
+    if (!audioRef.current) audioRef.current = new Audio()
+    const audio = audioRef.current
     audio.onended = () => setPlayingName(null)
     audio.onerror = () => {
       setPlayingName(null)
       showToast("Could not play sound", "error")
     }
+    audio.src = url
+    audio.volume = volume
     audio.play().catch(() => {
       setPlayingName(null)
       showToast("Could not play sound", "error")
@@ -1332,14 +1335,17 @@ function CommunityBrowse({ adminPasscode, volume }: { adminPasscode: string | nu
     }
     audioRef.current?.pause()
     const url = `${API_BASE}/lockchime/community/stream/${code}`
-    const audio = new Audio(url)
-    audio.volume = volume
-    audioRef.current = audio
+    // Reuse a single Audio element — creating new Audio() on each tap breaks the
+    // user-gesture chain on mobile Safari, causing play() to be rejected.
+    if (!audioRef.current) audioRef.current = new Audio()
+    const audio = audioRef.current
     audio.onended = () => setPlayingCode(null)
     audio.onerror = () => {
       setPlayingCode(null)
       showToast("Could not play preview", "error")
     }
+    audio.src = url
+    audio.volume = volume
     audio.play().catch(() => {
       setPlayingCode(null)
       showToast("Could not play preview", "error")
