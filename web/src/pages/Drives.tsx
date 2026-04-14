@@ -590,8 +590,8 @@ export default function Drives() {
         const err = await res.json().catch(() => null)
         setImportMsg(err?.error || `Import failed (${res.status})`)
       }
-    } catch {
-      setImportMsg("Import failed — could not reach server")
+    } catch (err) {
+      setImportMsg(`Import failed — ${err instanceof Error ? err.message : "could not reach server"}`)
     } finally {
       setImporting(false)
       setTimeout(() => setImportMsg(""), 5000)
