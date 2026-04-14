@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -31,6 +32,14 @@ func (h *handlers) toggleDrives(w http.ResponseWriter, r *http.Request) {
 	} else {
 		// Randomize lock chime before enabling gadget (if random on_connect mode is active)
 		RandomizeOnConnect()
+		// Sync LockChime.wav into the cam disk image so Tesla reads the correct
+		// sound when the gadget comes up. Acquire camDiskMu to prevent racing with
+		// a concurrent syncLockChimeToCamDisk from the scheduler or manual randomize.
+		camDiskMu.Lock()
+		if err := copyLockChimeToCamMount(); err != nil {
+			log.Printf("lockchime: cam sync before gadget enable failed: %v", err)
+		}
+		camDiskMu.Unlock()
 		shell.Run("bash", "/root/bin/enable_gadget.sh")
 	}
 	writeOK(w)
@@ -150,7 +159,10 @@ func (h *handlers) bleStatus(w http.ResponseWriter, r *http.Request) {
 		"/root/bin/tesla-control", "-ble", "-vin", strings.ToUpper(vin),
 		"session-info", "/root/.ble/key_private.pem", "infotainment")
 	if err != nil {
-		// Keys exist but pairing not confirmed — could be out of range or not paired
+		// Keys exist but pairing not confirmed — could be out of range or
+		// not paired.  Clear any stale "paired" flag so a device that is no
+		// longer paired (e.g. old Pi swapped out) stops showing BLE Paired.
+		_ = os.Remove("/root/.ble/paired")
 		writeJSON(w, http.StatusOK, map[string]string{"status": "keys_generated", "note": "Car not reachable or key not paired"})
 		return
 	}

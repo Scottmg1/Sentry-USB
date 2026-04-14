@@ -20,7 +20,7 @@ type ProcessResult struct {
 	FilesWithGPS  int    `json:"files_with_gps"`
 	TotalPoints   int    `json:"total_points"`
 	Errors        int    `json:"errors"`
-	DrivesFound   int    `json:"drives_found"`
+	RoutesFound   int    `json:"routes_found"`
 	Duration      string `json:"duration"`
 	ErrorMessages []string `json:"error_messages,omitempty"`
 }
@@ -101,8 +101,7 @@ func (p *Processor) ProcessDirectory(ctx context.Context, clipsDir string, throt
 	}
 	result.FilesScanned = len(allFiles)
 
-	// Filter out already-processed files
-	// ProcessedSet indexes both original and normalized paths to handle mixed separators
+	// Filter out already-processed files (set uses normalized forward-slash paths)
 	processedSet := p.store.ProcessedSet()
 	var newFiles []fileInfo
 	for _, f := range allFiles {
@@ -124,7 +123,14 @@ func (p *Processor) ProcessDirectory(ctx context.Context, clipsDir string, throt
 	p.total = len(newFiles)
 	p.mu.Unlock()
 
+	// Scale save interval: save less frequently as dataset grows to reduce
+	// I/O overhead and serialization cost on low-RAM devices.
+	// At most ~99 files of progress can be lost on crash (reprocessing is
+	// idempotent so they'll be re-extracted on the next run).
 	saveInterval := 50
+	if len(newFiles) > 500 {
+		saveInterval = 100
+	}
 	throttle := time.Duration(throttleMs) * time.Millisecond
 	if throttleMs <= 0 {
 		// Default: 10ms between files on Pi to avoid CPU hogging
@@ -210,15 +216,19 @@ func (p *Processor) ProcessDirectory(ctx context.Context, clipsDir string, throt
 		log.Printf("[drives] Warning: failed to sync to archive: %v", err)
 	}
 
+	// Hint the GC to reclaim memory from processing before computing results.
+	// On 1GB Pi devices this prevents the post-processing result computation
+	// from hitting peak memory on top of unreleased processing allocations.
+	runtime.GC()
+
 	result.Duration = time.Since(start).Round(time.Millisecond).String()
 
-	// Count drives
-	routes := p.store.GetRoutes()
-	drives := GroupIntoDrives(routes)
-	result.DrivesFound = len(drives)
+	// Report route count — GroupIntoDrives is too memory-expensive to call
+	// here on low-RAM devices. Actual drive count is available via /api/drives/stats.
+	result.RoutesFound = p.store.RouteCount()
 
-	log.Printf("[drives] Done: %d files, %d with GPS, %d points, %d drives, %d errors in %s",
-		result.FilesNew, result.FilesWithGPS, result.TotalPoints, result.DrivesFound, result.Errors, result.Duration)
+	log.Printf("[drives] Done: %d files, %d with GPS, %d points, %d routes, %d errors in %s",
+		result.FilesNew, result.FilesWithGPS, result.TotalPoints, result.RoutesFound, result.Errors, result.Duration)
 
 	return result, nil
 }

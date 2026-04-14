@@ -174,6 +174,11 @@ func (h *handlers) communityWrapsUpload(w http.ResponseWriter, r *http.Request) 
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("X-Fingerprint", getFingerprint())
 
+	// Forward passcode if present (admin bypasses rate limiting)
+	if passcode := r.Header.Get("X-Passcode"); passcode != "" {
+		req.Header.Set("X-Passcode", passcode)
+	}
+
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -209,6 +214,11 @@ func (h *handlers) communityWrapsDownload(w http.ResponseWriter, r *http.Request
 	}
 	req.Header.Set("X-Fingerprint", getFingerprint())
 
+	// Forward passcode if present (admin bypasses rate limiting)
+	if passcode := r.Header.Get("X-Passcode"); passcode != "" {
+		req.Header.Set("X-Passcode", passcode)
+	}
+
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -225,8 +235,10 @@ func (h *handlers) communityWrapsDownload(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Read the PNG data
-	data, err := io.ReadAll(resp.Body)
+	// Read the PNG data — cap at 20MB to prevent OOM from malicious/broken responses.
+	// Wraps are PNG images, typically <5MB.
+	const maxWrapBytes = 20 * 1024 * 1024
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxWrapBytes))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to download wrap")
 		return

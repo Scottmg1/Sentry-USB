@@ -20,4 +20,7 @@ internal/
 cmd/
 internal/
 .claude
+.worktrees/
+.superpowers/
 videos
+docs

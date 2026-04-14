@@ -60,7 +60,7 @@ func awayModeLog(format string, args ...interface{}) {
 	}
 	defer f.Close()
 	msg := fmt.Sprintf(format, args...)
-	fmt.Fprintf(f, "%s: [away-mode] %s\n", time.Now().Format("Mon 02 Jan 15:04:05 MST 2006"), msg)
+	fmt.Fprintf(f, "%s: [away-mode] %s\n", time.Now().Format("Mon _2 Jan 15:04:05 MST 2006"), msg)
 }
 
 // Enable activates Away Mode for the given duration.  It starts the AP and

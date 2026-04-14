@@ -306,7 +306,9 @@ func (h *handlers) deleteFile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) uploadFile(w http.ResponseWriter, r *http.Request) {
-	r.ParseMultipartForm(500 << 20) // 500MB max
+	// 10MB in-memory limit — Go temp-files anything beyond this.
+	// Keeps RAM safe on 512MB Pi devices while still allowing large uploads.
+	r.ParseMultipartForm(10 << 20)
 
 	file, header, err := r.FormFile("file")
 	if err != nil {
