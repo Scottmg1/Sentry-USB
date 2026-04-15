@@ -551,6 +551,68 @@ func buildDriveStats(clips []timedRoute, idx int) Drive {
 		}
 	}
 
+	// Remove invalid GPS coordinates (near 0,0 "Null Island")
+	{
+		n := 0
+		for _, p := range allPoints {
+			if !(math.Abs(p.lat) < 1 && math.Abs(p.lng) < 1) {
+				allPoints[n] = p
+				n++
+			}
+		}
+		allPoints = allPoints[:n]
+	}
+
+	// Filter GPS outliers — points impossibly far from the median cluster or both neighbors
+	if len(allPoints) > 2 {
+		// Step 1: Find median location from middle 50% of points
+		q1 := len(allPoints) / 4
+		q3 := len(allPoints) * 3 / 4
+		var medLat, medLng float64
+		count := 0
+		for i := q1; i <= q3; i++ {
+			medLat += allPoints[i].lat
+			medLng += allPoints[i].lng
+			count++
+		}
+		medLat /= float64(count)
+		medLng /= float64(count)
+
+		// Step 2: Remove points >1,000 km from median cluster
+		const maxFromMedianM = 1000000.0
+		n := 0
+		for _, p := range allPoints {
+			if haversineM(p.lat, p.lng, medLat, medLng) <= maxFromMedianM {
+				allPoints[n] = p
+				n++
+			}
+		}
+		allPoints = allPoints[:n]
+
+		// Step 3: Remove isolated outliers far from both neighbors
+		const maxJumpM = 5000.0
+		remove := make([]bool, len(allPoints))
+		for i := range allPoints {
+			hasPrev := i > 0
+			hasNext := i < len(allPoints)-1
+			farFromPrev := hasPrev && haversineM(allPoints[i-1].lat, allPoints[i-1].lng, allPoints[i].lat, allPoints[i].lng) > maxJumpM
+			farFromNext := hasNext && haversineM(allPoints[i].lat, allPoints[i].lng, allPoints[i+1].lat, allPoints[i+1].lng) > maxJumpM
+			if (hasPrev && hasNext && farFromPrev && farFromNext) ||
+				(!hasPrev && farFromNext) ||
+				(!hasNext && farFromPrev) {
+				remove[i] = true
+			}
+		}
+		n = 0
+		for i, p := range allPoints {
+			if !remove[i] {
+				allPoints[n] = p
+				n++
+			}
+		}
+		allPoints = allPoints[:n]
+	}
+
 	// Compute distance and speeds
 	// Prefer actual vehicle speed sensor data (seiSpeed) over GPS-derived speed.
 	var totalDistanceM float64
