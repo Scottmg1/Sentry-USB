@@ -1554,11 +1554,61 @@ then
       reboot
       exit 0
     fi
-  else
-    # Fallback for other boards (Pi Zero W, Pi Zero 2 W, etc.)
-    if ! grep -q 'dtoverlay=dwc2' "$PICONFIG_PATH"
+  elif isPi2
+  then
+    # Ensure [pi02] section exists with dtoverlay=dwc2.
+    # The stock Bookworm config.txt has dtoverlay=dwc2 inside [cm5], so a
+    # bare grep would wrongly conclude the overlay is already enabled — but
+    # the [cm5] section does not apply to Pi Zero 2 W.
+    pi02_needs_reboot=false
+    if grep -q '^\[pi02\]' "$PICONFIG_PATH"
     then
-      echo -e "dtoverlay=dwc2\n" >> "$PICONFIG_PATH"
+      # Section exists — check if dtoverlay=dwc2 is present within it
+      if ! sed -n '/^\[pi02\]/,/^\[/p' "$PICONFIG_PATH" | grep -q 'dtoverlay=dwc2'
+      then
+        sed -i '/^\[pi02\]/a dtoverlay=dwc2' "$PICONFIG_PATH"
+        pi02_needs_reboot=true
+      fi
+    else
+      # No [pi02] section — create one before [all] if possible
+      if grep -q '^\[all\]' "$PICONFIG_PATH"
+      then
+        sed -i '/^\[all\]/i [pi02]\ndtoverlay=dwc2\n' "$PICONFIG_PATH"
+      else
+        printf '\n[pi02]\ndtoverlay=dwc2\n' >> "$PICONFIG_PATH"
+      fi
+      pi02_needs_reboot=true
+    fi
+    # Clean up global dtoverlay=dwc2 that is outside any section
+    sed -i '/^\[/,$!{/^dtoverlay=dwc2$/d}' "$PICONFIG_PATH"
+    if [ "$pi02_needs_reboot" = true ]
+    then
+      setup_progress "rebooting to apply dwc2 overlay change (Pi Zero 2 W gadget mode)"
+      reboot
+      exit 0
+    fi
+  else
+    # Fallback for other boards (Pi Zero W, etc.)
+    # Check that dtoverlay=dwc2 is present in the [all] section or globally
+    # (before any [section] header), not just anywhere in the file — the
+    # stock Bookworm config.txt has dtoverlay=dwc2 inside [cm5] which does
+    # not apply to other boards.
+    has_global_dwc2=false
+    if sed -n '1,/^\[/p' "$PICONFIG_PATH" | grep -q 'dtoverlay=dwc2'
+    then
+      has_global_dwc2=true
+    elif sed -n '/^\[all\]/,/^\[/p' "$PICONFIG_PATH" | grep -q 'dtoverlay=dwc2'
+    then
+      has_global_dwc2=true
+    fi
+    if [ "$has_global_dwc2" = false ]
+    then
+      if grep -q '^\[all\]' "$PICONFIG_PATH"
+      then
+        sed -i '/^\[all\]/a dtoverlay=dwc2' "$PICONFIG_PATH"
+      else
+        echo -e "dtoverlay=dwc2\n" >> "$PICONFIG_PATH"
+      fi
       setup_progress "rebooting to apply dwc2 overlay change"
       reboot
       exit 0
