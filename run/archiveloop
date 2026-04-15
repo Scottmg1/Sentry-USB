@@ -11,20 +11,26 @@ modprobe -r g_ether
 
 export LOG_FILE=/mutable/archiveloop.log
 
+# If /mutable is full, try to recover by truncating the log file
+# so archiveloop can start instead of crash-looping.
+if ! echo "test" >> "$LOG_FILE" 2>/dev/null; then
+  : > "$LOG_FILE" 2>/dev/null || true
+fi
+
 function log () {
-  echo "$( date ):" "$@" >> "$LOG_FILE"
-  if [[ "$(stat --format="%s" "$LOG_FILE")" -gt 1000000 ]]
+  echo "$( date ):" "$@" >> "$LOG_FILE" 2>/dev/null || true
+  if [[ "$(stat --format="%s" "$LOG_FILE" 2>/dev/null)" -gt 1000000 ]] 2>/dev/null
   then
     local log_file2="${LOG_FILE}.2"
-    tail -n 5000 "$LOG_FILE" > "${log_file2}"
-    mv "$log_file2" "$LOG_FILE"
+    tail -n 5000 "$LOG_FILE" > "${log_file2}" 2>/dev/null
+    mv "$log_file2" "$LOG_FILE" 2>/dev/null || true
     log "(log truncated)"
   fi
 }
 
 function log_errors_on_exit {
   log "archiveloop exited with code $1. Recent errors follow"
-  journalctl -n 15 -u teslausb >> "$LOG_FILE"
+  journalctl -n 15 -u teslausb >> "$LOG_FILE" 2>/dev/null || true
   log "end of errors."
   exit "$1"
 }
