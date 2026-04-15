@@ -182,7 +182,7 @@ function sync_user_media_to_cam () {
     # Active chime is tracked via /mutable/LockChime/.active_name (directory-based library).
     _active_chime_name=""
     if [ -f "/mutable/LockChime/.active_name" ]; then
-      _active_chime_name=$(cat "/mutable/LockChime/.active_name" 2>/dev/null | tr -d '\n\r')
+      _active_chime_name=$(tr -d '\n\r' < "/mutable/LockChime/.active_name")
     fi
     if [ -n "$_active_chime_name" ] && [ -f "/mutable/LockChime/$_active_chime_name" ]
     then
