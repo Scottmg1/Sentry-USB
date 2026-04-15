@@ -358,31 +358,30 @@ func splitClipAtParkGaps(clip timedRoute) []clipSegment {
 			continue
 		}
 
-		segPoints := make([]GPSPoint, endIdx-startIdx)
-		copy(segPoints, clip.Points[startIdx:endIdx])
+		// Use slice windows instead of copying — all consumers
+		// (GroupSummaries, BuildSingleDrive, etc.) only read point data.
+		// This avoids duplicating potentially hundreds of MB of GPS data
+		// during grouping, which is critical on memory-constrained Pis.
+		segPoints := clip.Points[startIdx:endIdx:endIdx]
 
 		var segGears []uint8
 		if len(clip.GearStates) >= endIdx {
-			segGears = make([]uint8, endIdx-startIdx)
-			copy(segGears, clip.GearStates[startIdx:endIdx])
+			segGears = clip.GearStates[startIdx:endIdx:endIdx]
 		}
 
 		var segAP []uint8
 		if len(clip.AutopilotStates) >= endIdx {
-			segAP = make([]uint8, endIdx-startIdx)
-			copy(segAP, clip.AutopilotStates[startIdx:endIdx])
+			segAP = clip.AutopilotStates[startIdx:endIdx:endIdx]
 		}
 
 		var segSpeeds []float32
 		if len(clip.Speeds) >= endIdx {
-			segSpeeds = make([]float32, endIdx-startIdx)
-			copy(segSpeeds, clip.Speeds[startIdx:endIdx])
+			segSpeeds = clip.Speeds[startIdx:endIdx:endIdx]
 		}
 
 		var segAccel []float32
 		if len(clip.AccelPositions) >= endIdx {
-			segAccel = make([]float32, endIdx-startIdx)
-			copy(segAccel, clip.AccelPositions[startIdx:endIdx])
+			segAccel = clip.AccelPositions[startIdx:endIdx:endIdx]
 		}
 
 		// Compute timestamp offset for this segment within the clip

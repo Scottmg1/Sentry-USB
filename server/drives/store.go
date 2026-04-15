@@ -263,6 +263,17 @@ func (s *Store) GetRoutes() []Route {
 	return routes
 }
 
+// WithRoutes calls fn with a direct reference to the routes slice while
+// holding the read lock. This avoids the allocation of GetRoutes' copy,
+// which matters on memory-constrained Pis where the route data can be
+// hundreds of MB. Callers MUST NOT retain references to the slice or
+// its elements after fn returns.
+func (s *Store) WithRoutes(fn func(routes []Route)) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	fn(s.data.Routes)
+}
+
 // Path returns the data file path.
 func (s *Store) Path() string {
 	return s.path
