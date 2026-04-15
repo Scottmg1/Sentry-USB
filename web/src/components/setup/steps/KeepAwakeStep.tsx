@@ -112,7 +112,7 @@ export function KeepAwakeStep({ data, onChange, onBatchChange }: StepProps) {
 
       {/* Method-specific fields */}
       {method === "ble" && (
-        <Field label="Vehicle VIN" field="TESLA_BLE_VIN" placeholder="5YJ3E1EA4JF000001" data={data} onChange={onChange}
+        <Field label="Vehicle VIN" field="TESLA_BLE_VIN" placeholder="5YJ3E1EA4JF042069" data={data} onChange={onChange}
           hint="After setup, use the Pair BLE button in Settings to complete pairing."
           error={!data.TESLA_BLE_VIN?.trim()} />
       )}
@@ -124,7 +124,7 @@ export function KeepAwakeStep({ data, onChange, onBatchChange }: StepProps) {
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Tessie API Token" field="TESSIE_API_TOKEN" type="password" placeholder="Your Tessie API token" data={data} onChange={onChange}
             error={!data.TESSIE_API_TOKEN?.trim()} />
-          <Field label="Vehicle VIN" field="TESSIE_VIN" placeholder="5YJ3E1EA4JF000001" data={data} onChange={onChange}
+          <Field label="Vehicle VIN" field="TESSIE_VIN" placeholder="5YJ3E1EA4JF042069" data={data} onChange={onChange}
             error={!data.TESSIE_VIN?.trim()} />
         </div>
       )}
