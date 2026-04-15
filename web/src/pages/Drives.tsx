@@ -525,6 +525,16 @@ export default function Drives() {
         const s = await fetch("/api/drives/status")
         const data = await s.json()
         setArchiving(!!data.archiving)
+        setProcessing((prev) => {
+          if (!prev && data.running) return true
+          if (prev && !data.running) { loadDrives(); return false }
+          return prev
+        })
+        setImporting((prev) => {
+          if (!prev && data.importing) return true
+          if (prev && !data.importing) { loadDrives(); return false }
+          return prev
+        })
       } catch { /* ignore */ }
     }
     checkArchive()
@@ -597,7 +607,8 @@ export default function Drives() {
           if (!data.importing) {
             clearInterval(poll)
             setImporting(false)
-            setImportMsg("Import complete")
+            const count = data.routes_count ?? 0
+            setImportMsg(`Import complete — ${count} drive${count !== 1 ? "s" : ""} loaded`)
             loadDrives()
             setTimeout(() => setImportMsg(""), 5000)
           }
@@ -716,7 +727,7 @@ export default function Drives() {
               className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-white/10 disabled:opacity-50"
             >
               {processing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
-              Process
+              {processing ? "Processing…" : "Process"}
             </button>
             {showProcessMenu && !processing && (
               <div className="absolute right-0 z-[1100] mt-1 w-56 rounded-lg border border-white/10 bg-slate-950/95 py-1 shadow-xl backdrop-blur-sm">
@@ -766,7 +777,7 @@ export default function Drives() {
       </div>
 
       {processMsg && <p className="text-xs text-amber-400">{processMsg}</p>}
-      {importMsg && <p className={cn("text-xs", importMsg === "Import complete" ? "text-emerald-400" : importMsg.startsWith("Upload failed") || importMsg.startsWith("Import failed") ? "text-red-400" : "text-amber-400")}>{importMsg}</p>}
+      {importMsg && <p className={cn("text-xs", importMsg.startsWith("Import complete") ? "text-emerald-400" : importMsg.startsWith("Upload failed") || importMsg.startsWith("Import failed") ? "text-red-400" : "text-amber-400")}>{importMsg}</p>}
 
       {/* Main content: sidebar + map */}
       <div className="relative flex flex-1 gap-4 overflow-hidden rounded-xl border border-white/5">
