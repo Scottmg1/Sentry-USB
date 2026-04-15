@@ -297,7 +297,7 @@ export default function Drives() {
     for (const r of routes) {
       if (r.points && r.points.length > 1) {
         const line = L.polyline(r.points as L.LatLngExpression[], {
-          color: "#3b82f6", weight: 2, opacity: 0.4, smoothFactor: 1.5,
+          color: "#3b82f6", weight: 2, opacity: 0.4, smoothFactor: 1.2,
         }).addTo(map)
           ; (line as any)._driveId = r.id
         line.on("click", () => selectDrive(r.id))
@@ -382,14 +382,14 @@ export default function Drives() {
             const segPts = latlngs.slice(segStart, i)
             if (segPts.length >= 2) {
               const color = prevEngaged ? "#22c55e" : "#3b82f6" // green for FSD, blue for manual
-              const line = L.polyline(segPts, { color, weight: 4, opacity: 1, smoothFactor: 1 }).addTo(map)
+              const line = L.polyline(segPts, { color, weight: 4, opacity: 1, smoothFactor: 1.2 }).addTo(map)
               selectionLayers.current.push(line)
             }
             segStart = Math.max(i - 1, 0) // overlap by 1 point for continuity
           }
         }
       } else {
-        const route = L.polyline(latlngs, { color: "#3b82f6", weight: 4, opacity: 1, smoothFactor: 1 }).addTo(map)
+        const route = L.polyline(latlngs, { color: "#3b82f6", weight: 4, opacity: 1, smoothFactor: 1.2 }).addTo(map)
         selectionLayers.current.push(route)
       }
 
