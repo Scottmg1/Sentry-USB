@@ -286,6 +286,9 @@ func (h *handlers) getSSHPubKey(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) generateSSHKey(w http.ResponseWriter, r *http.Request) {
+	// Root FS is normally read-only; remount rw so we can write to /root/.ssh/
+	shell.Run("bash", "-c", "/root/bin/remountfs_rw")
+
 	// Remove existing key so ssh-keygen doesn't prompt to overwrite
 	os.Remove(sshKeyPath)
 	os.Remove(sshPubKeyPath)
