@@ -55,6 +55,9 @@ func main() {
 	awm.RestoreFromFile()
 	api.RegisterAwayModeRoutes(mux, awm)
 
+	// Memory debug page (sentryusb.local/memory)
+	mux.HandleFunc("GET /memory", api.MemoryPage)
+
 	// WebSocket endpoint
 	mux.HandleFunc("/api/ws", func(w http.ResponseWriter, r *http.Request) {
 		ws.ServeWs(hub, w, r)
