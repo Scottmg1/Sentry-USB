@@ -669,6 +669,8 @@ function clean_cam_mount {
       fi
       rm "${CAM_MOUNT}/$line"
     done < /tmp/rmcandidatesbytime.txt
+    # Clean up temp files from RAM-backed /tmp
+    rm -f /tmp/rmcandidates.txt /tmp/rmcandidatesbytime.txt
   fi
 
   # delete directories that are now empty
@@ -1071,7 +1073,6 @@ function timesyncloop {
   echo -n timesyncloop > /proc/self/comm
   while true
   do
-    sleep "${TIME_SYNC_INTERVAL:-3600}"
     if ping -c 1 -W 3 time.google.com &>/dev/null || ping -c 1 -W 3 129.6.15.28 &>/dev/null; then
       set_time
       # Sync NTP-corrected time to RTC battery (Pi never shuts down gracefully)
@@ -1079,6 +1080,7 @@ function timesyncloop {
         rtc_sync_systohc || true
       fi
     fi
+    sleep "${TIME_SYNC_INTERVAL:-3600}"
   done
 }
 

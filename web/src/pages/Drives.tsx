@@ -221,6 +221,8 @@ export default function Drives() {
   const [showProcessMenu, setShowProcessMenu] = useState(false)
   const [archiving, setArchiving] = useState(false)
   const [showFSDMarkers, setShowFSDMarkers] = useState(true)
+  const [importing, setImporting] = useState(false)
+  const [importMsg, setImportMsg] = useState("")
   const fsdEventLayers = useRef<L.Layer[]>([])
 
   // ── Init map ──
@@ -571,6 +573,8 @@ export default function Drives() {
 
   // ── Upload / Download ──
   async function handleUpload(file: File) {
+    setImporting(true)
+    setImportMsg("")
     try {
       const text = await file.text()
       const res = await fetch("/api/drives/data/upload", {
@@ -578,8 +582,20 @@ export default function Drives() {
         headers: { "Content-Type": "application/json" },
         body: text,
       })
-      if (res.ok) loadDrives()
-    } catch { /* ignore */ }
+      if (res.ok) {
+        const result = await res.json()
+        setImportMsg(`Imported ${result.routes_count} drive${result.routes_count !== 1 ? "s" : ""}`)
+        loadDrives()
+      } else {
+        const err = await res.json().catch(() => null)
+        setImportMsg(err?.error || `Import failed (${res.status})`)
+      }
+    } catch (err) {
+      setImportMsg(`Import failed — ${err instanceof Error ? err.message : "could not reach server"}`)
+    } finally {
+      setImporting(false)
+      setTimeout(() => setImportMsg(""), 5000)
+    }
   }
 
   // ── Derived ──
@@ -730,14 +746,15 @@ export default function Drives() {
             <Download className="h-3 w-3" /> Export
           </a>
           {/* Upload */}
-          <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-white/10">
-            <Upload className="h-3 w-3" /> Import
+          <button onClick={() => fileInputRef.current?.click()} disabled={importing} className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-white/10 disabled:opacity-50 disabled:pointer-events-none">
+            {importing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Upload className="h-3 w-3" />} {importing ? "Importing…" : "Import"}
           </button>
           <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(f) }} />
         </div>
       </div>
 
       {processMsg && <p className="text-xs text-amber-400">{processMsg}</p>}
+      {importMsg && <p className={cn("text-xs", importMsg.startsWith("Imported") ? "text-emerald-400" : "text-red-400")}>{importMsg}</p>}
 
       {/* Main content: sidebar + map */}
       <div className="relative flex flex-1 gap-4 overflow-hidden rounded-xl border border-white/5">

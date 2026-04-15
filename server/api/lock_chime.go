@@ -26,11 +26,11 @@ const lockChimeDir = "/mutable/LockChime"
 // lockChimeTarget is the path Tesla reads the lock sound from (root of USB drive).
 const lockChimeTarget = "/mutable/LockChime.wav"
 
-// lockChimeMaxBytes is the max upload size (5 MB — well above any 7-second WAV).
-const lockChimeMaxBytes = 5 * 1024 * 1024
+// lockChimeMaxBytes is the max upload size (1 MB).
+const lockChimeMaxBytes = 1 * 1024 * 1024
 
-// lockChimeMaxSeconds is Tesla's documented maximum lock sound duration.
-const lockChimeMaxSeconds = 7.0
+// lockChimeMaxSeconds is the maximum lock sound duration.
+const lockChimeMaxSeconds = 5.0
 
 const lockChimeConfigFile = "/mutable/LockChime/.random_config.json"
 const lockChimeActiveFile = "/mutable/LockChime/.active_name"
@@ -46,7 +46,7 @@ func lockChimeLog(format string, args ...interface{}) {
 	}
 	defer f.Close()
 	msg := fmt.Sprintf(format, args...)
-	fmt.Fprintf(f, "%s: [lock-chime] %s\n", time.Now().Format("Mon Jan _2 15:04:05 MST 2006"), msg)
+	fmt.Fprintf(f, "%s: [lock-chime] %s\n", time.Now().Format("Mon _2 Jan 15:04:05 MST 2006"), msg)
 }
 
 // writeChimeFileAtomic writes data to destPath using the same atomic pattern as
@@ -397,6 +397,175 @@ func parseWAVDuration(data []byte) (float64, error) {
 	return 0, fmt.Errorf("could not determine WAV duration")
 }
 
+type wavInfo struct {
+	audioFormat   uint16
+	numChannels   uint16
+	sampleRate    uint32
+	bitsPerSample uint16
+	duration      float64
+	fmtOffset     int    // offset of fmt chunk in data
+	dataOffset    int    // offset of data chunk payload in data
+	dataSize      uint32 // size of data chunk payload
+}
+
+// parseWAVInfo extracts format details from a WAV file.
+func parseWAVInfo(data []byte) (*wavInfo, error) {
+	if len(data) < 44 {
+		return nil, fmt.Errorf("file too small to be a valid WAV")
+	}
+	if string(data[0:4]) != "RIFF" || string(data[8:12]) != "WAVE" {
+		return nil, fmt.Errorf("not a WAV file — must be .wav format")
+	}
+
+	info := &wavInfo{}
+	pos := 12
+	fmtFound := false
+
+	for pos+8 <= len(data) {
+		chunkID := string(data[pos : pos+4])
+		chunkSize := binary.LittleEndian.Uint32(data[pos+4 : pos+8])
+
+		if chunkID == "fmt " {
+			if int(pos)+8+int(chunkSize) > len(data) || chunkSize < 16 {
+				return nil, fmt.Errorf("malformed WAV fmt chunk")
+			}
+			info.fmtOffset = pos
+			info.audioFormat = binary.LittleEndian.Uint16(data[pos+8 : pos+10])
+			info.numChannels = binary.LittleEndian.Uint16(data[pos+10 : pos+12])
+			info.sampleRate = binary.LittleEndian.Uint32(data[pos+12 : pos+16])
+			info.bitsPerSample = binary.LittleEndian.Uint16(data[pos+22 : pos+24])
+			fmtFound = true
+		} else if chunkID == "data" && fmtFound {
+			info.dataOffset = pos + 8
+			info.dataSize = chunkSize
+			if info.sampleRate > 0 && info.numChannels > 0 && info.bitsPerSample > 0 {
+				bytesPerSample := uint32(info.numChannels) * uint32(info.bitsPerSample) / 8
+				byteRate := info.sampleRate * bytesPerSample
+				if byteRate > 0 {
+					info.duration = float64(chunkSize) / float64(byteRate)
+				}
+			}
+			return info, nil
+		}
+
+		pos += 8 + int(chunkSize)
+		if chunkSize%2 != 0 {
+			pos++
+		}
+	}
+
+	if !fmtFound {
+		return nil, fmt.Errorf("not a WAV file — must be .wav format")
+	}
+	return nil, fmt.Errorf("could not determine WAV format")
+}
+
+// ensureMonoWav validates a WAV is PCM 16-bit, resamples to 44.1kHz if needed,
+// and converts stereo/multi-channel to mono. Returns the (possibly modified) WAV data.
+func ensureMonoWav(data []byte) ([]byte, error) {
+	info, err := parseWAVInfo(data)
+	if err != nil {
+		return nil, err
+	}
+
+	if info.audioFormat != 1 {
+		return nil, fmt.Errorf("only PCM WAV is supported (got format %d)", info.audioFormat)
+	}
+	if info.bitsPerSample != 16 {
+		return nil, fmt.Errorf("bit depth must be 16-bit (got %d-bit)", info.bitsPerSample)
+	}
+
+	channels := int(info.numChannels)
+	numFrames := int(info.dataSize) / (channels * 2) // frames (one sample per channel)
+	srcOffset := info.dataOffset
+	needsResample := info.sampleRate != 44100
+	needsMono := channels > 1
+
+	// Nothing to do — already mono 44100Hz 16-bit
+	if !needsResample && !needsMono {
+		return data, nil
+	}
+
+	// Step 1: Read all samples as interleaved int16
+	samples := make([]int16, numFrames*channels)
+	for i := range samples {
+		idx := srcOffset + i*2
+		if idx+2 > len(data) {
+			break
+		}
+		samples[i] = int16(binary.LittleEndian.Uint16(data[idx : idx+2]))
+	}
+
+	// Step 2: Mix down to mono if multi-channel
+	var mono []int16
+	if needsMono {
+		mono = make([]int16, numFrames)
+		for i := 0; i < numFrames; i++ {
+			var sum int32
+			for ch := 0; ch < channels; ch++ {
+				sum += int32(samples[i*channels+ch])
+			}
+			mono[i] = int16(sum / int32(channels))
+		}
+		log.Printf("[lockchime] Mixed %d-channel WAV to mono", channels)
+	} else {
+		mono = samples
+	}
+
+	// Step 3: Resample to 44100Hz if needed (linear interpolation)
+	var resampled []int16
+	if needsResample {
+		srcRate := float64(info.sampleRate)
+		dstRate := 44100.0
+		ratio := srcRate / dstRate
+		outLen := int(float64(len(mono)) / ratio)
+		resampled = make([]int16, outLen)
+
+		for i := 0; i < outLen; i++ {
+			srcPos := float64(i) * ratio
+			idx := int(srcPos)
+			frac := srcPos - float64(idx)
+
+			if idx+1 < len(mono) {
+				// Linear interpolation between two nearest samples
+				s0 := float64(mono[idx])
+				s1 := float64(mono[idx+1])
+				resampled[i] = int16(s0 + frac*(s1-s0))
+			} else if idx < len(mono) {
+				resampled[i] = mono[idx]
+			}
+		}
+		log.Printf("[lockchime] Resampled WAV from %d Hz to 44100 Hz (%d → %d samples)", info.sampleRate, len(mono), outLen)
+	} else {
+		resampled = mono
+	}
+
+	// Step 4: Build new WAV file: mono 44100Hz 16-bit
+	outDataSize := uint32(len(resampled) * 2)
+	out := make([]byte, 44+outDataSize)
+	copy(out[0:4], "RIFF")
+	binary.LittleEndian.PutUint32(out[4:8], 36+outDataSize)
+	copy(out[8:12], "WAVE")
+	// fmt chunk
+	copy(out[12:16], "fmt ")
+	binary.LittleEndian.PutUint32(out[16:20], 16) // chunk size
+	binary.LittleEndian.PutUint16(out[20:22], 1)  // PCM
+	binary.LittleEndian.PutUint16(out[22:24], 1)  // mono
+	binary.LittleEndian.PutUint32(out[24:28], 44100)
+	binary.LittleEndian.PutUint32(out[28:32], 44100*1*16/8) // byte rate
+	binary.LittleEndian.PutUint16(out[32:34], 1*16/8)       // block align
+	binary.LittleEndian.PutUint16(out[34:36], 16)            // bits per sample
+	// data chunk
+	copy(out[36:40], "data")
+	binary.LittleEndian.PutUint32(out[40:44], outDataSize)
+	for i, s := range resampled {
+		binary.LittleEndian.PutUint16(out[44+i*2:44+i*2+2], uint16(s))
+	}
+
+	log.Printf("[lockchime] Normalized WAV to mono 44100Hz 16-bit (%d → %d bytes)", len(data), len(out))
+	return out, nil
+}
+
 // ──────────────────────────────────────────────────────────────────
 // Random config helpers
 // ──────────────────────────────────────────────────────────────────
@@ -692,7 +861,7 @@ func (h *handlers) lockChimeUpload(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, lockChimeMaxBytes)
 
 	if err := r.ParseMultipartForm(lockChimeMaxBytes); err != nil {
-		writeError(w, http.StatusBadRequest, "Upload too large (max 5 MB)")
+		writeError(w, http.StatusBadRequest, "Upload too large (max 1 MB)")
 		return
 	}
 
@@ -715,7 +884,14 @@ func (h *handlers) lockChimeUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate WAV format and duration
+	// Validate and normalize WAV: must be 44.1kHz 16-bit PCM, convert stereo→mono
+	data, err = ensureMonoWav(data)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	// Validate duration
 	duration, err := parseWAVDuration(data)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -723,7 +899,14 @@ func (h *handlers) lockChimeUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	if duration > lockChimeMaxSeconds {
 		writeError(w, http.StatusBadRequest,
-			fmt.Sprintf("Sound is %.1f seconds — Tesla requires 7 seconds or less", duration))
+			fmt.Sprintf("Sound is %.1f seconds — must be %.0f seconds or less", duration, lockChimeMaxSeconds))
+		return
+	}
+
+	// Check size after potential stereo→mono conversion
+	if len(data) > lockChimeMaxBytes {
+		writeError(w, http.StatusBadRequest,
+			fmt.Sprintf("File is too large (%d KB) — max 1 MB", len(data)/1024))
 		return
 	}
 
@@ -1092,8 +1275,19 @@ func (h *handlers) communityLockChimeStream(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	req, err := http.NewRequest("GET", supportServerURL+"/lockchime/download/"+code, nil)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to create request")
+		return
+	}
+
+	// Forward passcode if present (admin bypasses rate limiting)
+	if passcode := r.Header.Get("X-Passcode"); passcode != "" {
+		req.Header.Set("X-Passcode", passcode)
+	}
+
 	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Get(supportServerURL + "/lockchime/download/" + code)
+	resp, err := client.Do(req)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "Failed to fetch sound")
 		return
@@ -1136,6 +1330,30 @@ func (h *handlers) communityLockChimeUpload(w http.ResponseWriter, r *http.Reque
 	fileData, err := io.ReadAll(file)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "Failed to read file")
+		return
+	}
+
+	// Validate and normalize WAV: must be 44.1kHz 16-bit PCM, convert stereo→mono
+	fileData, err = ensureMonoWav(fileData)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	// Validate size after potential stereo→mono conversion
+	if len(fileData) > lockChimeMaxBytes {
+		writeError(w, http.StatusBadRequest,
+			fmt.Sprintf("File is too large (%d KB) — max 1 MB", len(fileData)/1024))
+		return
+	}
+	duration, err := parseWAVDuration(fileData)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if duration > lockChimeMaxSeconds {
+		writeError(w, http.StatusBadRequest,
+			fmt.Sprintf("Sound is %.1f seconds — must be %.0f seconds or less", duration, lockChimeMaxSeconds))
 		return
 	}
 
@@ -1200,6 +1418,11 @@ func (h *handlers) communityLockChimeDownload(w http.ResponseWriter, r *http.Req
 	}
 	req.Header.Set("X-Fingerprint", getFingerprint())
 
+	// Forward passcode if present (admin bypasses rate limiting)
+	if passcode := r.Header.Get("X-Passcode"); passcode != "" {
+		req.Header.Set("X-Passcode", passcode)
+	}
+
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -1222,11 +1445,16 @@ func (h *handlers) communityLockChimeDownload(w http.ResponseWriter, r *http.Req
 		return
 	}
 	if len(data) > lockChimeMaxBytes {
-		writeError(w, http.StatusBadRequest, "Downloaded sound exceeds 5 MB size limit")
+		writeError(w, http.StatusBadRequest, "Downloaded sound exceeds 1 MB size limit")
 		return
 	}
 
-	// Validate WAV format and duration
+	// Validate and normalize WAV: ensure mono 44.1kHz 16-bit
+	data, err = ensureMonoWav(data)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Downloaded file is not a valid WAV: "+err.Error())
+		return
+	}
 	duration, err := parseWAVDuration(data)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "Downloaded file is not a valid WAV: "+err.Error())
@@ -1234,7 +1462,7 @@ func (h *handlers) communityLockChimeDownload(w http.ResponseWriter, r *http.Req
 	}
 	if duration > lockChimeMaxSeconds {
 		writeError(w, http.StatusBadRequest,
-			fmt.Sprintf("Sound is %.1f seconds — Tesla requires 7 seconds or less", duration))
+			fmt.Sprintf("Sound is %.1f seconds — must be %.0f seconds or less", duration, lockChimeMaxSeconds))
 		return
 	}
 

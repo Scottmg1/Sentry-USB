@@ -141,30 +141,33 @@ func (h *handlers) uploadSupportMedia(w http.ResponseWriter, r *http.Request) {
 	ticketId := r.PathValue("id")
 	authToken := r.Header.Get("X-Auth-Token")
 
-	// Limit to 100MB
+	// Limit to 100MB but stream — don't buffer in RAM
 	r.Body = http.MaxBytesReader(w, r.Body, 100*1024*1024)
-	body, err := io.ReadAll(r.Body)
+
+	// Forward the body directly as a stream to the support server
+	req, err := http.NewRequest("POST", supportServerURL+fmt.Sprintf("/chat/ticket/%s/media", ticketId), r.Body)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "Failed to read body")
+		writeError(w, http.StatusInternalServerError, "Failed to create request")
 		return
 	}
-	defer r.Body.Close()
-
-	// Scale timeout based on body size
-	timeout := 3*time.Minute + time.Duration(len(body)/(50*1024*1024))*time.Minute
-	if timeout > 10*time.Minute {
-		timeout = 10 * time.Minute
+	// Preserve the original content type (multipart/form-data, etc.)
+	req.Header.Set("Content-Type", r.Header.Get("Content-Type"))
+	if authToken != "" {
+		req.Header.Set("X-Auth-Token", authToken)
 	}
 
-	respBody, status, err := supportProxy("POST", fmt.Sprintf("/chat/ticket/%s/media", ticketId), body, authToken, timeout)
+	client := &http.Client{Timeout: 10 * time.Minute}
+	resp, err := client.Do(req)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "Support server unreachable")
 		return
 	}
+	defer resp.Body.Close()
 
+	// Stream response back (small JSON)
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	w.Write(respBody)
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(w, resp.Body)
 }
 
 // GET /api/support/ticket/{id}/messages — fetch messages
