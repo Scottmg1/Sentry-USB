@@ -547,12 +547,14 @@ func (dh *DriveHandlers) uploadData(w http.ResponseWriter, r *http.Request) {
 			dh.importMu.Unlock()
 		}()
 
+		archiveLog("Drive data import started (%d bytes)", n)
 		dh.hub.Broadcast("drive_import", map[string]interface{}{
 			"status": "started",
 		})
 
 		f, err := os.Open(tmpPath)
 		if err != nil {
+			archiveLog("Drive data import error: failed to open temp file: %v", err)
 			log.Printf("[drives] Import error: failed to open temp file: %v", err)
 			dh.hub.Broadcast("drive_import", map[string]interface{}{
 				"status": "error", "error": err.Error(),
@@ -563,6 +565,7 @@ func (dh *DriveHandlers) uploadData(w http.ResponseWriter, r *http.Request) {
 		var data drives.StoreData
 		if err := json.NewDecoder(f).Decode(&data); err != nil {
 			f.Close()
+			archiveLog("Drive data import error: invalid JSON: %v", err)
 			log.Printf("[drives] Import error: invalid JSON: %v", err)
 			dh.hub.Broadcast("drive_import", map[string]interface{}{
 				"status": "error", "error": fmt.Sprintf("invalid JSON: %v", err),
@@ -571,11 +574,21 @@ func (dh *DriveHandlers) uploadData(w http.ResponseWriter, r *http.Request) {
 		}
 		f.Close()
 
+		if len(data.Routes) == 0 && len(data.ProcessedFiles) == 0 {
+			archiveLog("Drive data import error: file contains no routes or processed files")
+			log.Printf("[drives] Import error: decoded file contains no routes or processed files")
+			dh.hub.Broadcast("drive_import", map[string]interface{}{
+				"status": "error", "error": "file contains no drive data — import aborted",
+			})
+			return
+		}
+
 		// Free decoder memory before replacing store data
 		runtime.GC()
 
 		dh.store.ReplaceData(data)
 		if err := dh.store.Save(); err != nil {
+			archiveLog("Drive data import error: failed to save: %v", err)
 			log.Printf("[drives] Import error: failed to save: %v", err)
 			dh.hub.Broadcast("drive_import", map[string]interface{}{
 				"status": "error", "error": fmt.Sprintf("failed to save: %v", err),
@@ -583,6 +596,8 @@ func (dh *DriveHandlers) uploadData(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		archiveLog("Drive data import complete: %d routes, %d processed files",
+			len(data.Routes), len(data.ProcessedFiles))
 		log.Printf("[drives] Import complete: %d routes, %d processed files",
 			len(data.Routes), len(data.ProcessedFiles))
 		dh.hub.Broadcast("drive_import", map[string]interface{}{

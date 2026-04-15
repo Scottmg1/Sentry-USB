@@ -579,9 +579,7 @@ export default function Drives() {
       const res = await fetch("/api/drives/data/upload", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: file.stream(),
-        // @ts-expect-error -- duplex required for streaming body in some browsers
-        duplex: "half",
+        body: file,
       })
       if (!res.ok) {
         const err = await res.json().catch(() => null)
