@@ -186,9 +186,11 @@ function sync_user_media_to_cam () {
     fi
     if [ -n "$_active_chime_name" ] && [ -f "/mutable/LockChime/$_active_chime_name" ]
     then
-      cp -f "/mutable/LockChime/$_active_chime_name" "$CAM_MOUNT/LockChime.wav" \
-        && log "Synced LockChime.wav ($_active_chime_name) to cam drive" \
-        || log "Failed to sync LockChime.wav to cam drive"
+      if cp -f "/mutable/LockChime/$_active_chime_name" "$CAM_MOUNT/LockChime.wav"; then
+        log "Synced LockChime.wav ($_active_chime_name) to cam drive"
+      else
+        log "Failed to sync LockChime.wav to cam drive"
+      fi
     else
       # No active lock chime — remove from cam drive if present
       rm -f "$CAM_MOUNT/LockChime.wav" 2>/dev/null || true
