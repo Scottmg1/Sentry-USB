@@ -295,6 +295,16 @@ func (h *handlers) deleteFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// If the deleted path was under /mutable/Wraps, create a tombstone so
+	// archiveloop's reverse-sync doesn't resurrect it from the wraps disk.
+	if strings.HasPrefix(cleanPath, "/mutable/Wraps/") {
+		tombstoneDir := "/mutable/.wraps_deleted"
+		if err := os.MkdirAll(tombstoneDir, 0755); err == nil {
+			baseName := filepath.Base(cleanPath)
+			_ = os.WriteFile(filepath.Join(tombstoneDir, baseName), nil, 0644)
+		}
+	}
+
 	// If deleted path was under SavedClips or SentryClips, clean up
 	// matching symlinks in snapshot directories so those clips won't
 	// be re-synced on next archive. RecentClips are left untouched.
