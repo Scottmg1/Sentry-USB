@@ -50,7 +50,11 @@ func terminalRateLimited(ip string) bool {
 			valid = append(valid, t)
 		}
 	}
-	terminalRateLimit.failures[ip] = valid
+	if len(valid) == 0 {
+		delete(terminalRateLimit.failures, ip)
+	} else {
+		terminalRateLimit.failures[ip] = valid
+	}
 
 	return len(valid) >= terminalRateMaxFails
 }

@@ -80,8 +80,11 @@ func (dh *DriveHandlers) Processor() *drives.Processor {
 // GET /api/drives — list all drives (summaries, no full point data)
 // Query params: ?tag=Work (filter by tag)
 func (dh *DriveHandlers) listDrives(w http.ResponseWriter, r *http.Request) {
-	routes := dh.store.GetRoutes()
-	summaries := drives.GroupSummaries(routes)
+	var summaries []drives.DriveSummary
+	dh.store.WithRoutes(func(routes []drives.Route) {
+		summaries = drives.GroupSummaries(routes)
+	})
+	runtime.GC()
 	drives.ApplySummaryTags(summaries, dh.store.GetAllDriveTags())
 
 	// Filter by tag if requested
@@ -103,26 +106,11 @@ func (dh *DriveHandlers) listDrives(w http.ResponseWriter, r *http.Request) {
 
 // GET /api/drives/routes — all routes downsampled for overview map
 func (dh *DriveHandlers) allRoutes(w http.ResponseWriter, r *http.Request) {
-	routes := dh.store.GetRoutes()
-	allDrives := drives.GroupIntoDrives(routes)
-
-	type routeOverview struct {
-		ID     int          `json:"id"`
-		Points [][2]float64 `json:"points"`
-	}
-
-	result := make([]routeOverview, 0, len(allDrives))
-	for _, d := range allDrives {
-		pts := make([][2]float64, len(d.Points))
-		for i, p := range d.Points {
-			pts[i] = [2]float64{p[0], p[1]}
-		}
-		result = append(result, routeOverview{
-			ID:     d.ID,
-			Points: drives.Downsample(pts, 200),
-		})
-	}
-
+	var result []drives.RouteOverview
+	dh.store.WithRoutes(func(routes []drives.Route) {
+		result = drives.GroupRoutesOverview(routes, 500)
+	})
+	runtime.GC()
 	writeJSON(w, http.StatusOK, result)
 }
 
@@ -135,22 +123,30 @@ func (dh *DriveHandlers) singleDrive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	routes := dh.store.GetRoutes()
-	allDrives := drives.GroupIntoDrives(routes)
-	drives.ApplyTags(allDrives, dh.store.GetAllDriveTags())
-
-	if id < 0 || id >= len(allDrives) {
+	var d drives.Drive
+	var ok bool
+	dh.store.WithRoutes(func(routes []drives.Route) {
+		d, ok = drives.BuildSingleDrive(routes, id)
+	})
+	runtime.GC()
+	if !ok {
 		writeError(w, http.StatusNotFound, "drive not found")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, allDrives[id])
+	// Apply tags to the single drive
+	tagMap := dh.store.GetAllDriveTags()
+	if tags, exists := tagMap[d.StartTime]; exists {
+		d.Tags = tags
+	}
+
+	writeJSON(w, http.StatusOK, d)
 }
 
 // PUT /api/drives/{id}/tags — set tags for a drive
 // Body: { "tags": ["Work", "Commute"], "start_time": "2025-03-10T08:30:00" }
 // If start_time is provided, it is used directly as the drive key (fast path).
-// Otherwise falls back to looking up the drive by index (slow — calls GroupIntoDrives).
+// Otherwise falls back to looking up the drive by index via DriveStartTime.
 func (dh *DriveHandlers) setDriveTags(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
 	id, err := strconv.Atoi(idStr)
@@ -170,14 +166,15 @@ func (dh *DriveHandlers) setDriveTags(w http.ResponseWriter, r *http.Request) {
 
 	driveKey := body.StartTime
 	if driveKey == "" {
-		// Slow fallback: look up drive by index
-		routes := dh.store.GetRoutes()
-		allDrives := drives.GroupIntoDrives(routes)
-		if id < 0 || id >= len(allDrives) {
+		// Fallback: look up drive start time by index (no full point merge)
+		var ok bool
+		dh.store.WithRoutes(func(routes []drives.Route) {
+			driveKey, ok = drives.DriveStartTime(routes, id)
+		})
+		if !ok {
 			writeError(w, http.StatusNotFound, "drive not found")
 			return
 		}
-		driveKey = allDrives[id].StartTime
 	}
 
 	dh.store.SetDriveTags(driveKey, body.Tags)
@@ -614,12 +611,16 @@ func (dh *DriveHandlers) uploadData(w http.ResponseWriter, r *http.Request) {
 
 // GET /api/drives/stats — aggregate statistics
 func (dh *DriveHandlers) driveStats(w http.ResponseWriter, r *http.Request) {
-	routes := dh.store.GetRoutes()
-	stats := drives.ComputeAggregateStatsFromRoutes(routes)
+	var stats drives.AggregateStats
+	var routeCount int
+	dh.store.WithRoutes(func(routes []drives.Route) {
+		stats = drives.ComputeAggregateStatsFromRoutes(routes)
+		routeCount = len(routes)
+	})
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"drives_count":            stats.DrivesCount,
-		"routes_count":            len(routes),
+		"routes_count":            routeCount,
 		"processed_count":         dh.store.ProcessedCount(),
 		"total_distance_km":       math.Round(stats.TotalDistanceKm*100) / 100,
 		"total_distance_mi":       math.Round(stats.TotalDistanceMi*100) / 100,
@@ -643,8 +644,11 @@ func (dh *DriveHandlers) driveStats(w http.ResponseWriter, r *http.Request) {
 // GET /api/drives/fsd-analytics — FSD analytics with daily/weekly breakdowns
 // Query params: ?period=week (default), ?period=day, ?period=trip
 func (dh *DriveHandlers) fsdAnalytics(w http.ResponseWriter, r *http.Request) {
-	routes := dh.store.GetRoutes()
-	allDrives := drives.GroupIntoDrives(routes)
+	var allSummaries []drives.DriveSummary
+	dh.store.WithRoutes(func(routes []drives.Route) {
+		allSummaries = drives.GroupSummaries(routes)
+	})
+	runtime.GC()
 
 	now := time.Now()
 	period := r.URL.Query().Get("period")
@@ -664,8 +668,8 @@ func (dh *DriveHandlers) fsdAnalytics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Filter drives in period
-	var periodDrives []drives.Drive
-	for _, d := range allDrives {
+	var periodDrives []drives.DriveSummary
+	for _, d := range allSummaries {
 		dt, err := time.Parse("2006-01-02T15:04:05", d.StartTime)
 		if err != nil {
 			continue

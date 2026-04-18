@@ -139,6 +139,9 @@ func RegisterRoutes(mux *http.ServeMux, hub *ws.Hub) {
 	mux.HandleFunc("PUT /api/wraps/admin/edit/{code}", h.communityWrapsAdminEdit)
 	mux.HandleFunc("DELETE /api/wraps/admin/delete/{code}", h.communityWrapsAdminDelete)
 
+	// Memory debug
+	mux.HandleFunc("GET /api/memory", h.memoryStats)
+
 	// Config backup & restore
 	mux.HandleFunc("POST /api/system/backup", h.createBackup)
 	mux.HandleFunc("GET /api/system/backups", h.listBackups)

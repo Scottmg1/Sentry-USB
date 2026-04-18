@@ -105,10 +105,10 @@ type timedRoute struct {
 	timestamp time.Time
 }
 
-// GroupIntoDrives groups routes into logical drives based on time gaps and gear state.
-// First pass: split on time gaps > 5 minutes between clips.
-// Second pass: split further when gear state transitions through Park.
-func GroupIntoDrives(routes []Route) []Drive {
+// groupClips performs the lightweight grouping of routes into drive clip-groups
+// (dedup, timestamp sort, time-gap split, gear-state split) WITHOUT building
+// full Drive objects or merging point arrays. This is O(routes) in memory.
+func groupClips(routes []Route) [][]timedRoute {
 	// Deduplicate routes by normalized file path (handles mixed \ and / from imports)
 	seen := make(map[string]bool, len(routes))
 	var unique []Route
@@ -157,6 +157,20 @@ func GroupIntoDrives(routes []Route) []Drive {
 		groups = append(groups, splitByGearState(tg)...)
 	}
 
+	return groups
+}
+
+// GroupIntoDrives groups routes into logical drives based on time gaps and gear state.
+// First pass: split on time gaps > 5 minutes between clips.
+// Second pass: split further when gear state transitions through Park.
+//
+// WARNING: This builds full Drive objects with merged point arrays for every
+// drive. For large datasets this allocates hundreds of MB. Prefer GroupSummaries,
+// GroupRoutesOverview, or BuildSingleDrive when you don't need all drives' full
+// point data.
+func GroupIntoDrives(routes []Route) []Drive {
+	groups := groupClips(routes)
+
 	// Build drive stats
 	drives := make([]Drive, 0, len(groups))
 	for idx, group := range groups {
@@ -164,6 +178,32 @@ func GroupIntoDrives(routes []Route) []Drive {
 	}
 
 	return drives
+}
+
+// BuildSingleDrive builds the full Drive object for a single drive by index,
+// without allocating point arrays for all other drives. Much cheaper than
+// GroupIntoDrives when you only need one drive.
+func BuildSingleDrive(routes []Route, id int) (Drive, bool) {
+	groups := groupClips(routes)
+	if id < 0 || id >= len(groups) {
+		return Drive{}, false
+	}
+	return buildDriveStats(groups[id], id), true
+}
+
+// DriveStartTime returns the start time string for the drive at the given index.
+// Used for tag lookups without building full drive objects.
+func DriveStartTime(routes []Route, id int) (string, bool) {
+	groups := groupClips(routes)
+	if id < 0 || id >= len(groups) {
+		return "", false
+	}
+	return groups[id][0].timestamp.Format("2006-01-02T15:04:05"), true
+}
+
+// DriveCount returns the number of drives without building full Drive objects.
+func DriveCount(routes []Route) int {
+	return len(groupClips(routes))
 }
 
 // parkGapSeconds is the minimum Park duration (seconds) that splits drives.
@@ -318,31 +358,30 @@ func splitClipAtParkGaps(clip timedRoute) []clipSegment {
 			continue
 		}
 
-		segPoints := make([]GPSPoint, endIdx-startIdx)
-		copy(segPoints, clip.Points[startIdx:endIdx])
+		// Use slice windows instead of copying — all consumers
+		// (GroupSummaries, BuildSingleDrive, etc.) only read point data.
+		// This avoids duplicating potentially hundreds of MB of GPS data
+		// during grouping, which is critical on memory-constrained Pis.
+		segPoints := clip.Points[startIdx:endIdx:endIdx]
 
 		var segGears []uint8
 		if len(clip.GearStates) >= endIdx {
-			segGears = make([]uint8, endIdx-startIdx)
-			copy(segGears, clip.GearStates[startIdx:endIdx])
+			segGears = clip.GearStates[startIdx:endIdx:endIdx]
 		}
 
 		var segAP []uint8
 		if len(clip.AutopilotStates) >= endIdx {
-			segAP = make([]uint8, endIdx-startIdx)
-			copy(segAP, clip.AutopilotStates[startIdx:endIdx])
+			segAP = clip.AutopilotStates[startIdx:endIdx:endIdx]
 		}
 
 		var segSpeeds []float32
 		if len(clip.Speeds) >= endIdx {
-			segSpeeds = make([]float32, endIdx-startIdx)
-			copy(segSpeeds, clip.Speeds[startIdx:endIdx])
+			segSpeeds = clip.Speeds[startIdx:endIdx:endIdx]
 		}
 
 		var segAccel []float32
 		if len(clip.AccelPositions) >= endIdx {
-			segAccel = make([]float32, endIdx-startIdx)
-			copy(segAccel, clip.AccelPositions[startIdx:endIdx])
+			segAccel = clip.AccelPositions[startIdx:endIdx:endIdx]
 		}
 
 		// Compute timestamp offset for this segment within the clip
@@ -453,49 +492,390 @@ func ApplySummaryTags(summaries []DriveSummary, tagMap map[string][]string) {
 }
 
 // GroupSummaries returns only the summary (no full points) for each drive.
+// This computes stats directly from the raw clips without ever merging all
+// points into a single array — using a fraction of the memory of GroupIntoDrives.
 func GroupSummaries(routes []Route) []DriveSummary {
-	drives := GroupIntoDrives(routes)
-	summaries := make([]DriveSummary, len(drives))
-	for i, d := range drives {
-		s := DriveSummary{
-			ID:                d.ID,
-			Date:              d.Date,
-			StartTime:         d.StartTime,
-			EndTime:           d.EndTime,
-			DurationMs:        d.DurationMs,
-			DistanceMi:        d.DistanceMi,
-			DistanceKm:        d.DistanceKm,
-			AvgSpeedMph:       d.AvgSpeedMph,
-			MaxSpeedMph:       d.MaxSpeedMph,
-			AvgSpeedKmh:       d.AvgSpeedKmh,
-			MaxSpeedKmh:       d.MaxSpeedKmh,
-			ClipCount:         d.ClipCount,
-			PointCount:        d.PointCount,
-			FSDEngagedMs:        d.FSDEngagedMs,
-			FSDDisengagements:   d.FSDDisengagements,
-			FSDAccelPushes:      d.FSDAccelPushes,
-			FSDPercent:          d.FSDPercent,
-			FSDDistanceKm:       d.FSDDistanceKm,
-			FSDDistanceMi:       d.FSDDistanceMi,
-			AutosteerEngagedMs:  d.AutosteerEngagedMs,
-			AutosteerPercent:    d.AutosteerPercent,
-			AutosteerDistanceKm: d.AutosteerDistanceKm,
-			AutosteerDistanceMi: d.AutosteerDistanceMi,
-			TACCEngagedMs:       d.TACCEngagedMs,
-			TACCPercent:         d.TACCPercent,
-			TACCDistanceKm:      d.TACCDistanceKm,
-			TACCDistanceMi:      d.TACCDistanceMi,
-			AssistedPercent:     d.AssistedPercent,
+	groups := groupClips(routes)
+	summaries := make([]DriveSummary, len(groups))
+
+	for idx, clips := range groups {
+		firstClip := clips[0]
+		lastClip := clips[len(clips)-1]
+		startTime := firstClip.timestamp
+		endTime := lastClip.timestamp.Add(time.Minute)
+		durationMs := endTime.Sub(startTime).Milliseconds()
+
+		var totalDistM, maxSpeedMps float64
+		var speedSum float64
+		var speedCount int
+		var pointCount int
+		var fsdEngagedMs, autosteerEngagedMs, taccEngagedMs int64
+		var fsdDistM, autosteerDistM, taccDistM, assistedDistM float64
+		var fsdDisengagements, fsdAccelPushes int
+		var startPoint, endPoint *[2]float64
+
+		// First pass: compute median location from the middle 50% of valid
+		// points across all clips (mirrors buildDriveStats outlier filter).
+		var validLats, validLngs []float64
+		for _, clip := range clips {
+			for _, p := range clip.Points {
+				if !(math.Abs(p[0]) < 1 && math.Abs(p[1]) < 1) {
+					validLats = append(validLats, p[0])
+					validLngs = append(validLngs, p[1])
+				}
+			}
 		}
-		if len(d.Points) > 0 {
-			start := [2]float64{d.Points[0][0], d.Points[0][1]}
-			end := [2]float64{d.Points[len(d.Points)-1][0], d.Points[len(d.Points)-1][1]}
-			s.StartPoint = &start
-			s.EndPoint = &end
+		var medLat, medLng float64
+		hasMedian := len(validLats) > 2
+		if hasMedian {
+			q1 := len(validLats) / 4
+			q3 := len(validLats) * 3 / 4
+			var sumLat, sumLng float64
+			count := 0
+			for i := q1; i <= q3; i++ {
+				sumLat += validLats[i]
+				sumLng += validLngs[i]
+				count++
+			}
+			medLat = sumLat / float64(count)
+			medLng = sumLng / float64(count)
 		}
-		summaries[i] = s
+		// Free the temp slices
+		validLats = nil
+		validLngs = nil
+
+		// Second pass: compute stats, filtering outliers per-clip
+		for _, clip := range clips {
+			n := len(clip.Points)
+			if n == 0 {
+				continue
+			}
+
+			// Build a validity mask for this clip's points:
+			// exclude null-island, median-cluster outliers (>1000km),
+			// and isolated neighbor-jump outliers (>5km from both neighbors).
+			const maxFromMedianM = 1000000.0
+			const maxJumpM = 5000.0
+			valid := make([]bool, n)
+			for i, p := range clip.Points {
+				if math.Abs(p[0]) < 1 && math.Abs(p[1]) < 1 {
+					continue // null island
+				}
+				if hasMedian && haversineM(p[0], p[1], medLat, medLng) > maxFromMedianM {
+					continue // too far from median cluster
+				}
+				valid[i] = true
+			}
+			// Neighbor-jump filter: remove points far from both neighbors
+			if n > 2 {
+				for i := range valid {
+					if !valid[i] {
+						continue
+					}
+					hasPrev := i > 0 && valid[i-1]
+					hasNext := i < n-1 && valid[i+1]
+					farFromPrev := hasPrev && haversineM(clip.Points[i-1][0], clip.Points[i-1][1], clip.Points[i][0], clip.Points[i][1]) > maxJumpM
+					farFromNext := hasNext && haversineM(clip.Points[i][0], clip.Points[i][1], clip.Points[i+1][0], clip.Points[i+1][1]) > maxJumpM
+					if (hasPrev && hasNext && farFromPrev && farFromNext) ||
+						(!hasPrev && farFromNext) ||
+						(!hasNext && farFromPrev) {
+						valid[i] = false
+					}
+				}
+			}
+
+			// Track start/end points (first valid point of first clip, last of last)
+			if startPoint == nil {
+				for i := 0; i < n; i++ {
+					if valid[i] {
+						sp := [2]float64{clip.Points[i][0], clip.Points[i][1]}
+						startPoint = &sp
+						break
+					}
+				}
+			}
+			for i := n - 1; i >= 0; i-- {
+				if valid[i] {
+					ep := [2]float64{clip.Points[i][0], clip.Points[i][1]}
+					endPoint = &ep
+					break
+				}
+			}
+
+			for i := 0; i < n; i++ {
+				if valid[i] {
+					pointCount++
+				}
+			}
+			clipDurationMs := float64(60000)
+			hasAP := len(clip.AutopilotStates) == n
+			hasGears := len(clip.GearStates) == n
+			hasAccel := len(clip.AccelPositions) == n
+			hasSpeeds := len(clip.Speeds) == n
+			hasSEISpeeds := false
+			if hasSpeeds {
+				for _, sp := range clip.Speeds {
+					if sp > 0 {
+						hasSEISpeeds = true
+						break
+					}
+				}
+			}
+
+			// Per-clip FSD event tracking state
+			var inAccelPress bool
+			var fsdEngageIdx int = -1 // point index where FSD was last engaged
+			var pendingDisengage bool
+			var pendingDisengageIdx int
+
+			for i := 1; i < n; i++ {
+				// Skip pairs where either point is an outlier
+				if !valid[i] || !valid[i-1] {
+					continue
+				}
+				d := haversineM(clip.Points[i-1][0], clip.Points[i-1][1], clip.Points[i][0], clip.Points[i][1])
+
+				// Skip GPS teleportation artifacts
+				if !hasSEISpeeds {
+					dtSec := (clipDurationMs / float64(n-1)) / 1000.0
+					if dtSec > 0 && d/dtSec > 70 {
+						continue
+					}
+				}
+
+				totalDistM += d
+				dtMs := clipDurationMs / float64(n-1)
+
+				// Speed
+				if hasSEISpeeds {
+					speed := float64(clip.Speeds[i])
+					if speed >= 0 && speed < 100 {
+						speedSum += speed
+						speedCount++
+						if speed > maxSpeedMps {
+							maxSpeedMps = speed
+						}
+					}
+				} else if dtSec := dtMs / 1000.0; dtSec > 0 {
+					speed := d / dtSec
+					if speed < 70 {
+						speedSum += speed
+						speedCount++
+						if speed > maxSpeedMps {
+							maxSpeedMps = speed
+						}
+					}
+				}
+
+				// Autopilot stats
+				if hasAP {
+					curAP := clip.AutopilotStates[i]
+					prevAP := clip.AutopilotStates[i-1]
+
+					if curAP != AutopilotOff {
+						assistedDistM += d
+						switch curAP {
+						case AutopilotFSD:
+							fsdEngagedMs += int64(dtMs)
+							fsdDistM += d
+						case AutopilotAutosteer:
+							autosteerEngagedMs += int64(dtMs)
+							autosteerDistM += d
+						case AutopilotTACC:
+							taccEngagedMs += int64(dtMs)
+							taccDistM += d
+						}
+					}
+
+					// Track FSD engagement start
+					if prevAP != AutopilotFSD && curAP == AutopilotFSD {
+						fsdEngageIdx = i
+						inAccelPress = false
+					}
+
+					// Resolve pending disengagement: if Park arrives within
+					// 2 seconds, FSD parked the car — not a driver override.
+					if pendingDisengage {
+						timeSinceMs := float64(i-pendingDisengageIdx) * dtMs
+						if hasGears && clip.GearStates[i] == GearPark && timeSinceMs <= 2000.0 {
+							pendingDisengage = false
+						} else if timeSinceMs > 2000.0 || curAP == AutopilotFSD {
+							fsdDisengagements++
+							pendingDisengage = false
+						}
+					}
+
+					// Detect FSD disengagement — defer for Park grace period
+					if prevAP == AutopilotFSD && curAP != AutopilotFSD {
+						pendingDisengage = true
+						pendingDisengageIdx = i
+						inAccelPress = false
+					}
+
+					// Accel push detection: pedal > 1% while FSD, returns to 0%.
+					// Skip presses within 3 seconds of FSD engagement.
+					if curAP == AutopilotFSD && hasAccel {
+						accelPct := float64(clip.AccelPositions[i])
+						if accelPct <= 1.0 {
+							accelPct *= 100.0
+						}
+						timeSinceEngageMs := float64(0)
+						if fsdEngageIdx >= 0 {
+							timeSinceEngageMs = float64(i-fsdEngageIdx) * dtMs
+						}
+						if !inAccelPress && accelPct > 1.0 && timeSinceEngageMs >= 3000.0 {
+							inAccelPress = true
+						} else if inAccelPress && accelPct <= 0.0 {
+							fsdAccelPushes++
+							inAccelPress = false
+						}
+					} else if curAP != AutopilotFSD {
+						inAccelPress = false
+					}
+				}
+			}
+
+			// Flush pending disengagement at end of clip — if last point is
+			// Park, FSD parked the car; otherwise it's a real disengagement.
+			if pendingDisengage {
+				if !(hasGears && clip.GearStates[n-1] == GearPark) {
+					fsdDisengagements++
+				}
+			}
+		}
+
+		var avgSpeedMps float64
+		if speedCount > 0 {
+			avgSpeedMps = speedSum / float64(speedCount)
+		}
+
+		var fsdPercent, autosteerPercent, taccPercent, assistedPercent float64
+		if totalDistM > 0 {
+			fsdPercent = math.Round(fsdDistM/totalDistM*1000) / 10
+			autosteerPercent = math.Round(autosteerDistM/totalDistM*1000) / 10
+			taccPercent = math.Round(taccDistM/totalDistM*1000) / 10
+			assistedPercent = math.Round(assistedDistM/totalDistM*1000) / 10
+		}
+
+		summaries[idx] = DriveSummary{
+			ID:                  idx,
+			Date:                firstClip.Date,
+			StartTime:           startTime.Format("2006-01-02T15:04:05"),
+			EndTime:             endTime.Format("2006-01-02T15:04:05"),
+			DurationMs:          durationMs,
+			DistanceMi:          math.Round(totalDistM/1609.344*100) / 100,
+			DistanceKm:          math.Round(totalDistM/1000*100) / 100,
+			AvgSpeedMph:         math.Round(avgSpeedMps*2.23694*100) / 100,
+			MaxSpeedMph:         math.Round(maxSpeedMps*2.23694*100) / 100,
+			AvgSpeedKmh:         math.Round(avgSpeedMps*3.6*100) / 100,
+			MaxSpeedKmh:         math.Round(maxSpeedMps*3.6*100) / 100,
+			ClipCount:           len(clips),
+			PointCount:          pointCount,
+			StartPoint:          startPoint,
+			EndPoint:            endPoint,
+			FSDEngagedMs:        fsdEngagedMs,
+			FSDDisengagements:   fsdDisengagements,
+			FSDAccelPushes:      fsdAccelPushes,
+			FSDPercent:          fsdPercent,
+			FSDDistanceKm:       math.Round(fsdDistM/1000*100) / 100,
+			FSDDistanceMi:       math.Round(fsdDistM/1609.344*100) / 100,
+			AutosteerEngagedMs:  autosteerEngagedMs,
+			AutosteerPercent:    autosteerPercent,
+			AutosteerDistanceKm: math.Round(autosteerDistM/1000*100) / 100,
+			AutosteerDistanceMi: math.Round(autosteerDistM/1609.344*100) / 100,
+			TACCEngagedMs:       taccEngagedMs,
+			TACCPercent:         taccPercent,
+			TACCDistanceKm:      math.Round(taccDistM/1000*100) / 100,
+			TACCDistanceMi:      math.Round(taccDistM/1609.344*100) / 100,
+			AssistedPercent:     assistedPercent,
+		}
 	}
 	return summaries
+}
+
+// RouteOverview is a lightweight per-drive route for the overview map.
+type RouteOverview struct {
+	ID     int          `json:"id"`
+	Points [][2]float64 `json:"points"`
+}
+
+// GroupRoutesOverview returns downsampled route polylines for every drive
+// without building full Drive objects. Collects lat/lng directly from the raw
+// clips, applies the same outlier filtering as buildDriveStats, and
+// downsamples — no merged point arrays allocated.
+func GroupRoutesOverview(routes []Route, maxPointsPerDrive int) []RouteOverview {
+	groups := groupClips(routes)
+	result := make([]RouteOverview, 0, len(groups))
+
+	const maxFromMedianM = 1000000.0
+	const maxJumpM = 5000.0
+
+	for idx, clips := range groups {
+		// Collect valid (non-null-island) lat/lng from each clip
+		var pts [][2]float64
+		for _, clip := range clips {
+			for _, p := range clip.Points {
+				if !(math.Abs(p[0]) < 1 && math.Abs(p[1]) < 1) {
+					pts = append(pts, [2]float64{p[0], p[1]})
+				}
+			}
+		}
+
+		// Median-cluster filter: drop points >1000km from median
+		if len(pts) > 2 {
+			q1 := len(pts) / 4
+			q3 := len(pts) * 3 / 4
+			var sumLat, sumLng float64
+			count := 0
+			for i := q1; i <= q3; i++ {
+				sumLat += pts[i][0]
+				sumLng += pts[i][1]
+				count++
+			}
+			medLat := sumLat / float64(count)
+			medLng := sumLng / float64(count)
+
+			n := 0
+			for _, p := range pts {
+				if haversineM(p[0], p[1], medLat, medLng) <= maxFromMedianM {
+					pts[n] = p
+					n++
+				}
+			}
+			pts = pts[:n]
+		}
+
+		// Neighbor-jump filter: drop points far from both neighbors
+		if len(pts) > 2 {
+			remove := make([]bool, len(pts))
+			for i := range pts {
+				hasPrev := i > 0
+				hasNext := i < len(pts)-1
+				farFromPrev := hasPrev && haversineM(pts[i-1][0], pts[i-1][1], pts[i][0], pts[i][1]) > maxJumpM
+				farFromNext := hasNext && haversineM(pts[i][0], pts[i][1], pts[i+1][0], pts[i+1][1]) > maxJumpM
+				if (hasPrev && hasNext && farFromPrev && farFromNext) ||
+					(!hasPrev && farFromNext) ||
+					(!hasNext && farFromPrev) {
+					remove[i] = true
+				}
+			}
+			n := 0
+			for i, p := range pts {
+				if !remove[i] {
+					pts[n] = p
+					n++
+				}
+			}
+			pts = pts[:n]
+		}
+
+		result = append(result, RouteOverview{
+			ID:     idx,
+			Points: Downsample(pts, maxPointsPerDrive),
+		})
+	}
+
+	return result
 }
 
 func buildDriveStats(clips []timedRoute, idx int) Drive {
@@ -549,6 +929,68 @@ func buildDriveStats(clips []timedRoute, idx int) Drive {
 			}
 			allPoints = append(allPoints, ap)
 		}
+	}
+
+	// Remove invalid GPS coordinates (near 0,0 "Null Island")
+	{
+		n := 0
+		for _, p := range allPoints {
+			if !(math.Abs(p.lat) < 1 && math.Abs(p.lng) < 1) {
+				allPoints[n] = p
+				n++
+			}
+		}
+		allPoints = allPoints[:n]
+	}
+
+	// Filter GPS outliers — points impossibly far from the median cluster or both neighbors
+	if len(allPoints) > 2 {
+		// Step 1: Find median location from middle 50% of points
+		q1 := len(allPoints) / 4
+		q3 := len(allPoints) * 3 / 4
+		var medLat, medLng float64
+		count := 0
+		for i := q1; i <= q3; i++ {
+			medLat += allPoints[i].lat
+			medLng += allPoints[i].lng
+			count++
+		}
+		medLat /= float64(count)
+		medLng /= float64(count)
+
+		// Step 2: Remove points >1,000 km from median cluster
+		const maxFromMedianM = 1000000.0
+		n := 0
+		for _, p := range allPoints {
+			if haversineM(p.lat, p.lng, medLat, medLng) <= maxFromMedianM {
+				allPoints[n] = p
+				n++
+			}
+		}
+		allPoints = allPoints[:n]
+
+		// Step 3: Remove isolated outliers far from both neighbors
+		const maxJumpM = 5000.0
+		remove := make([]bool, len(allPoints))
+		for i := range allPoints {
+			hasPrev := i > 0
+			hasNext := i < len(allPoints)-1
+			farFromPrev := hasPrev && haversineM(allPoints[i-1].lat, allPoints[i-1].lng, allPoints[i].lat, allPoints[i].lng) > maxJumpM
+			farFromNext := hasNext && haversineM(allPoints[i].lat, allPoints[i].lng, allPoints[i+1].lat, allPoints[i+1].lng) > maxJumpM
+			if (hasPrev && hasNext && farFromPrev && farFromNext) ||
+				(!hasPrev && farFromNext) ||
+				(!hasNext && farFromPrev) {
+				remove[i] = true
+			}
+		}
+		n = 0
+		for i, p := range allPoints {
+			if !remove[i] {
+				allPoints[n] = p
+				n++
+			}
+		}
+		allPoints = allPoints[:n]
 	}
 
 	// Compute distance and speeds
