@@ -18,7 +18,25 @@ fi
 BLE_LOCK="/tmp/ble_keep_awake_active"
 
 ble_restore_gatt_daemon() {
-  if [ ! -e "$BLE_LOCK" ]; then
+  # Fast path: lock exists — normal "we disabled it, time to restore" flow.
+  # Fallback: lock is missing but sentryusb-ble is currently inactive.  This
+  # means the lock got wiped mid-session (e.g. sentryusb-ble.service
+  # restarted and its ExecStartPre removed the lock) but we still owe the
+  # GATT daemon a restart.  Without this fallback, archiveloop calls
+  # awake_stop → sees no lock → returns early → GATT stays down until a
+  # full Pi reboot, leaving companion apps unable to reach the Pi over BLE.
+  local have_lock=0
+  if [ -e "$BLE_LOCK" ]; then
+    have_lock=1
+  fi
+
+  local ble_active=1
+  if ! systemctl is-active --quiet sentryusb-ble 2>/dev/null; then
+    ble_active=0
+  fi
+
+  if [ "$have_lock" = "0" ] && [ "$ble_active" = "1" ]; then
+    # No lock and GATT already running — nothing to restore.
     return
   fi
 
@@ -34,10 +52,21 @@ ble_restore_gatt_daemon() {
     fi
   fi
 
+  # Belt-and-suspenders: also look for a nudge loop by command name in case
+  # the pid file is missing (e.g. lost when /tmp was re-created).
+  if pgrep -f "ble_nudge\|keep_awake_nudge" >/dev/null 2>&1; then
+    log "Tesla BLE: Keep-awake nudge process still running — mobile-app Bluetooth stays disabled."
+    return
+  fi
+
   rm -f "$BLE_LOCK"
-  log "Tesla BLE: Keep-awake ended. Restoring mobile-app Bluetooth (GATT daemon)..."
+  if [ "$have_lock" = "0" ]; then
+    log "Tesla BLE: Keep-awake lock was lost but GATT daemon is down — restoring mobile-app Bluetooth..."
+  else
+    log "Tesla BLE: Keep-awake ended. Restoring mobile-app Bluetooth (GATT daemon)..."
+  fi
   systemctl start sentryusb-ble 2>/dev/null || true
-  log "Tesla BLE: Mobile-app Bluetooth restored. iOS app can connect via Bluetooth again."
+  log "Tesla BLE: Mobile-app Bluetooth restored. Companion apps can connect via Bluetooth again."
 }
 
 # Returns a label like "Archive", "Drive Processing", "Manual (8m left)"
