@@ -4,13 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/Scottmg1/Sentry-USB/server/drives"
@@ -26,6 +29,9 @@ type DriveHandlers struct {
 	store     *drives.Store
 	processor *drives.Processor
 	hub       broadcaster
+
+	importMu  sync.Mutex
+	importing bool
 }
 
 // NewDriveHandlers creates handlers with a store at the given data path.
@@ -275,6 +281,13 @@ func (dh *DriveHandlers) processFiles(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "processing already in progress")
 		return
 	}
+	dh.importMu.Lock()
+	importing := dh.importing
+	dh.importMu.Unlock()
+	if importing {
+		writeError(w, http.StatusConflict, "drive data import in progress — please wait until it finishes")
+		return
+	}
 	// post_archive=1 is set by post-archive-process.sh which runs after
 	// archiving is complete.  Skip the stale-file check in that case.
 	postArchive := r.URL.Query().Get("post_archive") == "1"
@@ -362,6 +375,13 @@ func (dh *DriveHandlers) reprocessAll(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "processing already in progress")
 		return
 	}
+	dh.importMu.Lock()
+	importing := dh.importing
+	dh.importMu.Unlock()
+	if importing {
+		writeError(w, http.StatusConflict, "drive data import in progress — please wait until it finishes")
+		return
+	}
 	if IsArchiving() {
 		writeError(w, http.StatusConflict, "archive is currently running — please wait until it finishes")
 		return
@@ -421,8 +441,13 @@ func (dh *DriveHandlers) reprocessAll(w http.ResponseWriter, r *http.Request) {
 
 // GET /api/drives/status — check if processing is running
 func (dh *DriveHandlers) processingStatus(w http.ResponseWriter, r *http.Request) {
+	dh.importMu.Lock()
+	importing := dh.importing
+	dh.importMu.Unlock()
+
 	resp := map[string]interface{}{
 		"running":         dh.processor.IsRunning(),
+		"importing":       importing,
 		"routes_count":    dh.store.RouteCount(),
 		"processed_count": dh.store.ProcessedCount(),
 		"archiving":       IsArchiving(),
@@ -470,33 +495,117 @@ func (dh *DriveHandlers) downloadData(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(&data)
 }
 
-// POST /api/drives/data/upload — upload a drive-data.json file to replace current data
+// POST /api/drives/data/upload — upload a drive-data.json file.
+// The file is streamed to disk and decoded in the background so the Pi
+// can handle arbitrarily large files without OOMing on the HTTP request.
+// While importing, drive processing is blocked and the status endpoint
+// reports importing=true so the frontend can show progress.
 func (dh *DriveHandlers) uploadData(w http.ResponseWriter, r *http.Request) {
 	if dh.processor.IsRunning() {
 		writeError(w, http.StatusConflict, "cannot upload while processing is running")
 		return
 	}
+	dh.importMu.Lock()
+	if dh.importing {
+		dh.importMu.Unlock()
+		writeError(w, http.StatusConflict, "import already in progress")
+		return
+	}
+	dh.importMu.Unlock()
 
-	// 20MB limit — drive-data.json is typically 1-10MB. JSON decoding uses
-	// 2-3x file size in peak RAM, so 100MB would OOM a 512MB Pi.
-	r.Body = http.MaxBytesReader(w, r.Body, 20*1024*1024)
-
-	var data drives.StoreData
-	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
-		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
+	// Stream the request body to a temp file on the writable partition.
+	// This uses minimal RAM regardless of file size.
+	tmpPath := filepath.Join(filepath.Dir(dh.store.Path()), "drive-data-import.tmp")
+	f, err := os.Create(tmpPath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create temp file: %v", err))
+		return
+	}
+	n, err := io.Copy(f, r.Body)
+	f.Close()
+	if err != nil {
+		os.Remove(tmpPath)
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to save upload: %v", err))
 		return
 	}
 
-	dh.store.ReplaceData(data)
-	if err := dh.store.Save(); err != nil {
-		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to save: %v", err))
-		return
-	}
+	log.Printf("[drives] Received drive-data upload (%d bytes), starting background import", n)
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"success":         true,
-		"routes_count":    len(data.Routes),
-		"processed_count": len(data.ProcessedFiles),
+	dh.importMu.Lock()
+	dh.importing = true
+	dh.importMu.Unlock()
+
+	// Decode and replace store data in the background.
+	go func() {
+		defer func() {
+			os.Remove(tmpPath)
+			dh.importMu.Lock()
+			dh.importing = false
+			dh.importMu.Unlock()
+		}()
+
+		archiveLog("Drive data import started (%d bytes)", n)
+		dh.hub.Broadcast("drive_import", map[string]interface{}{
+			"status": "started",
+		})
+
+		f, err := os.Open(tmpPath)
+		if err != nil {
+			archiveLog("Drive data import error: failed to open temp file: %v", err)
+			log.Printf("[drives] Import error: failed to open temp file: %v", err)
+			dh.hub.Broadcast("drive_import", map[string]interface{}{
+				"status": "error", "error": err.Error(),
+			})
+			return
+		}
+
+		var data drives.StoreData
+		if err := json.NewDecoder(f).Decode(&data); err != nil {
+			f.Close()
+			archiveLog("Drive data import error: invalid JSON: %v", err)
+			log.Printf("[drives] Import error: invalid JSON: %v", err)
+			dh.hub.Broadcast("drive_import", map[string]interface{}{
+				"status": "error", "error": fmt.Sprintf("invalid JSON: %v", err),
+			})
+			return
+		}
+		f.Close()
+
+		if len(data.Routes) == 0 && len(data.ProcessedFiles) == 0 {
+			archiveLog("Drive data import error: file contains no routes or processed files")
+			log.Printf("[drives] Import error: decoded file contains no routes or processed files")
+			dh.hub.Broadcast("drive_import", map[string]interface{}{
+				"status": "error", "error": "file contains no drive data — import aborted",
+			})
+			return
+		}
+
+		// Free decoder memory before replacing store data
+		runtime.GC()
+
+		dh.store.ReplaceData(data)
+		if err := dh.store.Save(); err != nil {
+			archiveLog("Drive data import error: failed to save: %v", err)
+			log.Printf("[drives] Import error: failed to save: %v", err)
+			dh.hub.Broadcast("drive_import", map[string]interface{}{
+				"status": "error", "error": fmt.Sprintf("failed to save: %v", err),
+			})
+			return
+		}
+
+		archiveLog("Drive data import complete: %d routes, %d processed files",
+			len(data.Routes), len(data.ProcessedFiles))
+		log.Printf("[drives] Import complete: %d routes, %d processed files",
+			len(data.Routes), len(data.ProcessedFiles))
+		dh.hub.Broadcast("drive_import", map[string]interface{}{
+			"status":          "complete",
+			"routes_count":    len(data.Routes),
+			"processed_count": len(data.ProcessedFiles),
+		})
+	}()
+
+	writeJSON(w, http.StatusAccepted, map[string]interface{}{
+		"status": "importing",
 	})
 }
 
