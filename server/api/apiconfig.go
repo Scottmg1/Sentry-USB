@@ -14,13 +14,6 @@ var (
 	NotificationBaseURL = configOrDefault("SENTRY_NOTIFICATION_URL", "https://notifications.sentry-six.com")
 )
 
-func envOrDefault(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
-}
-
 // configOrDefault checks the environment variable first, then sentryusb.conf, then defaults.
 // This allows the systemd service to pick up SENTRY_NOTIFICATION_URL (and other backend URLs)
 // from the user's config file without needing EnvironmentFile in the unit.
