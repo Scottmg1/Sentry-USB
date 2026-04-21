@@ -157,7 +157,7 @@ function send_mobile_push () {
     -H "Content-Type: application/json" \
     -H "X-Device-Secret: $MOBILE_PUSH_SECRET" \
     -d "$payload" \
-    "https://notifications.sentry-six.com/send") || {
+    "${SENTRY_NOTIFICATION_URL:-https://notifications.sentry-six.com}/send") || {
     log "ERROR: Mobile App Notification — failed to connect to notification server (exit code $?)"
     return 1
   }
