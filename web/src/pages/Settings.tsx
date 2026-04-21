@@ -380,7 +380,7 @@ function BlePairButton() {
 
 // ─── Mobile Notifications ───────────────────────────────────────────────────
 
-type PairedDevice = { pairing_id: string; device_name: string; platform: string; paired_at: string }
+type PairedDevice = { id: string; device_name: string; platform: string; paired_at: string }
 
 function MobileNotificationsSection() {
   const [pairingCode, setPairingCode] = useState<string | null>(null)
@@ -442,7 +442,7 @@ function MobileNotificationsSection() {
     try {
       const res = await fetch(`/api/notifications/paired-devices/${pairingId}`, { method: "DELETE" })
       if (res.ok) {
-        setPairedDevices(prev => prev.filter(d => d.pairing_id !== pairingId))
+        setPairedDevices(prev => prev.filter(d => d.id !== pairingId))
       }
     } catch { /* ignore */ }
   }
@@ -511,12 +511,12 @@ function MobileNotificationsSection() {
           <div className="space-y-2">
             <p className="section-label">Paired Devices</p>
             {pairedDevices.map(device => (
-              <div key={device.pairing_id} className="flex items-center gap-3 rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2.5">
+              <div key={device.id} className="flex items-center gap-3 rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2.5">
                 <span className="text-sm text-slate-300">{device.device_name}</span>
                 <span className="rounded-md bg-white/5 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">{device.platform.toUpperCase()}</span>
                 <span className="flex-1" />
                 <button
-                  onClick={() => removeDevice(device.pairing_id)}
+                  onClick={() => removeDevice(device.id)}
                   className="text-xs text-red-400/60 hover:text-red-400 transition-colors"
                 >
                   Remove
