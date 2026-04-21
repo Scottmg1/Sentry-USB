@@ -19,9 +19,9 @@ import (
 // Entry/byte caps guard against runaway output if the source grows
 // mid-walk or the user aims the endpoint at an unexpectedly huge tree.
 const (
-	maxZipDepth   = 64
-	maxZipEntries = 200000
-	maxZipBytes   = 50 << 30 // 50 GiB
+	maxZipDepth         = 64
+	maxZipEntries       = 200000
+	maxZipBytes   int64 = 50 << 30 // 50 GiB — typed so it doesn't overflow 32-bit int on armv7
 )
 
 // writeZipTree walks root, adding every regular file to zw under
