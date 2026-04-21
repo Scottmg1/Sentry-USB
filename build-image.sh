@@ -99,6 +99,34 @@ fi
 
 [ -f "$BINARY_PATH" ] || error "Binary not found at $BINARY_PATH"
 
+# ── Step 1b: Build tesla-control and tesla-keygen ──
+# tesla-control is the Tesla BLE command-line tool used by awake_start for
+# Keep Awake BLE mode. Tesla does not publish pre-built binaries, so we build
+# from source. Requires Go 1.23+.
+TESLA_CONTROL_PATH=""
+TESLA_KEYGEN_PATH=""
+if command -v go &>/dev/null; then
+    info "Building tesla-control and tesla-keygen from source..."
+    TESLA_VC_DIR="/tmp/sentryusb-vehicle-command"
+    rm -rf "$TESLA_VC_DIR"
+    git clone --depth 1 https://github.com/teslamotors/vehicle-command.git "$TESLA_VC_DIR"
+    (
+        cd "$TESLA_VC_DIR"
+        if [ -n "$GO_ARM" ]; then
+            GOOS=linux GOARCH=$GO_ARCH GOARM=$GO_ARM go build -o tesla-control ./cmd/tesla-control
+            GOOS=linux GOARCH=$GO_ARCH GOARM=$GO_ARM go build -o tesla-keygen ./cmd/tesla-keygen
+        else
+            GOOS=linux GOARCH=$GO_ARCH go build -o tesla-control ./cmd/tesla-control
+            GOOS=linux GOARCH=$GO_ARCH go build -o tesla-keygen ./cmd/tesla-keygen
+        fi
+    )
+    TESLA_CONTROL_PATH="$TESLA_VC_DIR/tesla-control"
+    TESLA_KEYGEN_PATH="$TESLA_VC_DIR/tesla-keygen"
+    ok "tesla-control and tesla-keygen built"
+else
+    info "Go not available — tesla-control will not be bundled (Keep Awake BLE requires it)"
+fi
+
 # ── Step 2: Clone pi-gen ──
 info "Setting up pi-gen..."
 rm -rf "$WORK_DIR"
@@ -119,6 +147,14 @@ cp "$SCRIPT_DIR/pi-gen-sources/$CONFIG_FILE" "$WORK_DIR/config"
 info "Injecting SentryUSB binary into image build..."
 cp "$BINARY_PATH" "$WORK_DIR/stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-binary"
 chmod +x "$WORK_DIR/stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-binary"
+
+if [ -n "$TESLA_CONTROL_PATH" ] && [ -f "$TESLA_CONTROL_PATH" ]; then
+    info "Injecting tesla-control and tesla-keygen..."
+    cp "$TESLA_CONTROL_PATH" "$WORK_DIR/stage_sentryusb/00-sentryusb-tweaks/files/tesla-control"
+    cp "$TESLA_KEYGEN_PATH"  "$WORK_DIR/stage_sentryusb/00-sentryusb-tweaks/files/tesla-keygen"
+    chmod +x "$WORK_DIR/stage_sentryusb/00-sentryusb-tweaks/files/tesla-control"
+    chmod +x "$WORK_DIR/stage_sentryusb/00-sentryusb-tweaks/files/tesla-keygen"
+fi
 
 info "Injecting BLE daemon files..."
 cp "$SCRIPT_DIR/server/ble/sentryusb-ble.py" "$WORK_DIR/stage_sentryusb/00-sentryusb-tweaks/files/sentryusb-ble.py"
