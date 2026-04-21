@@ -42,10 +42,12 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <dirent.h>
+#include <fcntl.h>
 #include <linux/limits.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -158,7 +160,7 @@ static int do_readdir(const char *path, void *buffer, fuse_fill_dir_t filler,
   snprintf(pathbuf, sizeof(pathbuf), "%s%s", source, path);
   DIR *dir = opendir(pathbuf);
   if (!dir) {
-    return -1;
+    return -errno;
   }
 
   while (true) {
@@ -183,11 +185,11 @@ constexpr uint32_t FOURCC(const char (&s) [N]) {
 }
 
 typedef struct {
-  int32_t size;
+  int64_t size;
   uint32_t fourcc;
 } chunkinfo;
 
-static chunkinfo get_chunk(int fd, int offset) {
+static chunkinfo get_chunk(int fd, off_t offset) {
   chunkinfo info;
   if (lseek(fd, offset, SEEK_SET) < 0) {
     info.size = -1;
@@ -198,23 +200,39 @@ static chunkinfo get_chunk(int fd, int offset) {
     info.size = -1;
     return info;
   }
-  info.size = ntohl(val);
+  info.size = (uint32_t) ntohl(val);
 
   if (read(fd, &val, sizeof(val)) != sizeof(val)) {
     info.size = -1;
     return info;
   }
   info.fourcc = ntohl(val);
+
+  // Per ISO/IEC 14496-12: size==1 means a 64-bit "largesize" follows.
+  if (info.size == 1) {
+    uint32_t hi, lo;
+    if (read(fd, &hi, sizeof(hi)) != sizeof(hi) ||
+        read(fd, &lo, sizeof(lo)) != sizeof(lo)) {
+      info.size = -1;
+      return info;
+    }
+    info.size = ((uint64_t) ntohl(hi) << 32) | (uint32_t) ntohl(lo);
+  }
   return info;
 }
 
-static int parse_chunks(int fd, int start, int end) {
+static off_t parse_chunks(int fd, off_t start, off_t end) {
   while (true) {
     if (start > (end - 8)) {
       return 0;
     }
     chunkinfo info = get_chunk(fd, start);
     if (info.size < 0) {
+      return -1;
+    }
+    // Malformed box: size smaller than its own 8-byte header would cause
+    // infinite loops or negative advances. Abort parsing rather than spin.
+    if (info.size < 8) {
       return -1;
     }
 
@@ -228,7 +246,7 @@ static int parse_chunks(int fd, int start, int end) {
       case FOURCC("minf"):
       case FOURCC("stbl"):
         {
-          int off = parse_chunks(fd, start + 8, start + info.size);
+          off_t off = parse_chunks(fd, start + 8, start + info.size);
           if (off < 0) {
             return -1;
           }
@@ -243,41 +261,50 @@ static int parse_chunks(int fd, int start, int end) {
   return 0;
 }
 
-static int find_ctts(int fd) {
+static off_t find_ctts(int fd) {
   chunkinfo info = get_chunk(fd, 0);
   if (info.fourcc != FOURCC("ftyp")) {
     return 0;
   }
 
-  return parse_chunks(fd, info.size, 99999999);
+  struct stat st;
+  if (fstat(fd, &st) < 0) {
+    return 0;
+  }
+  return parse_chunks(fd, info.size, st.st_size);
 }
 
 typedef struct {
   int fd;
-  int cttsoffset;
+  off_t cttsoffset;
 } filehandle;
 
 static int do_open(const char *path, struct fuse_file_info *fi) {
   printf("do_open(%s)\n", path);
 
-  if ((fi->flags & (O_WRONLY || O_RDWR)) != 0) {
+  // The original check used logical-OR of O_WRONLY (1) and O_RDWR (2),
+  // which constant-folds to 1, silently allowing O_RDWR opens on this
+  // read-only filesystem. Mask against O_ACCMODE and reject anything
+  // that isn't O_RDONLY.
+  if ((fi->flags & O_ACCMODE) != O_RDONLY) {
     printf("write not allowed\n");
-    return -1;
+    return -EACCES;
   }
   char pathbuf[PATH_MAX];
   snprintf(pathbuf, sizeof(pathbuf), "%s%s", source, path);
 
   int fd = open(pathbuf, O_RDONLY);
   if (fd < 0) {
-    printf("couldn't open %s\n", pathbuf);
-    return -1;
+    int err = errno;
+    printf("couldn't open %s: %s\n", pathbuf, strerror(err));
+    return -err;
   }
-  int cttsoffset = find_ctts(fd);
-  printf("cttsoffset: %d\n", cttsoffset);
+  off_t cttsoffset = find_ctts(fd);
+  printf("cttsoffset: %lld\n", (long long) cttsoffset);
   filehandle *fh = new (std::nothrow) filehandle;
   if (!fh) {
     close(fd);
-    return -1;
+    return -ENOMEM;
   }
   fh->fd = fd;
   fh->cttsoffset = cttsoffset;
@@ -306,10 +333,11 @@ static int do_read( const char *path, char *buffer, size_t size, off_t offset, s
   filehandle *fh = (filehandle*) fi->fh;
   int fd = fh->fd;
 
-  int numread = pread(fd, buffer, size, offset);
+  ssize_t numread = pread(fd, buffer, size, offset);
   if (numread < 0) {
-    printf("couldn't read\n");
-    return -1;
+    int err = errno;
+    printf("couldn't read: %s\n", strerror(err));
+    return -err;
   }
 
   /*
@@ -321,19 +349,20 @@ static int do_read( const char *path, char *buffer, size_t size, off_t offset, s
      ctts:                           |--|
   */
 
-  int ctts = fh->cttsoffset;
+  off_t ctts = fh->cttsoffset;
   if (ctts > 0) {
     ctts += 4; // location of fourcc
-    int s = max(offset, ctts);
-    int e = min(offset + size, ctts + 4);
+    off_t s = max(offset, ctts);
+    off_t e = min((off_t)(offset + numread), (off_t)(ctts + 4));
     if (e > s) {
       /* buffer includes (part of) ctts fourcc */
-      memset(buffer + (s - offset), '@', e - s);
-      printf("clearing ctts at offset %d, len %d\n", int(s - offset), int(e-s));
+      memset(buffer + (s - offset), '@', (size_t)(e - s));
+      printf("clearing ctts at offset %lld, len %lld\n",
+             (long long)(s - offset), (long long)(e - s));
     }
   }
 
-  return numread;
+  return (int) numread;
 }
 
 static struct fuse_operations ops = {
