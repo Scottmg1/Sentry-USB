@@ -54,7 +54,7 @@ ble_restore_gatt_daemon() {
 
   # Belt-and-suspenders: also look for a nudge loop by command name in case
   # the pid file is missing (e.g. lost when /tmp was re-created).
-  if pgrep -f "ble_nudge\|keep_awake_nudge" >/dev/null 2>&1; then
+  if pgrep -fE "ble_nudge|keep_awake_nudge" >/dev/null 2>&1; then
     log "Tesla BLE: Keep-awake nudge process still running — mobile-app Bluetooth stays disabled."
     return
   fi
