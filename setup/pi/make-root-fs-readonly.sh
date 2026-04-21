@@ -168,6 +168,27 @@ then
   fi
 fi
 
+# ---- BlueZ bond storage (/var/lib/bluetooth) ----
+# BlueZ persists pairing keys to /var/lib/bluetooth when a central (e.g.
+# an Android phone) bonds with the Pi's GATT server.  On a read-only
+# root FS the write fails and the bluetooth.service can crash during
+# pairing.  Bind-mount from a dot-prefixed folder on /mutable so:
+#   - bonds survive reboots (persisted on the SSD/SD)
+#   - the directory is hidden from Linux ls / macOS Finder / Windows
+#     Explorer when a user plugs the drive into a computer, keeping
+#     the partition view clean alongside TeslaCam/, Wraps/, etc.
+if [ ! -d /mutable/.bluetooth ]
+then
+  log_progress "Creating /mutable/.bluetooth for BlueZ bond persistence"
+  mkdir -p /mutable/.bluetooth
+  # Migrate any pre-existing bonds from the root FS
+  if [ -d /var/lib/bluetooth ] && [ -n "$(ls -A /var/lib/bluetooth 2>/dev/null)" ]
+  then
+    cp -a /var/lib/bluetooth/. /mutable/.bluetooth/ 2>/dev/null || true
+  fi
+  chmod 700 /mutable/.bluetooth
+fi
+
 # ---- DHCP lease directories ----
 # Use tmpfs mounts.  Leases are ephemeral and re-requested at boot.
 # Symlinking to /mutable caused failures when the USB drive wasn't
@@ -440,6 +461,15 @@ if ! grep -w -q "/var/lib/dhcpcd" /etc/fstab
 then
   mkdir -p /var/lib/dhcpcd
   echo "tmpfs /var/lib/dhcpcd tmpfs nodev,nosuid 0 0" >> /etc/fstab
+fi
+
+# Bind-mount /mutable/.bluetooth over /var/lib/bluetooth so BlueZ can
+# persist bond keys on the read-only root FS.  x-systemd.requires-mounts-for
+# ensures /mutable is mounted first; x-systemd.before=bluetooth.service
+# ensures the bind is in place before bluetoothd starts.
+if ! grep -w -q "/var/lib/bluetooth" /etc/fstab
+then
+  echo "/mutable/.bluetooth /var/lib/bluetooth none bind,x-systemd.requires-mounts-for=/mutable,x-systemd.before=bluetooth.service 0 0" >> /etc/fstab
 fi
 
 # Put rfkill state on tmpfs so systemd-rfkill doesn't restore a stale
