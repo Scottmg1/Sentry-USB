@@ -57,6 +57,7 @@ func RegisterRoutes(mux *http.ServeMux, hub *ws.Hub) {
 
 	// System actions
 	mux.HandleFunc("POST /api/system/reboot", h.reboot)
+	mux.HandleFunc("POST /api/system/shutdown", h.shutdown)
 	mux.HandleFunc("POST /api/system/toggle-drives", h.toggleDrives)
 	mux.HandleFunc("POST /api/system/trigger-sync", h.triggerSync)
 	mux.HandleFunc("POST /api/system/ble-pair", h.blePair)

@@ -26,6 +26,13 @@ func (h *handlers) reboot(w http.ResponseWriter, r *http.Request) {
 	writeOK(w)
 }
 
+func (h *handlers) shutdown(w http.ResponseWriter, r *http.Request) {
+	go func() {
+		shell.Run("poweroff")
+	}()
+	writeOK(w)
+}
+
 func (h *handlers) toggleDrives(w http.ResponseWriter, r *http.Request) {
 	if _, err := os.Stat("/sys/kernel/config/usb_gadget/sentryusb"); err == nil {
 		shell.Run("bash", "/root/bin/disable_gadget.sh")
