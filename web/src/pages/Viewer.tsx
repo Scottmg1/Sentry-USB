@@ -701,18 +701,18 @@ export default function Viewer() {
                     <Car className="mt-0.5 h-4 w-4 shrink-0 text-blue-400" />
                     <div>
                       <p className="text-[11px] font-medium text-slate-300">
-                        Looking for more? Try Sentry Editor
+                        Looking for more? Try Sentry Studio
                       </p>
                       <p className="mt-0.5 text-[10px] leading-tight text-slate-500">
-                        Android app with GPS overlay, telemetry data, multi-camera export, and detailed event analysis.
+                        Advanced TeslaCam viewer with GPS overlay, telemetry data, multi-angle export, and detailed event analysis.
                       </p>
                       <a
-                        href="https://play.google.com/store/apps/details?id=com.chufleco.sentryeditor"
+                        href="https://github.com/ChadR23/Sentry-Six"
                         target="_blank"
                         rel="noopener noreferrer"
                         className="mt-1.5 inline-flex items-center gap-1 rounded-md bg-blue-500/10 px-2 py-1 text-[10px] font-medium text-blue-400 transition-colors hover:bg-blue-500/20 hover:text-blue-300"
                       >
-                        Get on Google Play <ExternalLink className="h-2.5 w-2.5" />
+                        View on GitHub <ExternalLink className="h-2.5 w-2.5" />
                       </a>
                     </div>
                   </div>
@@ -950,15 +950,15 @@ export default function Viewer() {
                 <div className="mt-4 rounded-lg border border-white/5 bg-white/[0.02] p-3">
                   <p className="text-[11px] font-medium text-slate-400">Want a more advanced viewer?</p>
                   <p className="mt-0.5 text-[10px] text-slate-600">
-                    Sentry Editor offers GPS overlays, telemetry data, multi-camera export, and more — for Android.
+                    Sentry Studio offers GPS overlays, telemetry data, multi-angle export, and more.
                   </p>
                   <a
-                    href="https://play.google.com/store/apps/details?id=com.chufleco.sentryeditor"
+                    href="https://github.com/ChadR23/Sentry-Six"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="mt-2 inline-flex items-center gap-1 text-[10px] font-medium text-blue-400 transition-colors hover:text-blue-300"
                   >
-                    Get Sentry Editor on Google Play <ExternalLink className="h-2.5 w-2.5" />
+                    Check out Sentry Studio <ExternalLink className="h-2.5 w-2.5" />
                   </a>
                 </div>
               </div>
