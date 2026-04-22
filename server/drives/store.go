@@ -375,6 +375,14 @@ const archiveDataPath = "/mnt/archive/drive-data.json"
 
 // SyncToArchive copies the local drive data file to the archive mount.
 // This is best-effort — it silently returns nil if the archive is not mounted.
+//
+// It enforces a size-guard backed by a local cache at DefaultSyncCachePath
+// (/mutable/.drive-data-last-sync). If the new file is less than
+// syncGuardRatio (50%) the size of the last successful sync AND the last
+// sync was above syncGuardMinThreshold (10 MB), the sync is refused and
+// *ErrSyncGuard is returned so callers can warn the user. This protects
+// against the failure mode where a corrupted/empty local drive-data.json
+// overwrites a healthy archive copy.
 func (s *Store) SyncToArchive() error {
 	// Check if archive directory exists
 	if _, err := os.Stat("/mnt/archive"); err != nil {
@@ -389,6 +397,32 @@ func (s *Store) SyncToArchive() error {
 		}
 	}
 
+	return s.syncToPath(archiveDataPath, DefaultSyncCachePath)
+}
+
+// syncToPath copies s.path to destPath atomically, enforcing the size-guard
+// using cachePath to remember the last successful sync size. On a successful
+// sync the cache is updated with the new size. On a refused sync (*ErrSyncGuard)
+// the destination and cache are left untouched — the existing archive copy
+// is preserved.
+//
+// Extracted from SyncToArchive for testability: production callers go through
+// SyncToArchive (which also does the mount check); tests can call this
+// directly against a tempdir.
+func (s *Store) syncToPath(destPath, cachePath string) error {
+	// Stat source first so we know the new size before the guard decision.
+	srcInfo, err := os.Stat(s.path)
+	if err != nil {
+		return err
+	}
+	newSize := srcInfo.Size()
+
+	lastSize, _ := readSyncCache(cachePath) // fails open on error
+	if err := checkSyncSizeGuard(newSize, lastSize); err != nil {
+		log.Printf("[drives] %s", err.Error())
+		return err
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -398,7 +432,13 @@ func (s *Store) SyncToArchive() error {
 	}
 	defer src.Close()
 
-	tmp := archiveDataPath + ".tmp"
+	// Ensure the destination directory exists (tests use tempdirs without
+	// it; production always has /mnt/archive but this is cheap insurance).
+	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+		return err
+	}
+
+	tmp := destPath + ".tmp"
 	dst, err := os.Create(tmp)
 	if err != nil {
 		return err
@@ -420,9 +460,18 @@ func (s *Store) SyncToArchive() error {
 		return err
 	}
 
-	if err := os.Rename(tmp, archiveDataPath); err != nil {
+	if err := os.Rename(tmp, destPath); err != nil {
+		os.Remove(tmp)
 		return err
 	}
+
+	// Record the successful sync size. Cache write failures are logged
+	// but not fatal — the copy succeeded, we'd rather tolerate a stale
+	// cache (which fails open on next sync) than report a sync error.
+	if err := writeSyncCache(cachePath, n); err != nil {
+		log.Printf("[drives] Warning: failed to update sync-size cache at %s: %v", cachePath, err)
+	}
+
 	log.Printf("[drives] Synced drive data to archive (%d bytes)", n)
 	return nil
 }
