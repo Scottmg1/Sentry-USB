@@ -658,12 +658,17 @@ func (dh *DriveHandlers) exportForSync(w http.ResponseWriter, r *http.Request) {
 }
 
 // GET /api/drives/stats — aggregate statistics
+//
+// Uses WithRouteSummaries so the endpoint reads the pre-computed
+// aggregate columns rather than decoding every route's BLOBs. On a
+// 5500-route rig this drops peak heap from ~300 MB to ~5 MB, which is
+// what makes the migration useful on a 512 MB Pi Zero 2 W.
 func (dh *DriveHandlers) driveStats(w http.ResponseWriter, r *http.Request) {
 	var stats drives.AggregateStats
 	var routeCount int
-	dh.store.WithRoutes(func(routes []drives.Route) {
-		stats = drives.ComputeAggregateStatsFromRoutes(routes)
-		routeCount = len(routes)
+	dh.store.WithRouteSummaries(func(summaries []drives.RouteSummary) {
+		stats = drives.ComputeAggregateStatsFromSummaries(summaries)
+		routeCount = len(summaries)
 	})
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
