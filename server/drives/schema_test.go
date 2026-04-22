@@ -145,8 +145,151 @@ func TestMigrate_SeedsSchemaVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("metaGet schema_version: %v", err)
 	}
-	if v != "1" {
-		t.Fatalf("schema_version = %q, want %q", v, "1")
+	if v != "2" {
+		t.Fatalf("schema_version = %q, want %q", v, "2")
+	}
+}
+
+// listColumns returns all column names on a table, sorted.
+func listColumns(t *testing.T, db *sql.DB, table string) []string {
+	t.Helper()
+	rows, err := db.Query(`SELECT name FROM pragma_table_info(?)`, table)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var names []string
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// v2SummaryColumns is the set of per-route aggregate columns added in
+// schema v2. Fresh installs get them via migrate(); existing v1 DBs get
+// them via the v2 ALTER TABLE path.
+var v2SummaryColumns = []string{
+	"max_speed_mps",
+	"avg_speed_mps",
+	"speed_sample_count",
+	"valid_point_count",
+	"fsd_engaged_ms",
+	"autosteer_engaged_ms",
+	"tacc_engaged_ms",
+	"fsd_distance_m",
+	"autosteer_distance_m",
+	"tacc_distance_m",
+	"assisted_distance_m",
+	"fsd_disengagements",
+	"fsd_accel_pushes",
+	"start_lat",
+	"start_lon",
+	"end_lat",
+	"end_lon",
+}
+
+func TestMigrate_V2AddsSummaryColumns(t *testing.T) {
+	db := openTestDB(t)
+	if err := migrate(context.Background(), db); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	got := listColumns(t, db, "routes")
+	have := map[string]bool{}
+	for _, c := range got {
+		have[c] = true
+	}
+	for _, want := range v2SummaryColumns {
+		if !have[want] {
+			t.Errorf("missing v2 column %q on routes; have %v", want, got)
+		}
+	}
+}
+
+// TestMigrate_V2UpgradesExistingV1DB simulates the production upgrade
+// path: a DB that was created by the v1 binary gets the new columns
+// ALTERed in on the next migrate() pass.
+func TestMigrate_V2UpgradesExistingV1DB(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+
+	// Build a v1 DB by running only the v1 statements.
+	v1 := []string{
+		`CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID`,
+		`CREATE TABLE routes (
+			file              TEXT PRIMARY KEY,
+			date_dir          TEXT NOT NULL,
+			point_count       INTEGER NOT NULL DEFAULT 0,
+			raw_park_count    INTEGER NOT NULL DEFAULT 0,
+			raw_frame_count   INTEGER NOT NULL DEFAULT 0,
+			start_ts          INTEGER,
+			end_ts            INTEGER,
+			distance_m        REAL NOT NULL DEFAULT 0,
+			first_lat         REAL,
+			first_lon         REAL,
+			points_blob       BLOB NOT NULL,
+			gear_states_blob  BLOB,
+			ap_states_blob    BLOB,
+			speeds_blob       BLOB,
+			accel_blob        BLOB,
+			gear_runs_blob    BLOB,
+			updated_at        INTEGER NOT NULL
+		) WITHOUT ROWID`,
+		`CREATE TABLE processed_files (file TEXT PRIMARY KEY, added_at INTEGER NOT NULL) WITHOUT ROWID`,
+		`CREATE TABLE drive_tags (drive_key TEXT NOT NULL, tag TEXT NOT NULL, PRIMARY KEY (drive_key, tag)) WITHOUT ROWID`,
+	}
+	for _, s := range v1 {
+		if _, err := db.ExecContext(ctx, s); err != nil {
+			t.Fatalf("v1 DDL: %v", err)
+		}
+	}
+	if err := metaSet(ctx, db, "schema_version", "1"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Seed a route row so we can verify the upgrade preserves data.
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO routes(file, date_dir, points_blob, updated_at)
+		VALUES('clip/a.mp4', '2026-04-20', x'', 0)`); err != nil {
+		t.Fatal(err)
+	}
+
+	// Run migrate(): should add v2 columns without dropping data.
+	if err := migrate(ctx, db); err != nil {
+		t.Fatalf("migrate v1->v2: %v", err)
+	}
+	got := listColumns(t, db, "routes")
+	have := map[string]bool{}
+	for _, c := range got {
+		have[c] = true
+	}
+	for _, want := range v2SummaryColumns {
+		if !have[want] {
+			t.Errorf("after upgrade: missing %q; have %v", want, got)
+		}
+	}
+	// Pre-existing row must survive and have NULL aggregates.
+	var fsdEngaged sql.NullInt64
+	var startLat sql.NullFloat64
+	if err := db.QueryRowContext(ctx,
+		`SELECT fsd_engaged_ms, start_lat FROM routes WHERE file = 'clip/a.mp4'`,
+	).Scan(&fsdEngaged, &startLat); err != nil {
+		t.Fatalf("scan upgraded row: %v", err)
+	}
+	if fsdEngaged.Valid {
+		t.Errorf("expected NULL fsd_engaged_ms on upgraded row, got %d", fsdEngaged.Int64)
+	}
+	if startLat.Valid {
+		t.Errorf("expected NULL start_lat on upgraded row, got %v", startLat.Float64)
+	}
+	// schema_version must have advanced.
+	v, _ := metaGet(ctx, db, "schema_version")
+	if v != "2" {
+		t.Fatalf("schema_version after upgrade: got %q, want %q", v, "2")
 	}
 }
 
