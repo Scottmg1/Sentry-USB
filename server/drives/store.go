@@ -29,12 +29,28 @@ const DefaultDataPath = "/mutable/drive-data.db"
 // historical location.
 const defaultJSONMirrorPath = "/mutable/drive-data.json"
 
-// legacyJSONPath is the pre-SQLite data file. The JSON importer (added in a
-// follow-up commit) reads this on first boot if the DB doesn't already
-// contain imported data; until then, existing installs see an empty Drives
-// page. The original JSON is preserved and renamed to .bak-<ts> only after
-// a successful import.
+// legacyJSONPath is the pre-SQLite data file on the read-only root
+// filesystem. The JSON importer reads this on first boot if the primary
+// /mutable/drive-data.json is missing.
 const legacyJSONPath = "/root/drive-data.json"
+
+// importSourceCandidates is the ordered list of paths the one-shot
+// JSON->DB importer in Load() checks. The first one that exists wins.
+// Tests override this via withImportSourceCandidates so they can drive
+// the importer against a tempdir.
+var importSourceCandidates = []string{
+	defaultJSONMirrorPath, // /mutable/drive-data.json
+	legacyJSONPath,        // /root/drive-data.json
+}
+
+// withImportSourceCandidates swaps importSourceCandidates for the duration
+// of a test. Used by load_import_test.go to point the importer at
+// tempdir paths.
+func withImportSourceCandidates(t interface{ Cleanup(func()) }, paths []string) {
+	original := importSourceCandidates
+	importSourceCandidates = paths
+	t.Cleanup(func() { importSourceCandidates = original })
+}
 
 // archiveDataPath is where the archive-side JSON copy lives when a CIFS/NFS
 // archive is mounted at /mnt/archive. Rsync and rclone users bypass this
@@ -113,10 +129,108 @@ func (s *Store) Load() error {
 		return fmt.Errorf("Load: migrate: %w", err)
 	}
 
+	// One-shot JSON -> DB import. Runs only if meta.imported_from_json_at
+	// is unset (fresh install, or upgrading from the JSON-backed binary).
+	if err := s.runOneShotImportLocked(ctx); err != nil {
+		return fmt.Errorf("Load: import: %w", err)
+	}
+
 	if err := s.refreshCountsLocked(ctx); err != nil {
 		return fmt.Errorf("Load: refresh counts: %w", err)
 	}
 	return nil
+}
+
+// runOneShotImportLocked performs the JSON->DB upgrade dance:
+//
+//  1. If meta.imported_from_json_at is already set, return — import has
+//     either run before or this is a fresh install on a binary that
+//     doesn't need to import.
+//  2. Walk importSourceCandidates and take the first that exists. If
+//     none exist (true fresh install), set the marker to now and return.
+//  3. Stream the chosen JSON into the DB via importJSON. The whole
+//     import is wrapped in one transaction; any failure rolls it back
+//     and returns the error so Load() fails and the user sees the
+//     problem on the next boot.
+//  4. On success: rename the source JSON to .bak-<unix-epoch>-<rand4>.
+//     Never deleted -- this is the user's safety net if the migration
+//     ever needs to be undone. The rand4 suffix protects against Pis
+//     without an RTC where time.Now() may be 1970 on first boot and
+//     two consecutive imports could collide on filename.
+//  5. Set meta.imported_from_json_at to now so future boots skip this.
+//
+// Caller must hold s.mu (write lock). Safe to call when the DB already
+// has data (in that case it just returns after the marker check).
+func (s *Store) runOneShotImportLocked(ctx context.Context) error {
+	if v, err := metaGet(ctx, s.db, "imported_from_json_at"); err == nil && v != "" {
+		return nil // already imported
+	}
+
+	var sourcePath string
+	for _, p := range importSourceCandidates {
+		if info, err := os.Stat(p); err == nil && !info.IsDir() {
+			sourcePath = p
+			break
+		}
+	}
+
+	if sourcePath == "" {
+		// True fresh install: no prior JSON to import. Mark it so we
+		// don't keep checking on every boot.
+		log.Printf("[drives] No legacy drive-data.json found; treating as fresh install")
+		return metaSet(ctx, s.db, "imported_from_json_at", time.Now().UTC().Format(time.RFC3339))
+	}
+
+	log.Printf("[drives] Importing legacy JSON from %s", sourcePath)
+	f, err := os.Open(sourcePath)
+	if err != nil {
+		return fmt.Errorf("open %q: %w", sourcePath, err)
+	}
+	defer f.Close()
+
+	stats, err := importJSON(ctx, s.db, f, func(routesImported int) {
+		log.Printf("[drives] Import progress: %d routes", routesImported)
+	})
+	if err != nil {
+		return fmt.Errorf("importJSON %q: %w", sourcePath, err)
+	}
+	log.Printf("[drives] Import complete: %d routes, %d processed files, %d tags",
+		stats.Routes, stats.ProcessedFiles, stats.DriveTags)
+
+	// Rename source out of the way so we don't try to re-import next
+	// boot if the marker write somehow fails. Use epoch+random suffix
+	// to survive Pi-without-RTC clock skew.
+	bakPath := fmt.Sprintf("%s.bak-%d-%04x",
+		sourcePath, time.Now().Unix(), randSuffix4())
+	if err := os.Rename(sourcePath, bakPath); err != nil {
+		// Source rename failed but DB import was atomic. Set the marker
+		// anyway so we don't loop on the next boot, but log loudly so
+		// the user knows there's a stale JSON they should clean up.
+		log.Printf("[drives] WARNING: import succeeded but failed to rename %s -> %s: %v",
+			sourcePath, bakPath, err)
+	} else {
+		log.Printf("[drives] Renamed source JSON to %s (backup; safe to delete after verifying drives page)", bakPath)
+	}
+
+	if err := metaSet(ctx, s.db, "imported_from_json_at", time.Now().UTC().Format(time.RFC3339)); err != nil {
+		return fmt.Errorf("set import marker: %w", err)
+	}
+	return nil
+}
+
+// randSuffix4 returns a 16-bit random integer used to disambiguate
+// .bak-<ts>-XXXX filenames on Pis without an RTC (where time.Now() may
+// be 1970 on first boot and two consecutive runs could otherwise
+// collide). math/rand is fine; this isn't security-sensitive.
+var randSuffix4 = func() uint16 {
+	// Re-seed off the high-resolution monotonic clock so multiple calls
+	// in the same second don't repeat. crypto/rand would be overkill;
+	// a quick xorshift on time.Now().UnixNano() is enough.
+	t := time.Now().UnixNano()
+	t ^= t >> 13
+	t ^= t << 7
+	t ^= t >> 17
+	return uint16(t & 0xffff)
 }
 
 // Save is a no-op in the SQL backend — writes are already durable via WAL
