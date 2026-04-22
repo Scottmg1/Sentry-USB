@@ -3,6 +3,7 @@ package drives
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -152,30 +154,32 @@ func (s *Store) Load() error {
 	return nil
 }
 
-// runAggregateBackfillLocked populates NULL aggregate columns on routes
-// inserted by pre-v2 binaries. Idempotent via the
-// meta.summary_backfilled_at marker so we don't re-scan every boot. If
-// the marker is missing and there are no NULL rows (true fresh install),
-// the marker is still set so the next boot skips this path entirely.
+// runAggregateBackfillLocked populates NULL aggregate columns on any
+// route row. The backfill is self-healing: it uses `max_speed_mps IS
+// NULL` as the sentinel, so it picks up pre-v2 rows on a first upgrade
+// AND any NULL rows introduced by other paths (ReplaceData on upload,
+// rollback-then-re-upgrade, future callers that forget to populate the
+// aggregate columns). The COUNT(*) scan is trivial on realistic
+// datasets; we pay it every boot so there's no silent data-shape drift.
+//
+// The meta.summary_backfilled_at marker is written after a non-empty
+// run for observability only (shows up in diagnostics) — it is NOT
+// used as an exit condition.
 //
 // Caller must hold s.mu (write lock).
 func (s *Store) runAggregateBackfillLocked(ctx context.Context) error {
-	if v, err := metaGet(ctx, s.db, "summary_backfilled_at"); err == nil && v != "" {
-		return nil
-	}
-
 	stats, err := backfillRouteAggregates(ctx, s.db, func(done, total int) {
 		log.Printf("[drives] Backfilling summary aggregates: %d/%d routes", done, total)
 	})
 	if err != nil {
-		// Don't set the marker on failure -- let the next boot retry.
 		return err
 	}
 	if stats.Updated > 0 {
 		log.Printf("[drives] Summary backfill complete: %d routes updated", stats.Updated)
+		return metaSet(ctx, s.db, "summary_backfilled_at",
+			time.Now().UTC().Format(time.RFC3339))
 	}
-	return metaSet(ctx, s.db, "summary_backfilled_at",
-		time.Now().UTC().Format(time.RFC3339))
+	return nil
 }
 
 // runOneShotImportLocked performs the JSON->DB upgrade dance:
@@ -204,11 +208,19 @@ func (s *Store) runOneShotImportLocked(ctx context.Context) error {
 	}
 
 	var sourcePath string
+	var alsoPresent []string
 	for _, p := range importSourceCandidates {
 		if info, err := os.Stat(p); err == nil && !info.IsDir() {
-			sourcePath = p
-			break
+			if sourcePath == "" {
+				sourcePath = p
+			} else {
+				alsoPresent = append(alsoPresent, p)
+			}
 		}
+	}
+	if len(alsoPresent) > 0 {
+		log.Printf("[drives] WARNING: multiple drive-data.json candidates exist; importing %s and ignoring %v. Delete the unused file(s) to silence this warning.",
+			sourcePath, alsoPresent)
 	}
 
 	if sourcePath == "" {
@@ -234,23 +246,27 @@ func (s *Store) runOneShotImportLocked(ctx context.Context) error {
 	log.Printf("[drives] Import complete: %d routes, %d processed files, %d tags",
 		stats.Routes, stats.ProcessedFiles, stats.DriveTags)
 
-	// Rename source out of the way so we don't try to re-import next
-	// boot if the marker write somehow fails. Use epoch+random suffix
-	// to survive Pi-without-RTC clock skew.
+	// Set the marker BEFORE renaming the source. If the process dies
+	// between those two steps, the worst outcome on the next boot is a
+	// source JSON that gets left alone (because the marker is set), not
+	// a double-import of already-imported data. Any orphan source JSON
+	// is logged loudly below so the user can clean it up.
+	if err := metaSet(ctx, s.db, "imported_from_json_at", time.Now().UTC().Format(time.RFC3339)); err != nil {
+		return fmt.Errorf("set import marker: %w", err)
+	}
+
+	// Rename source out of the way so the user has a safety-net backup
+	// and so they don't get confused later by a stale-looking JSON
+	// sitting next to the DB. Use epoch+random suffix to survive
+	// Pi-without-RTC clock skew. On cross-filesystem mounts (EXDEV),
+	// fall back to copy+unlink so we don't leave the orphan in place.
 	bakPath := fmt.Sprintf("%s.bak-%d-%04x",
 		sourcePath, time.Now().Unix(), randSuffix4())
-	if err := os.Rename(sourcePath, bakPath); err != nil {
-		// Source rename failed but DB import was atomic. Set the marker
-		// anyway so we don't loop on the next boot, but log loudly so
-		// the user knows there's a stale JSON they should clean up.
-		log.Printf("[drives] WARNING: import succeeded but failed to rename %s -> %s: %v",
+	if err := renameOrCopy(sourcePath, bakPath); err != nil {
+		log.Printf("[drives] WARNING: import succeeded but failed to archive %s -> %s: %v",
 			sourcePath, bakPath, err)
 	} else {
 		log.Printf("[drives] Renamed source JSON to %s (backup; safe to delete after verifying drives page)", bakPath)
-	}
-
-	if err := metaSet(ctx, s.db, "imported_from_json_at", time.Now().UTC().Format(time.RFC3339)); err != nil {
-		return fmt.Errorf("set import marker: %w", err)
 	}
 	return nil
 }
@@ -268,6 +284,44 @@ var randSuffix4 = func() uint16 {
 	t ^= t << 7
 	t ^= t >> 17
 	return uint16(t & 0xffff)
+}
+
+// renameOrCopy renames src to dst, falling back to copy+unlink when
+// rename fails with EXDEV (cross-device link). Pis in the wild mount
+// /mutable, /root, and /mnt/archive on different filesystems often
+// enough that os.Rename is not portable across those boundaries.
+// On copy, the destination is fsynced before the source is removed
+// so a crash mid-fallback leaves src intact rather than losing data.
+func renameOrCopy(src, dst string) error {
+	if err := os.Rename(src, dst); err == nil {
+		return nil
+	} else if !errors.Is(err, syscall.EXDEV) {
+		return err
+	}
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		os.Remove(dst)
+		return err
+	}
+	if err := out.Sync(); err != nil {
+		out.Close()
+		os.Remove(dst)
+		return err
+	}
+	if err := out.Close(); err != nil {
+		os.Remove(dst)
+		return err
+	}
+	return os.Remove(src)
 }
 
 // Save is a no-op in the SQL backend — writes are already durable via WAL
@@ -601,8 +655,14 @@ func (s *Store) ReplaceData(data StoreData) {
 			file, date_dir, point_count, raw_park_count, raw_frame_count,
 			start_ts, end_ts, distance_m, first_lat, first_lon,
 			points_blob, gear_states_blob, ap_states_blob,
-			speeds_blob, accel_blob, gear_runs_blob, updated_at)
-		VALUES(?, ?, ?, ?, ?, NULL, NULL, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+			speeds_blob, accel_blob, gear_runs_blob, updated_at,
+			max_speed_mps, avg_speed_mps, speed_sample_count, valid_point_count,
+			fsd_engaged_ms, autosteer_engaged_ms, tacc_engaged_ms,
+			fsd_distance_m, autosteer_distance_m, tacc_distance_m, assisted_distance_m,
+			fsd_disengagements, fsd_accel_pushes,
+			start_lat, start_lon, end_lat, end_lon)
+		VALUES(?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+			?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		log.Printf("[drives] ReplaceData prepare routes: %v", err)
 		return
@@ -621,10 +681,21 @@ func (s *Store) ReplaceData(data StoreData) {
 		sb := encodeFloat32s(r.Speeds)
 		acb := encodeFloat32s(r.AccelPositions)
 		rb := encodeGearRuns(r.GearRuns)
+		// Populate the v2 aggregate columns so the BLOB-free summary
+		// endpoints return correct data after an upload/restore. Without
+		// this, WithRouteSummaries reads NULL->0 for every field and the
+		// Drives page shows zeros across the board.
+		agg := ComputeRouteAggregates(r)
 		if _, err := routeStmt.ExecContext(ctx,
 			n, r.Date, len(r.Points), r.RawParkCount, r.RawFrameCount,
-			firstLat, firstLon,
-			pb, gb, ab, sb, acb, rb, now); err != nil {
+			agg.DistanceM, firstLat, firstLon,
+			pb, gb, ab, sb, acb, rb, now,
+			agg.MaxSpeedMps, agg.AvgSpeedMps, agg.SpeedSampleCount, agg.ValidPointCount,
+			agg.FSDEngagedMs, agg.AutosteerEngagedMs, agg.TACCEngagedMs,
+			agg.FSDDistanceM, agg.AutosteerDistanceM, agg.TACCDistanceM, agg.AssistedDistanceM,
+			agg.FSDDisengagements, agg.FSDAccelPushes,
+			nullFloat(agg.StartLat), nullFloat(agg.StartLng),
+			nullFloat(agg.EndLat), nullFloat(agg.EndLng)); err != nil {
 			log.Printf("[drives] ReplaceData route insert: %v", err)
 			return
 		}
@@ -1173,14 +1244,27 @@ func (s *Store) syncToPath(srcPath, destPath, cachePath string) error {
 		os.Remove(tmp)
 		return err
 	}
-	if err := os.Rename(tmp, destPath); err != nil {
+	// Reject copy-truncation: if the source shrank between stat and
+	// copy (mid-regeneration, filesystem hiccup), the destination is
+	// short and the size-guard cache must NOT be primed with the
+	// truncated length -- that would poison all future syncs, because
+	// the guard would then compare real full-size exports against the
+	// too-small cached value and refuse them.
+	if n != newSize {
+		os.Remove(tmp)
+		return fmt.Errorf("syncToPath: short copy (%d of %d bytes); refusing to poison size-guard cache", n, newSize)
+	}
+	// The archive is commonly a CIFS/NFS mount on a different filesystem
+	// than the temp file, which makes os.Rename return EXDEV. Fall back
+	// to copy+unlink in that case.
+	if err := renameOrCopy(tmp, destPath); err != nil {
 		os.Remove(tmp)
 		return err
 	}
 
-	if err := writeSyncCache(cachePath, n); err != nil {
+	if err := writeSyncCache(cachePath, newSize); err != nil {
 		log.Printf("[drives] Warning: failed to update sync-size cache at %s: %v", cachePath, err)
 	}
-	log.Printf("[drives] Synced drive data to archive (%d bytes)", n)
+	log.Printf("[drives] Synced drive data to archive (%d bytes)", newSize)
 	return nil
 }

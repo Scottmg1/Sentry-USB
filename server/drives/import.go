@@ -1,6 +1,8 @@
 package drives
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -8,6 +10,24 @@ import (
 	"io"
 	"time"
 )
+
+// utf8BOM is the 3-byte prefix Windows text editors and some export
+// tooling prepend to UTF-8 files. json.Decoder does NOT strip it, so a
+// legacy drive-data.json touched on Windows would fail importJSON with
+// "expected top-level object". We peek-and-skip it before decoding.
+var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
+
+// skipUTF8BOM returns a reader positioned just past any UTF-8 BOM at
+// the start of r. If r does not start with a BOM, the returned reader
+// yields the original bytes unchanged.
+func skipUTF8BOM(r io.Reader) io.Reader {
+	br := bufio.NewReader(r)
+	prefix, err := br.Peek(len(utf8BOM))
+	if err == nil && bytes.Equal(prefix, utf8BOM) {
+		_, _ = br.Discard(len(utf8BOM))
+	}
+	return br
+}
 
 // importProgressEvery controls how often importJSON invokes the
 // onProgress callback during the routes array. Keep it high enough that
@@ -71,27 +91,55 @@ func importJSON(ctx context.Context, db *sql.DB, r io.Reader, onProgress func(ro
 	}
 	defer pfStmt.Close()
 
+	// The importer populates v2 aggregate columns inline so that a
+	// first-boot upgrade doesn't have to re-decode every BLOB during
+	// runAggregateBackfillLocked. On the 5500-route / 762 MB dataset
+	// this halves wall-time for the one-shot migration.
 	routeStmt, err := tx.PrepareContext(ctx, `
 		INSERT INTO routes(
 			file, date_dir, point_count, raw_park_count, raw_frame_count,
 			start_ts, end_ts, distance_m, first_lat, first_lon,
 			points_blob, gear_states_blob, ap_states_blob,
-			speeds_blob, accel_blob, gear_runs_blob, updated_at)
-		VALUES(?, ?, ?, ?, ?, NULL, NULL, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			speeds_blob, accel_blob, gear_runs_blob, updated_at,
+			max_speed_mps, avg_speed_mps, speed_sample_count, valid_point_count,
+			fsd_engaged_ms, autosteer_engaged_ms, tacc_engaged_ms,
+			fsd_distance_m, autosteer_distance_m, tacc_distance_m, assisted_distance_m,
+			fsd_disengagements, fsd_accel_pushes,
+			start_lat, start_lon, end_lat, end_lon)
+		VALUES(?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+			?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(file) DO UPDATE SET
-			date_dir        = excluded.date_dir,
-			point_count     = excluded.point_count,
-			raw_park_count  = excluded.raw_park_count,
-			raw_frame_count = excluded.raw_frame_count,
-			first_lat       = excluded.first_lat,
-			first_lon       = excluded.first_lon,
-			points_blob     = excluded.points_blob,
-			gear_states_blob = excluded.gear_states_blob,
-			ap_states_blob  = excluded.ap_states_blob,
-			speeds_blob     = excluded.speeds_blob,
-			accel_blob      = excluded.accel_blob,
-			gear_runs_blob  = excluded.gear_runs_blob,
-			updated_at      = excluded.updated_at`)
+			date_dir            = excluded.date_dir,
+			point_count         = excluded.point_count,
+			raw_park_count      = excluded.raw_park_count,
+			raw_frame_count     = excluded.raw_frame_count,
+			distance_m          = excluded.distance_m,
+			first_lat           = excluded.first_lat,
+			first_lon           = excluded.first_lon,
+			points_blob         = excluded.points_blob,
+			gear_states_blob    = excluded.gear_states_blob,
+			ap_states_blob      = excluded.ap_states_blob,
+			speeds_blob         = excluded.speeds_blob,
+			accel_blob          = excluded.accel_blob,
+			gear_runs_blob      = excluded.gear_runs_blob,
+			updated_at          = excluded.updated_at,
+			max_speed_mps       = excluded.max_speed_mps,
+			avg_speed_mps       = excluded.avg_speed_mps,
+			speed_sample_count  = excluded.speed_sample_count,
+			valid_point_count   = excluded.valid_point_count,
+			fsd_engaged_ms      = excluded.fsd_engaged_ms,
+			autosteer_engaged_ms= excluded.autosteer_engaged_ms,
+			tacc_engaged_ms     = excluded.tacc_engaged_ms,
+			fsd_distance_m      = excluded.fsd_distance_m,
+			autosteer_distance_m= excluded.autosteer_distance_m,
+			tacc_distance_m     = excluded.tacc_distance_m,
+			assisted_distance_m = excluded.assisted_distance_m,
+			fsd_disengagements  = excluded.fsd_disengagements,
+			fsd_accel_pushes    = excluded.fsd_accel_pushes,
+			start_lat           = excluded.start_lat,
+			start_lon           = excluded.start_lon,
+			end_lat             = excluded.end_lat,
+			end_lon             = excluded.end_lon`)
 	if err != nil {
 		return stats, fmt.Errorf("importJSON: prepare routes: %w", err)
 	}
@@ -105,7 +153,7 @@ func importJSON(ctx context.Context, db *sql.DB, r io.Reader, onProgress func(ro
 	defer tagStmt.Close()
 
 	now := time.Now().Unix()
-	dec := json.NewDecoder(r)
+	dec := json.NewDecoder(skipUTF8BOM(r))
 
 	// Expect an opening '{'.
 	tok, err := dec.Token()
@@ -257,10 +305,18 @@ func streamRoutes(
 		acb := encodeFloat32s(r.AccelPositions)
 		rb := encodeGearRuns(r.GearRuns)
 
+		agg := ComputeRouteAggregates(r)
+
 		if _, err := routeStmt.ExecContext(ctx,
 			norm, r.Date, len(r.Points), r.RawParkCount, r.RawFrameCount,
-			firstLat, firstLon,
-			pb, gb, ab, sb, acb, rb, now); err != nil {
+			agg.DistanceM, firstLat, firstLon,
+			pb, gb, ab, sb, acb, rb, now,
+			agg.MaxSpeedMps, agg.AvgSpeedMps, agg.SpeedSampleCount, agg.ValidPointCount,
+			agg.FSDEngagedMs, agg.AutosteerEngagedMs, agg.TACCEngagedMs,
+			agg.FSDDistanceM, agg.AutosteerDistanceM, agg.TACCDistanceM, agg.AssistedDistanceM,
+			agg.FSDDisengagements, agg.FSDAccelPushes,
+			nullFloat(agg.StartLat), nullFloat(agg.StartLng),
+			nullFloat(agg.EndLat), nullFloat(agg.EndLng)); err != nil {
 			return count, pfCount, fmt.Errorf("routes: insert %q: %w", norm, err)
 		}
 

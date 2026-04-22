@@ -165,7 +165,18 @@ func TestMigrationE2E_ImportExportImportPreservesEverything(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("exported JSON: %d bytes", exportInfo.Size())
+	t.Logf("exported JSON: %d bytes (source was %d)", exportInfo.Size(), len(srcBytes))
+
+	// The exporter must produce byte-length-identical output to the
+	// synthesized source. Different size means the round-trip is
+	// dropping, padding, or re-formatting fields -- i.e. the archive
+	// copy Sentry Studio reads would no longer match the JSON the user
+	// originally ingested. This is the strong correctness signal the
+	// e2e test is actually here to lock.
+	if exportInfo.Size() != int64(len(srcBytes)) {
+		t.Errorf("export size drift: exported %d bytes, source was %d bytes",
+			exportInfo.Size(), len(srcBytes))
+	}
 
 	// 6: import the exported JSON into a second fresh store.
 	dir2 := t.TempDir()

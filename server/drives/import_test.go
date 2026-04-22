@@ -22,6 +22,35 @@ func marshalStoreData(t *testing.T, d StoreData) []byte {
 	return b
 }
 
+// TestImportJSON_StripsUTF8BOM locks the fix for first-boot failures
+// on users whose drive-data.json was touched on Windows and carries a
+// leading UTF-8 BOM (EF BB BF). json.Decoder does not strip it, so
+// without the importer's explicit BOM skip the whole Load() would fail
+// with "expected top-level object" and the service wouldn't start.
+func TestImportJSON_StripsUTF8BOM(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	if err := migrate(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+
+	// Minimal-but-real payload so we also prove subsequent decoding
+	// works after the BOM is consumed (not just that the opening
+	// token parses).
+	payload := marshalStoreData(t, StoreData{
+		ProcessedFiles: []string{"bom.mp4"},
+	})
+	withBOM := append([]byte{0xEF, 0xBB, 0xBF}, payload...)
+
+	stats, err := importJSON(ctx, db, bytes.NewReader(withBOM), nil)
+	if err != nil {
+		t.Fatalf("importJSON with BOM: %v", err)
+	}
+	if stats.ProcessedFiles != 1 {
+		t.Errorf("ProcessedFiles after BOM import = %d, want 1", stats.ProcessedFiles)
+	}
+}
+
 func TestImportJSON_EmptyPayload(t *testing.T) {
 	db := openTestDB(t)
 	ctx := context.Background()

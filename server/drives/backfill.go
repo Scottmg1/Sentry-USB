@@ -142,15 +142,25 @@ func backfillOneBatch(ctx context.Context, db *sql.DB) (int, error) {
 		route.Points = pts
 		route.GearStates = decodeUint8s(r.gb)
 		route.AutopilotStates = decodeUint8s(r.ab)
-		if sp, err := decodeFloat32s(r.sb); err == nil {
-			route.Speeds = sp
+		// Speeds/Accel/GearRuns decode errors are propagated -- a
+		// partial Route silently produces "successful" aggregates,
+		// which is exactly the kind of silent-correctness bug the
+		// golden equivalence tests are there to prevent.
+		sp, err := decodeFloat32s(r.sb)
+		if err != nil {
+			return 0, fmt.Errorf("decode speeds %q: %w", r.file, err)
 		}
-		if ac, err := decodeFloat32s(r.acb); err == nil {
-			route.AccelPositions = ac
+		route.Speeds = sp
+		ac, err := decodeFloat32s(r.acb)
+		if err != nil {
+			return 0, fmt.Errorf("decode accel %q: %w", r.file, err)
 		}
-		if runs, err := decodeGearRuns(r.rb); err == nil {
-			route.GearRuns = runs
+		route.AccelPositions = ac
+		runs, err := decodeGearRuns(r.rb)
+		if err != nil {
+			return 0, fmt.Errorf("decode gear_runs %q: %w", r.file, err)
 		}
+		route.GearRuns = runs
 		aggs = append(aggs, agg{file: r.file, RouteAggregates: ComputeRouteAggregates(route)})
 	}
 

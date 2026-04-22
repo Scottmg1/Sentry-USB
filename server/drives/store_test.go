@@ -263,6 +263,61 @@ func TestStore_ReplaceDataWipesAndSeeds(t *testing.T) {
 	}
 }
 
+// TestStore_ReplaceDataPopulatesAggregateColumns locks the fix for the
+// /api/drives/data/upload regression where uploaded backups produced a
+// drives page full of zeros. ReplaceData must populate the v2 aggregate
+// columns inline so the BLOB-free summary endpoints return real data
+// immediately, without waiting for the next Load() backfill.
+func TestStore_ReplaceDataPopulatesAggregateColumns(t *testing.T) {
+	s := newStore(t)
+
+	route := sampleRoute("new-a.mp4", "2026-04-21_09-00-00")
+	s.ReplaceData(StoreData{
+		ProcessedFiles: []string{route.File},
+		Routes:         []Route{route},
+	})
+
+	want := ComputeRouteAggregates(route)
+
+	var (
+		dist          float64
+		maxSpeed      sql.NullFloat64
+		validPoints   sql.NullInt64
+		startLat      sql.NullFloat64
+	)
+	if err := s.db.QueryRow(`
+		SELECT distance_m, max_speed_mps, valid_point_count, start_lat
+		FROM routes WHERE file = ?`, route.File,
+	).Scan(&dist, &maxSpeed, &validPoints, &startLat); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if abs(dist-want.DistanceM) > 1e-9 {
+		t.Errorf("distance_m = %v, want %v", dist, want.DistanceM)
+	}
+	if !maxSpeed.Valid {
+		t.Error("max_speed_mps is NULL after ReplaceData")
+	}
+	if !validPoints.Valid || int(validPoints.Int64) != want.ValidPointCount {
+		t.Errorf("valid_point_count = %v, want %d", validPoints, want.ValidPointCount)
+	}
+	if !startLat.Valid {
+		t.Error("start_lat is NULL after ReplaceData")
+	}
+
+	// Sanity: the summary read path must see the populated values.
+	var gotMaxSpeed float64
+	s.WithRouteSummaries(func(sums []RouteSummary) {
+		if len(sums) != 1 {
+			t.Fatalf("WithRouteSummaries len = %d, want 1", len(sums))
+		}
+		gotMaxSpeed = sums[0].MaxSpeedMps
+	})
+	if abs(gotMaxSpeed-want.MaxSpeedMps) > 1e-9 {
+		t.Errorf("WithRouteSummaries MaxSpeedMps = %v, want %v",
+			gotMaxSpeed, want.MaxSpeedMps)
+	}
+}
+
 func TestStore_GetDataReflectsState(t *testing.T) {
 	s := newStore(t)
 	s.AddRoute("a.mp4", "2026-04-20_14-30-00", []GPSPoint{{40.7, -74.0}}, nil, nil, nil, nil, 0, 0, nil)

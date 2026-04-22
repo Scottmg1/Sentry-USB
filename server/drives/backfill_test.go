@@ -82,8 +82,8 @@ func TestBackfillRouteAggregates_PopulatesNullRows(t *testing.T) {
 
 // TestBackfillRouteAggregates_SkipsAlreadyPopulatedRows confirms that
 // rows written by the new AddRoute (which already populates aggregates)
-// are left untouched. The backfill query filters on `distance_m IS NULL`
-// so repeat invocations are no-ops.
+// are left untouched. The backfill query filters on `max_speed_mps IS
+// NULL` so repeat invocations are no-ops.
 func TestBackfillRouteAggregates_SkipsAlreadyPopulatedRows(t *testing.T) {
 	s := newStore(t)
 	ctx := context.Background()
@@ -149,10 +149,8 @@ func TestLoad_TriggersBackfillOnUpgrade(t *testing.T) {
 		pb, gb, ab, sb, acb, rb); err != nil {
 		t.Fatal(err)
 	}
-	// Reset the marker so a second Load re-runs the backfill.
-	if err := metaSet(context.Background(), s1.db, "summary_backfilled_at", ""); err != nil {
-		t.Fatal(err)
-	}
+	// Backfill is self-healing on every Load (gated only by the NULL
+	// sentinel), so no marker-reset is needed here.
 
 	// Close and re-open to exercise the Load() path end-to-end.
 	s1.db.Close()
