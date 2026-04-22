@@ -2,6 +2,14 @@
 # Post-archive hook: process newly archived dashcam clips for GPS/drive data.
 # Called by archiveloop after archive_clips completes, before awake_stop.
 # Only runs if DRIVE_MAP_ENABLED is set to true in the config.
+#
+# Error handling: -u catches typos in variable names; -o pipefail makes
+# size-check pipelines (wc | tr) fail loudly instead of silently producing
+# empty strings that the size-guard would then treat as "0 bytes = allow".
+# We deliberately do NOT set -e: the script is structured to tolerate
+# individual curl/grep failures and continue with fallbacks, and flipping
+# that behavior would turn every transient API hiccup into a skipped sync.
+set -uo pipefail
 
 source /root/bin/envsetup.sh 2>/dev/null || true
 
