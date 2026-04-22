@@ -135,10 +135,47 @@ func (s *Store) Load() error {
 		return fmt.Errorf("Load: import: %w", err)
 	}
 
+	// One-shot aggregate backfill. Upgrading from schema v1 leaves every
+	// pre-existing route row with NULL aggregate columns; the refactored
+	// summary endpoints assume those columns are populated, so we fill
+	// them here before Load() returns. The backfill itself is idempotent
+	// on already-populated rows -- the marker is belt-and-suspenders so
+	// a fresh install with zero NULL rows still skips the COUNT(*) scan
+	// on subsequent boots.
+	if err := s.runAggregateBackfillLocked(ctx); err != nil {
+		return fmt.Errorf("Load: backfill: %w", err)
+	}
+
 	if err := s.refreshCountsLocked(ctx); err != nil {
 		return fmt.Errorf("Load: refresh counts: %w", err)
 	}
 	return nil
+}
+
+// runAggregateBackfillLocked populates NULL aggregate columns on routes
+// inserted by pre-v2 binaries. Idempotent via the
+// meta.summary_backfilled_at marker so we don't re-scan every boot. If
+// the marker is missing and there are no NULL rows (true fresh install),
+// the marker is still set so the next boot skips this path entirely.
+//
+// Caller must hold s.mu (write lock).
+func (s *Store) runAggregateBackfillLocked(ctx context.Context) error {
+	if v, err := metaGet(ctx, s.db, "summary_backfilled_at"); err == nil && v != "" {
+		return nil
+	}
+
+	stats, err := backfillRouteAggregates(ctx, s.db, func(done, total int) {
+		log.Printf("[drives] Backfilling summary aggregates: %d/%d routes", done, total)
+	})
+	if err != nil {
+		// Don't set the marker on failure -- let the next boot retry.
+		return err
+	}
+	if stats.Updated > 0 {
+		log.Printf("[drives] Summary backfill complete: %d routes updated", stats.Updated)
+	}
+	return metaSet(ctx, s.db, "summary_backfilled_at",
+		time.Now().UTC().Format(time.RFC3339))
 }
 
 // runOneShotImportLocked performs the JSON->DB upgrade dance:
