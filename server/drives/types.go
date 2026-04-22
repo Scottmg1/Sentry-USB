@@ -30,6 +30,55 @@ type Route struct {
 	GearRuns        []GearRun  `json:"gearRuns,omitempty"`
 }
 
+// RouteAggregates is the per-clip scalar summary computed once from a
+// Route's BLOB-backed parallel slices. Cached as columns on the routes
+// table so the Drives-page summary endpoints never have to decode a
+// Points/GearStates/AutopilotStates BLOB to produce a list view.
+//
+// Semantics match ComputeAggregateStatsFromRoutes's per-route inner loop
+// (see grouper.go): null-island filter + GPS-teleport guard, no
+// group-level median filter. For clean data this is bit-identical to
+// the group-filtered path in GroupSummaries; for pathological GPS
+// noise the two can drift by fractions of a percent on distance-derived
+// fields, which the UI rounds away anyway.
+type RouteAggregates struct {
+	DistanceM            float64
+	MaxSpeedMps          float64
+	AvgSpeedMps          float64
+	SpeedSampleCount     int
+	ValidPointCount      int
+	FSDEngagedMs         int64
+	AutosteerEngagedMs   int64
+	TACCEngagedMs        int64
+	FSDDistanceM         float64
+	AutosteerDistanceM   float64
+	TACCDistanceM        float64
+	AssistedDistanceM    float64
+	FSDDisengagements    int
+	FSDAccelPushes       int
+	// Start/End points are the first and last non-null-island Points on
+	// the clip. Pointers so a clip with no valid points can report nil
+	// without overloading (0, 0) as a sentinel.
+	StartLat *float64
+	StartLng *float64
+	EndLat   *float64
+	EndLng   *float64
+}
+
+// RouteSummary is the BLOB-free row shape used by the summary
+// endpoints. It carries metadata that groupClips needs plus all the
+// pre-computed scalars from RouteAggregates. Reading 5500 summary rows
+// costs ~5 MB of heap versus ~300 MB for the full Route slice.
+type RouteSummary struct {
+	File          string
+	Date          string
+	RawParkCount  int
+	RawFrameCount int
+	GearRuns      []GearRun // metadata-sized; bytes, not KB
+
+	RouteAggregates
+}
+
 // StoreData is the archive-side JSON structure that Sentry Studio reads
 // from the archive server (rsync/CIFS/rclone). It is also the payload for
 // /api/drives/data/download and /api/drives/data/upload.
