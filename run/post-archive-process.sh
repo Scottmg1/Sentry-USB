@@ -235,6 +235,25 @@ if [ -x /root/bin/archive-is-reachable.sh ]; then
   fi
 fi
 
+# Regenerate /mutable/drive-data.json from the SQLite store before any
+# remote sync. Post-SQLite-migration the live store is /mutable/drive-data.db
+# and the JSON file is rebuilt on demand for archive consumers (Sentry
+# Studio reads the archive-side JSON copy).
+#
+# On older binaries that don't yet expose /api/drives/data/export-for-sync
+# this is a no-op (curl returns non-zero) and the rsync/rclone blocks
+# below ship whatever JSON is on disk, same as before.
+if [ "$ARCHIVE_REACHABLE" = "true" ] && { [ -n "${RSYNC_SERVER:-}" ] || [ -n "${RCLONE_DRIVE:-}" ]; }; then
+  log "Regenerating drive-data.json mirror for archive sync..."
+  EXPORT_RESULT=$(curl -sf -X POST "${API_URL}/api/drives/data/export-for-sync" 2>/dev/null)
+  if [ $? -eq 0 ]; then
+    EXPORT_BYTES=$(echo "$EXPORT_RESULT" | grep -o '"bytes":[0-9]*' | cut -d: -f2)
+    log "Regenerated drive-data.json mirror (${EXPORT_BYTES:-?} bytes)."
+  else
+    log "Note: export-for-sync endpoint unavailable; shipping existing /mutable/drive-data.json (pre-SQLite binary?)."
+  fi
+fi
+
 # Sync drive-data.json to the rsync archive server.
 # For CIFS/NFS archive types, the Go server's SyncToArchive() handles this
 # while /mnt/archive is still mounted.  For rsync archive there is no local

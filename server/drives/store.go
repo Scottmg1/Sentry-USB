@@ -720,28 +720,109 @@ func (s *Store) ClearProcessedForReprocess() {
 	_ = s.refreshCountsLocked(context.Background())
 }
 
-// SyncToArchive is temporarily a no-op during the SQLite migration — the
-// old implementation copied the local JSON file byte-for-byte to the
-// archive mount, but the local file is now a SQLite database. A follow-up
-// commit adds a streaming JSON exporter and rewires SyncToArchive to
-// regenerate /mutable/drive-data.json on demand and copy that to the
-// archive, with the size-guard from PR 1 still protecting the backup.
+// SyncToArchive regenerates the JSON mirror at defaultJSONMirrorPath
+// from the SQLite DB, then copies it to /mnt/archive/drive-data.json
+// atomically. The size-guard from PR 1 still applies via syncToPath:
+// a regenerated JSON that is dramatically smaller than the last
+// successful sync is refused.
 //
-// Meanwhile rsync and rclone users are untouched (their sync is handled
-// in post-archive-process.sh). Only CIFS/NFS mount users are briefly
-// affected, and only while this branch is in flight.
+// Best-effort: silently returns nil if /mnt/archive isn't a mounted
+// filesystem (rsync and rclone users handle their own archive flow in
+// run/post-archive-process.sh).
 func (s *Store) SyncToArchive() error {
-	log.Printf("[drives] SyncToArchive: temporarily disabled during SQLite migration " +
-		"(CIFS/NFS archive-side JSON will regenerate once the exporter lands)")
+	if _, err := os.Stat("/mnt/archive"); err != nil {
+		return nil
+	}
+	if mounts, err := os.ReadFile("/proc/mounts"); err == nil {
+		if !strings.Contains(string(mounts), "/mnt/archive") {
+			return nil
+		}
+	}
+
+	mirror := defaultJSONMirrorPath
+	if err := s.ExportJSONToFile(mirror); err != nil {
+		return fmt.Errorf("SyncToArchive: regenerate JSON mirror: %w", err)
+	}
+	return s.syncToPath(mirror, archiveDataPath, DefaultSyncCachePath)
+}
+
+// RestoreFromArchive copies a JSON drive-data file from the archive mount
+// into one of the importSourceCandidates paths so the next Load() picks
+// it up via the one-shot importer. Useful when /mutable has been wiped
+// (Pi reflash) but the archive still has the user's data.
+//
+// Best-effort: silently returns nil if /mnt/archive isn't mounted or no
+// JSON is present.
+func (s *Store) RestoreFromArchive() error {
+	if _, err := os.Stat(archiveDataPath); err != nil {
+		return nil
+	}
+	// Don't restore if we already have data — the one-shot importer
+	// will respect the import marker and skip anyway, but we'd rather
+	// not write a duplicate JSON to /mutable.
+	if _, err := os.Stat(defaultJSONMirrorPath); err == nil {
+		return nil
+	}
+	src, err := os.ReadFile(archiveDataPath)
+	if err != nil {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(defaultJSONMirrorPath), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(defaultJSONMirrorPath, src, 0o644); err != nil {
+		return err
+	}
+	log.Printf("[drives] Restored drive-data.json from archive (%d bytes); next Load() will import it", len(src))
 	return nil
 }
 
-// RestoreFromArchive is temporarily a no-op alongside SyncToArchive. The
-// old implementation restored a JSON copy from /mnt/archive into
-// /mutable/drive-data.json on first boot; in the new world that copy is
-// fed into the one-shot JSON->DB importer (landing in the next commit),
-// at which point this becomes the trigger for that import.
-func (s *Store) RestoreFromArchive() error {
+// ExportJSONForSync regenerates the canonical /mutable/drive-data.json
+// mirror that post-archive-process.sh ships to the rsync/rclone archive
+// server. Idempotent; safe to call concurrently with reads.
+//
+// Wraps ExportJSONToFile with the well-known production path so the API
+// handler doesn't have to import a package-private constant from drives.
+func (s *Store) ExportJSONForSync() error {
+	return s.ExportJSONToFile(defaultJSONMirrorPath)
+}
+
+// ExportJSONToFile streams the current DB contents out to path as a
+// drive-data.json (StoreData shape), using a tmp + rename for atomicity.
+// Exported here so server/api/drives.go's POST /api/drives/data/export-for-sync
+// handler can call it; also used internally by SyncToArchive.
+func (s *Store) ExportJSONToFile(path string) error {
+	if dir := filepath.Dir(path); dir != "" && dir != "." && dir != "/" {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+	}
+	tmp := path + ".tmp"
+	f, err := os.Create(tmp)
+	if err != nil {
+		return err
+	}
+	s.mu.RLock()
+	err = exportJSON(context.Background(), s.db, f)
+	s.mu.RUnlock()
+	if err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return err
+	}
 	return nil
 }
 
@@ -820,18 +901,18 @@ func normalizePath(p string) string {
 	return strings.ReplaceAll(p, "\\", "/")
 }
 
-// syncToPath copies s.path (whatever file is there — the SQLite DB today,
-// the regenerated JSON mirror in a follow-up commit) to destPath atomically,
-// enforcing the size-guard using cachePath. On success the cache is updated
-// with the new size; on *ErrSyncGuard the destination and cache are left
-// untouched.
+// syncToPath copies srcPath to destPath atomically, enforcing the size-
+// guard via cachePath. On success the cache is updated with the new size;
+// on *ErrSyncGuard the destination and cache are left untouched.
 //
-// This is the primitive underneath SyncToArchive (Go side) and is exercised
-// directly by the size-guard integration tests (syncguard_integration_test.go).
-// It does not require s.db to be open, so it works even before Load().
-func (s *Store) syncToPath(destPath, cachePath string) error {
+// This is the primitive underneath SyncToArchive (which passes the
+// regenerated JSON mirror as srcPath) and is exercised directly by the
+// size-guard integration tests. It does not require s.db to be open, so
+// it works even before Load() — the size-guard PR shipped this as
+// usable before the SQLite migration was wired in.
+func (s *Store) syncToPath(srcPath, destPath, cachePath string) error {
 	// Stat source first so we know the new size before the guard decision.
-	srcInfo, err := os.Stat(s.path)
+	srcInfo, err := os.Stat(srcPath)
 	if err != nil {
 		return err
 	}
@@ -843,7 +924,7 @@ func (s *Store) syncToPath(destPath, cachePath string) error {
 		return err
 	}
 
-	src, err := os.Open(s.path)
+	src, err := os.Open(srcPath)
 	if err != nil {
 		return err
 	}

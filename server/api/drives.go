@@ -61,6 +61,7 @@ func RegisterDriveRoutes(mux *http.ServeMux, dh *DriveHandlers) {
 	mux.HandleFunc("GET /api/drives/status", dh.processingStatus)
 	mux.HandleFunc("GET /api/drives/data/download", dh.downloadData)
 	mux.HandleFunc("POST /api/drives/data/upload", dh.uploadData)
+	mux.HandleFunc("POST /api/drives/data/export-for-sync", dh.exportForSync)
 	mux.HandleFunc("GET /api/drives/stats", dh.driveStats)
 	mux.HandleFunc("GET /api/drives/fsd-analytics", dh.fsdAnalytics)
 	mux.HandleFunc("PUT /api/drives/{id}/tags", dh.setDriveTags)
@@ -606,6 +607,53 @@ func (dh *DriveHandlers) uploadData(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusAccepted, map[string]interface{}{
 		"status": "importing",
+	})
+}
+
+// POST /api/drives/data/export-for-sync — regenerates the canonical
+// /mutable/drive-data.json mirror from the SQLite store so
+// post-archive-process.sh's rsync/rclone block can ship it to the
+// archive server.
+//
+// This is the small "make the archive copy current" hook the shell
+// script calls before each remote sync. The Go-side SyncToArchive
+// (CIFS/NFS users) regenerates the mirror itself; this endpoint exists
+// for the rsync/rclone shell paths that don't go through Go to copy
+// the file.
+//
+// Returns 200 + the new file size on success, 500 on export failure.
+// Refuses (409) if processing or import is currently running so we
+// don't snapshot a half-written DB during a heavy AddRoute burst.
+func (dh *DriveHandlers) exportForSync(w http.ResponseWriter, r *http.Request) {
+	if dh.processor.IsRunning() {
+		writeError(w, http.StatusConflict, "drive processing in progress; export-for-sync deferred")
+		return
+	}
+	dh.importMu.Lock()
+	importing := dh.importing
+	dh.importMu.Unlock()
+	if importing {
+		writeError(w, http.StatusConflict, "drive data import in progress; export-for-sync deferred")
+		return
+	}
+
+	if err := dh.store.ExportJSONForSync(); err != nil {
+		archiveLog("Export-for-sync failed: %v", err)
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("export failed: %v", err))
+		return
+	}
+
+	// Stat the resulting file to report size back to the shell script
+	// (used in log lines and could feed an additional pre-rsync sanity
+	// check at the shell layer).
+	var size int64
+	if info, err := os.Stat("/mutable/drive-data.json"); err == nil {
+		size = info.Size()
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status": "exported",
+		"path":   "/mutable/drive-data.json",
+		"bytes":  size,
 	})
 }
 

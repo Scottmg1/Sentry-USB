@@ -39,7 +39,7 @@ func TestSyncToPath_FirstTimeCreatesDestAndCache(t *testing.T) {
 	dest := filepath.Join(dir, "archive", "drive-data.json")
 	cache := filepath.Join(dir, ".drive-data-last-sync")
 
-	if err := s.syncToPath(dest, cache); err != nil {
+	if err := s.syncToPath(s.path, dest, cache); err != nil {
 		t.Fatalf("first sync should succeed, got %v", err)
 	}
 
@@ -69,7 +69,7 @@ func TestSyncToPath_NormalGrowthUpdatesBoth(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := s.syncToPath(dest, cache); err != nil {
+	if err := s.syncToPath(s.path, dest, cache); err != nil {
 		t.Fatalf("normal growth sync should succeed, got %v", err)
 	}
 
@@ -112,7 +112,7 @@ func TestSyncToPath_RefusesIncidentScenarioAndPreservesArchive(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = s.syncToPath(dest, cache)
+	err = s.syncToPath(s.path, dest, cache)
 	if err == nil {
 		t.Fatal("guard must refuse the 16% overwrite")
 	}
@@ -151,7 +151,7 @@ func TestSyncToPath_MissingSourceReturnsError(t *testing.T) {
 	dest := filepath.Join(dir, "archive", "drive-data.json")
 	cache := filepath.Join(dir, ".drive-data-last-sync")
 
-	err := s.syncToPath(dest, cache)
+	err := s.syncToPath(s.path, dest, cache)
 	if err == nil {
 		t.Fatal("expected error when source is missing")
 	}
