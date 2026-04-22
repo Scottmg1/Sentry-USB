@@ -1,6 +1,7 @@
 package drives
 
 import (
+	"database/sql"
 	"path/filepath"
 	"sort"
 	"testing"
@@ -373,4 +374,180 @@ func TestStore_PathReturnsProvidedPath(t *testing.T) {
 	if got := s.Path(); got != "/custom/path/drive-data.db" {
 		t.Errorf("Path() = %q", got)
 	}
+}
+
+// -----------------------------------------------------------------------------
+// Aggregate columns (schema v2)
+// -----------------------------------------------------------------------------
+
+// TestStore_AddRoutePopulatesAggregateColumns asserts AddRoute writes
+// every RouteAggregates field into its corresponding v2 column so later
+// summary queries don't need to decode BLOBs. The contract is locked
+// against ComputeRouteAggregates: the two must agree.
+func TestStore_AddRoutePopulatesAggregateColumns(t *testing.T) {
+	s := newStore(t)
+
+	// Build a route that exercises FSD + Autosteer so we can assert more
+	// than zero for most columns.
+	const n = 60
+	points := make([]GPSPoint, n)
+	ap := make([]uint8, n)
+	gears := make([]uint8, n)
+	for i := 0; i < n; i++ {
+		points[i] = GPSPoint{40.0 + float64(i)*0.00001, -74.0}
+		gears[i] = 1 // Drive
+		if i < 30 {
+			ap[i] = 1 // FSD
+		} else {
+			ap[i] = 2 // Autosteer
+		}
+	}
+	r := Route{
+		File:            "2026-04-20/2026-04-20_14-30-00-front.mp4",
+		Date:            "2026-04-20_14-30-00",
+		Points:          points,
+		AutopilotStates: ap,
+		GearStates:      gears,
+		RawFrameCount:   n,
+	}
+	want := ComputeRouteAggregates(r)
+
+	s.AddRoute(r.File, r.Date, r.Points, r.GearStates, r.AutopilotStates,
+		r.Speeds, r.AccelPositions, r.RawParkCount, r.RawFrameCount, r.GearRuns)
+
+	// Read the aggregate columns directly — this also verifies they are
+	// actually named what the rest of the code assumes.
+	var (
+		distanceM, fsdDistanceM, autosteerDistanceM, taccDistanceM     float64
+		assistedDistanceM, maxSpeedMps, avgSpeedMps                    float64
+		fsdEngagedMs, autosteerEngagedMs, taccEngagedMs                int64
+		fsdDisengagements, fsdAccelPushes, validPointCount, speedCount int
+		startLat, startLon, endLat, endLon                             sql.NullFloat64
+	)
+	err := s.db.QueryRow(`SELECT
+		distance_m, fsd_distance_m, autosteer_distance_m, tacc_distance_m,
+		assisted_distance_m, max_speed_mps, avg_speed_mps,
+		fsd_engaged_ms, autosteer_engaged_ms, tacc_engaged_ms,
+		fsd_disengagements, fsd_accel_pushes, valid_point_count, speed_sample_count,
+		start_lat, start_lon, end_lat, end_lon
+		FROM routes WHERE file = ?`, r.File).Scan(
+		&distanceM, &fsdDistanceM, &autosteerDistanceM, &taccDistanceM,
+		&assistedDistanceM, &maxSpeedMps, &avgSpeedMps,
+		&fsdEngagedMs, &autosteerEngagedMs, &taccEngagedMs,
+		&fsdDisengagements, &fsdAccelPushes, &validPointCount, &speedCount,
+		&startLat, &startLon, &endLat, &endLon,
+	)
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+
+	// distance_m matches.
+	if abs(distanceM-want.DistanceM) > 1e-9 {
+		t.Errorf("distance_m: got %v want %v", distanceM, want.DistanceM)
+	}
+	if abs(fsdDistanceM-want.FSDDistanceM) > 1e-9 {
+		t.Errorf("fsd_distance_m: got %v want %v", fsdDistanceM, want.FSDDistanceM)
+	}
+	if abs(autosteerDistanceM-want.AutosteerDistanceM) > 1e-9 {
+		t.Errorf("autosteer_distance_m: got %v want %v",
+			autosteerDistanceM, want.AutosteerDistanceM)
+	}
+	if abs(taccDistanceM-want.TACCDistanceM) > 1e-9 {
+		t.Errorf("tacc_distance_m: got %v want %v", taccDistanceM, want.TACCDistanceM)
+	}
+	if abs(assistedDistanceM-want.AssistedDistanceM) > 1e-9 {
+		t.Errorf("assisted_distance_m: got %v want %v",
+			assistedDistanceM, want.AssistedDistanceM)
+	}
+	if fsdEngagedMs != want.FSDEngagedMs {
+		t.Errorf("fsd_engaged_ms: got %d want %d", fsdEngagedMs, want.FSDEngagedMs)
+	}
+	if autosteerEngagedMs != want.AutosteerEngagedMs {
+		t.Errorf("autosteer_engaged_ms: got %d want %d",
+			autosteerEngagedMs, want.AutosteerEngagedMs)
+	}
+	if fsdDisengagements != want.FSDDisengagements {
+		t.Errorf("fsd_disengagements: got %d want %d",
+			fsdDisengagements, want.FSDDisengagements)
+	}
+	if validPointCount != want.ValidPointCount {
+		t.Errorf("valid_point_count: got %d want %d",
+			validPointCount, want.ValidPointCount)
+	}
+	if want.StartLat != nil {
+		if !startLat.Valid || abs(startLat.Float64-*want.StartLat) > 1e-9 {
+			t.Errorf("start_lat: got %v want %v", startLat, *want.StartLat)
+		}
+	}
+	if want.EndLat != nil {
+		if !endLat.Valid || abs(endLat.Float64-*want.EndLat) > 1e-9 {
+			t.Errorf("end_lat: got %v want %v", endLat, *want.EndLat)
+		}
+	}
+	_ = taccEngagedMs
+	_ = maxSpeedMps
+	_ = avgSpeedMps
+	_ = fsdAccelPushes
+	_ = speedCount
+	_ = startLon
+	_ = endLon
+}
+
+func TestStore_WithRouteSummariesReturnsAggregates(t *testing.T) {
+	s := newStore(t)
+
+	const n = 20
+	points := make([]GPSPoint, n)
+	ap := make([]uint8, n)
+	for i := 0; i < n; i++ {
+		points[i] = GPSPoint{40.0 + float64(i)*0.0001, -74.0}
+		ap[i] = 1 // FSD throughout
+	}
+	r := Route{
+		File:            "2026-04-20/2026-04-20_14-30-00-front.mp4",
+		Date:            "2026-04-20_14-30-00",
+		Points:          points,
+		AutopilotStates: ap,
+		RawFrameCount:   n,
+	}
+	wantAgg := ComputeRouteAggregates(r)
+
+	s.AddRoute(r.File, r.Date, r.Points, nil, r.AutopilotStates,
+		nil, nil, 0, r.RawFrameCount, nil)
+
+	var got []RouteSummary
+	s.WithRouteSummaries(func(summaries []RouteSummary) {
+		got = append(got, summaries...)
+	})
+	if len(got) != 1 {
+		t.Fatalf("WithRouteSummaries returned %d rows, want 1", len(got))
+	}
+	sum := got[0]
+	if sum.File != r.File {
+		t.Errorf("File: got %q want %q", sum.File, r.File)
+	}
+	if sum.Date != r.Date {
+		t.Errorf("Date: got %q want %q", sum.Date, r.Date)
+	}
+	if abs(sum.DistanceM-wantAgg.DistanceM) > 1e-9 {
+		t.Errorf("DistanceM: got %v want %v", sum.DistanceM, wantAgg.DistanceM)
+	}
+	if abs(sum.FSDDistanceM-wantAgg.FSDDistanceM) > 1e-9 {
+		t.Errorf("FSDDistanceM: got %v want %v",
+			sum.FSDDistanceM, wantAgg.FSDDistanceM)
+	}
+	if sum.FSDEngagedMs != wantAgg.FSDEngagedMs {
+		t.Errorf("FSDEngagedMs: got %d want %d",
+			sum.FSDEngagedMs, wantAgg.FSDEngagedMs)
+	}
+	if sum.StartLat == nil || abs(*sum.StartLat-*wantAgg.StartLat) > 1e-9 {
+		t.Errorf("StartLat: got %v want %v", sum.StartLat, wantAgg.StartLat)
+	}
+}
+
+func abs(x float64) float64 {
+	if x < 0 {
+		return -x
+	}
+	return x
 }

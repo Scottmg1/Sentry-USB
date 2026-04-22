@@ -321,35 +321,87 @@ func (s *Store) AddRoute(
 		firstLat.Float64, firstLat.Valid = points[0][0], true
 		firstLon.Float64, firstLon.Valid = points[0][1], true
 
-		// start_ts / end_ts / distance_m will be computed in a follow-up
-		// commit so summary queries can skip decoding the point BLOB.
-		// For now we store NULLs / 0 and let the Go-side grouper compute
-		// as before. The index idx_routes_start_ts is still useful once
-		// we backfill.
+		// Compute the per-route aggregate columns once here so the
+		// Drives-page summary endpoints can operate on BLOB-free rows.
+		// Semantics live in aggregate.go; this call is the only place
+		// AddRoute walks the parallel slices for stats purposes.
+		agg := ComputeRouteAggregates(Route{
+			File:            relativePath,
+			Date:            dateDir,
+			Points:          points,
+			GearStates:      gears,
+			AutopilotStates: apStates,
+			Speeds:          speeds,
+			AccelPositions:  accelPositions,
+			RawParkCount:    rawParkCount,
+			RawFrameCount:   rawFrameCount,
+			GearRuns:        gearRuns,
+		})
+		startLat := nullFloat(agg.StartLat)
+		startLon := nullFloat(agg.StartLng)
+		endLat := nullFloat(agg.EndLat)
+		endLon := nullFloat(agg.EndLng)
+
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO routes(
 				file, date_dir, point_count, raw_park_count, raw_frame_count,
 				start_ts, end_ts, distance_m, first_lat, first_lon,
 				points_blob, gear_states_blob, ap_states_blob,
-				speeds_blob, accel_blob, gear_runs_blob, updated_at)
-			VALUES(?, ?, ?, ?, ?, NULL, NULL, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				speeds_blob, accel_blob, gear_runs_blob, updated_at,
+				max_speed_mps, avg_speed_mps, speed_sample_count, valid_point_count,
+				fsd_engaged_ms, autosteer_engaged_ms, tacc_engaged_ms,
+				fsd_distance_m, autosteer_distance_m, tacc_distance_m, assisted_distance_m,
+				fsd_disengagements, fsd_accel_pushes,
+				start_lat, start_lon, end_lat, end_lon)
+			VALUES(
+				?, ?, ?, ?, ?,
+				NULL, NULL, ?, ?, ?,
+				?, ?, ?, ?, ?, ?, ?,
+				?, ?, ?, ?,
+				?, ?, ?,
+				?, ?, ?, ?,
+				?, ?,
+				?, ?, ?, ?)
 			ON CONFLICT(file) DO UPDATE SET
-				date_dir        = excluded.date_dir,
-				point_count     = excluded.point_count,
-				raw_park_count  = excluded.raw_park_count,
-				raw_frame_count = excluded.raw_frame_count,
-				first_lat       = excluded.first_lat,
-				first_lon       = excluded.first_lon,
-				points_blob     = excluded.points_blob,
-				gear_states_blob = excluded.gear_states_blob,
-				ap_states_blob  = excluded.ap_states_blob,
-				speeds_blob     = excluded.speeds_blob,
-				accel_blob      = excluded.accel_blob,
-				gear_runs_blob  = excluded.gear_runs_blob,
-				updated_at      = excluded.updated_at`,
+				date_dir            = excluded.date_dir,
+				point_count         = excluded.point_count,
+				raw_park_count      = excluded.raw_park_count,
+				raw_frame_count     = excluded.raw_frame_count,
+				distance_m          = excluded.distance_m,
+				first_lat           = excluded.first_lat,
+				first_lon           = excluded.first_lon,
+				points_blob         = excluded.points_blob,
+				gear_states_blob    = excluded.gear_states_blob,
+				ap_states_blob      = excluded.ap_states_blob,
+				speeds_blob         = excluded.speeds_blob,
+				accel_blob          = excluded.accel_blob,
+				gear_runs_blob      = excluded.gear_runs_blob,
+				updated_at          = excluded.updated_at,
+				max_speed_mps       = excluded.max_speed_mps,
+				avg_speed_mps       = excluded.avg_speed_mps,
+				speed_sample_count  = excluded.speed_sample_count,
+				valid_point_count   = excluded.valid_point_count,
+				fsd_engaged_ms      = excluded.fsd_engaged_ms,
+				autosteer_engaged_ms= excluded.autosteer_engaged_ms,
+				tacc_engaged_ms     = excluded.tacc_engaged_ms,
+				fsd_distance_m      = excluded.fsd_distance_m,
+				autosteer_distance_m= excluded.autosteer_distance_m,
+				tacc_distance_m     = excluded.tacc_distance_m,
+				assisted_distance_m = excluded.assisted_distance_m,
+				fsd_disengagements  = excluded.fsd_disengagements,
+				fsd_accel_pushes    = excluded.fsd_accel_pushes,
+				start_lat           = excluded.start_lat,
+				start_lon           = excluded.start_lon,
+				end_lat             = excluded.end_lat,
+				end_lon             = excluded.end_lon`,
 			norm, dateDir, len(points), rawParkCount, rawFrameCount,
-			firstLat, firstLon,
-			pb, gb, ab, sb, acb, rb, time.Now().Unix()); err != nil {
+			agg.DistanceM, firstLat, firstLon,
+			pb, gb, ab, sb, acb, rb, time.Now().Unix(),
+			agg.MaxSpeedMps, agg.AvgSpeedMps, agg.SpeedSampleCount, agg.ValidPointCount,
+			agg.FSDEngagedMs, agg.AutosteerEngagedMs, agg.TACCEngagedMs,
+			agg.FSDDistanceM, agg.AutosteerDistanceM, agg.TACCDistanceM, agg.AssistedDistanceM,
+			agg.FSDDisengagements, agg.FSDAccelPushes,
+			startLat, startLon, endLat, endLon); err != nil {
 			log.Printf("[drives] AddRoute route upsert: %v", err)
 			return
 		}
@@ -422,6 +474,32 @@ func (s *Store) WithRoutes(fn func(routes []Route)) {
 		return
 	}
 	fn(routes)
+}
+
+// WithRouteSummaries is the BLOB-free analogue of WithRoutes. It
+// materializes the per-route metadata + pre-computed aggregate columns
+// (populated by AddRoute and the one-shot backfill) into a slice of
+// RouteSummary and invokes fn with it. Every BLOB column is excluded
+// from the SELECT, so a 5500-route DB reads ~5 MB of heap instead of
+// the ~300 MB that WithRoutes costs.
+//
+// The summary path is intended for the Drives-page list endpoints
+// (GroupSummaries, ComputeAggregateStatsFromRoutes, DriveStartTime).
+// Endpoints that need per-point data (BuildSingleDrive,
+// GroupRoutesOverview) continue to use WithRoutes.
+//
+// Callers must not retain the slice or any RouteSummary past fn's
+// return — same contract as WithRoutes.
+func (s *Store) WithRouteSummaries(fn func(summaries []RouteSummary)) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	summaries, err := s.selectAllRouteSummariesLocked(context.Background())
+	if err != nil {
+		log.Printf("[drives] WithRouteSummaries: %v", err)
+		fn(nil)
+		return
+	}
+	fn(summaries)
 }
 
 // Path returns the database path passed to NewStore (or DefaultDataPath).
@@ -879,6 +957,107 @@ func (s *Store) selectAllRoutesLocked(ctx context.Context) ([]Route, error) {
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+// selectAllRouteSummariesLocked reads every route's metadata plus the
+// v2 pre-computed aggregate columns, skipping all BLOB-backed columns
+// entirely. Heap cost is ~1 KB/row (metadata + gear_runs_blob). Caller
+// must hold s.mu (read).
+//
+// gear_runs_blob is the one "small BLOB" we still decode because
+// groupClips / splitClipAtParkGaps need frame counts to figure out
+// intra-clip drive boundaries. On a typical clip it's a handful of
+// bytes, not kilobytes.
+func (s *Store) selectAllRouteSummariesLocked(ctx context.Context) ([]RouteSummary, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT file, date_dir, raw_park_count, raw_frame_count, gear_runs_blob,
+		       distance_m, max_speed_mps, avg_speed_mps, speed_sample_count,
+		       valid_point_count, fsd_engaged_ms, autosteer_engaged_ms,
+		       tacc_engaged_ms, fsd_distance_m, autosteer_distance_m,
+		       tacc_distance_m, assisted_distance_m,
+		       fsd_disengagements, fsd_accel_pushes,
+		       start_lat, start_lon, end_lat, end_lon
+		FROM routes
+		ORDER BY file`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []RouteSummary
+	for rows.Next() {
+		var sum RouteSummary
+		var rb []byte
+		var (
+			distanceM, maxSpeedMps, avgSpeedMps                 sql.NullFloat64
+			fsdDistM, autosteerDistM, taccDistM, assistedDistM  sql.NullFloat64
+			speedSampleCount, validPointCount                   sql.NullInt64
+			fsdEngagedMs, autosteerEngagedMs, taccEngagedMs     sql.NullInt64
+			fsdDisengagements, fsdAccelPushes                   sql.NullInt64
+			startLat, startLon, endLat, endLon                  sql.NullFloat64
+		)
+		if err := rows.Scan(
+			&sum.File, &sum.Date, &sum.RawParkCount, &sum.RawFrameCount, &rb,
+			&distanceM, &maxSpeedMps, &avgSpeedMps, &speedSampleCount,
+			&validPointCount, &fsdEngagedMs, &autosteerEngagedMs,
+			&taccEngagedMs, &fsdDistM, &autosteerDistM,
+			&taccDistM, &assistedDistM,
+			&fsdDisengagements, &fsdAccelPushes,
+			&startLat, &startLon, &endLat, &endLon,
+		); err != nil {
+			return nil, err
+		}
+		runs, err := decodeGearRuns(rb)
+		if err != nil {
+			return nil, fmt.Errorf("decode gear_runs for %q: %w", sum.File, err)
+		}
+		sum.GearRuns = runs
+		// Collapse NULL to zero so callers don't have to handle
+		// three-valued logic at every summary access. The backfill
+		// guarantees every row is populated before the refactored
+		// endpoints hit WithRouteSummaries.
+		sum.DistanceM = distanceM.Float64
+		sum.MaxSpeedMps = maxSpeedMps.Float64
+		sum.AvgSpeedMps = avgSpeedMps.Float64
+		sum.SpeedSampleCount = int(speedSampleCount.Int64)
+		sum.ValidPointCount = int(validPointCount.Int64)
+		sum.FSDEngagedMs = fsdEngagedMs.Int64
+		sum.AutosteerEngagedMs = autosteerEngagedMs.Int64
+		sum.TACCEngagedMs = taccEngagedMs.Int64
+		sum.FSDDistanceM = fsdDistM.Float64
+		sum.AutosteerDistanceM = autosteerDistM.Float64
+		sum.TACCDistanceM = taccDistM.Float64
+		sum.AssistedDistanceM = assistedDistM.Float64
+		sum.FSDDisengagements = int(fsdDisengagements.Int64)
+		sum.FSDAccelPushes = int(fsdAccelPushes.Int64)
+		if startLat.Valid {
+			v := startLat.Float64
+			sum.StartLat = &v
+		}
+		if startLon.Valid {
+			v := startLon.Float64
+			sum.StartLng = &v
+		}
+		if endLat.Valid {
+			v := endLat.Float64
+			sum.EndLat = &v
+		}
+		if endLon.Valid {
+			v := endLon.Float64
+			sum.EndLng = &v
+		}
+		out = append(out, sum)
+	}
+	return out, rows.Err()
+}
+
+// nullFloat converts an optional *float64 (as produced by aggregate.go's
+// Start/End fields) to a sql.NullFloat64 suitable for INSERT binding.
+func nullFloat(p *float64) sql.NullFloat64 {
+	if p == nil {
+		return sql.NullFloat64{}
+	}
+	return sql.NullFloat64{Float64: *p, Valid: true}
 }
 
 // refreshCountsLocked updates the atomic row-count caches. Caller must hold s.mu.
