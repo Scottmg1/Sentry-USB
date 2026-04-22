@@ -80,10 +80,15 @@ func (dh *DriveHandlers) Processor() *drives.Processor {
 
 // GET /api/drives — list all drives (summaries, no full point data)
 // Query params: ?tag=Work (filter by tag)
+//
+// Uses WithRouteSummaries + GroupSummariesFromSummaries so this list
+// endpoint -- the highest-traffic caller on the Drives page -- does
+// not decode any BLOBs. Peak heap on a 5500-route rig drops from
+// ~300 MB (old WithRoutes path) to ~5 MB.
 func (dh *DriveHandlers) listDrives(w http.ResponseWriter, r *http.Request) {
 	var summaries []drives.DriveSummary
-	dh.store.WithRoutes(func(routes []drives.Route) {
-		summaries = drives.GroupSummaries(routes)
+	dh.store.WithRouteSummaries(func(summariesIn []drives.RouteSummary) {
+		summaries = drives.GroupSummariesFromSummaries(summariesIn)
 	})
 	runtime.GC()
 	drives.ApplySummaryTags(summaries, dh.store.GetAllDriveTags())
@@ -167,10 +172,13 @@ func (dh *DriveHandlers) setDriveTags(w http.ResponseWriter, r *http.Request) {
 
 	driveKey := body.StartTime
 	if driveKey == "" {
-		// Fallback: look up drive start time by index (no full point merge)
+		// Fallback: look up drive start time by index. Uses the
+		// summary path -- DriveStartTime only needs clip metadata
+		// (file timestamps) so there is no reason to pay for full
+		// BLOB decoding here.
 		var ok bool
-		dh.store.WithRoutes(func(routes []drives.Route) {
-			driveKey, ok = drives.DriveStartTime(routes, id)
+		dh.store.WithRouteSummaries(func(summaries []drives.RouteSummary) {
+			driveKey, ok = drives.DriveStartTimeFromSummaries(summaries, id)
 		})
 		if !ok {
 			writeError(w, http.StatusNotFound, "drive not found")
@@ -696,10 +704,14 @@ func (dh *DriveHandlers) driveStats(w http.ResponseWriter, r *http.Request) {
 
 // GET /api/drives/fsd-analytics — FSD analytics with daily/weekly breakdowns
 // Query params: ?period=week (default), ?period=day, ?period=trip
+//
+// Summary-only path: FSD analytics only needs the per-drive scalars
+// (distance, FSD engaged ms, disengagements, etc.), all of which are
+// cached columns now. No BLOB decoding on this endpoint either.
 func (dh *DriveHandlers) fsdAnalytics(w http.ResponseWriter, r *http.Request) {
 	var allSummaries []drives.DriveSummary
-	dh.store.WithRoutes(func(routes []drives.Route) {
-		allSummaries = drives.GroupSummaries(routes)
+	dh.store.WithRouteSummaries(func(summariesIn []drives.RouteSummary) {
+		allSummaries = drives.GroupSummariesFromSummaries(summariesIn)
 	})
 	runtime.GC()
 

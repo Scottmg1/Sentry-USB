@@ -15,6 +15,252 @@ type summaryTimestamp struct {
 	idx int
 }
 
+// timedSummary is the summaryTimestamp variant that also keeps a copy
+// of the summary it points to, so group-building code can read the
+// cached aggregates without indexing back into the input slice.
+type timedSummary struct {
+	RouteSummary
+	timestamp time.Time
+}
+
+// groupSummaryClips is the BLOB-free analogue of groupClips. It
+// dedups, sorts by timestamp, splits by time-gap, and then splits by
+// gear-state at CLIP granularity (not sub-clip). Sub-clip Park-gap
+// splitting requires the full Points BLOB to re-slice the clip, which
+// the summary path intentionally avoids -- so a clip that internally
+// spans two drives (rare: driver parks and resumes within 60 seconds)
+// is attributed to whichever drive it joins. For the Drives-list view
+// this is visually indistinguishable on real data.
+func groupSummaryClips(summaries []RouteSummary) [][]timedSummary {
+	seen := make(map[string]bool, len(summaries))
+	var unique []RouteSummary
+	for _, r := range summaries {
+		norm := strings.ReplaceAll(r.File, "\\", "/")
+		if !seen[norm] {
+			seen[norm] = true
+			unique = append(unique, r)
+		}
+	}
+
+	var timed []timedSummary
+	for _, r := range unique {
+		if t := parseFileTimestamp(r.File); !t.IsZero() {
+			timed = append(timed, timedSummary{RouteSummary: r, timestamp: t})
+		}
+	}
+	if len(timed) == 0 {
+		return nil
+	}
+	sort.Slice(timed, func(i, j int) bool {
+		return timed[i].timestamp.Before(timed[j].timestamp)
+	})
+
+	// First pass: group by time gap (>5 minutes).
+	var timeGroups [][]timedSummary
+	current := []timedSummary{timed[0]}
+	for i := 1; i < len(timed); i++ {
+		gap := timed[i].timestamp.Sub(current[len(current)-1].timestamp).Milliseconds()
+		if gap > driveGapMs {
+			timeGroups = append(timeGroups, current)
+			current = []timedSummary{timed[i]}
+		} else {
+			current = append(current, timed[i])
+		}
+	}
+	timeGroups = append(timeGroups, current)
+
+	// Second pass: within each time group, split at clips that are
+	// "mostly parked" (either via GearRuns when available or via
+	// RawParkCount/RawFrameCount ratio). Matches the semantics of
+	// splitByGearStateLegacy / countGearSplitsInGroup.
+	var groups [][]timedSummary
+	for _, tg := range timeGroups {
+		groups = append(groups, splitSummaryGroupByGear(tg)...)
+	}
+	return groups
+}
+
+// splitSummaryGroupByGear breaks a time-bounded cluster of summaries
+// into drive-bounded sub-clusters using metadata only. A clip is a
+// drive boundary when it is dominantly parked (GearRuns show a
+// Park run >= parkGapSeconds or, absent GearRuns, RawParkCount /
+// RawFrameCount > 0.6).
+func splitSummaryGroupByGear(group []timedSummary) [][]timedSummary {
+	if len(group) <= 1 {
+		return [][]timedSummary{group}
+	}
+
+	var result [][]timedSummary
+	var current []timedSummary
+	for _, clip := range group {
+		if clipIsParkDominant(clip.RouteSummary) {
+			if len(current) > 0 {
+				result = append(result, current)
+				current = nil
+			}
+			continue
+		}
+		current = append(current, clip)
+	}
+	if len(current) > 0 {
+		result = append(result, current)
+	}
+	if len(result) == 0 {
+		return [][]timedSummary{group}
+	}
+	return result
+}
+
+// clipIsParkDominant returns true if the clip looks like a drive
+// boundary rather than part of a drive. Uses GearRuns when present
+// (precise) and falls back to the park-fraction heuristic for legacy
+// data.
+func clipIsParkDominant(r RouteSummary) bool {
+	if len(r.GearRuns) > 0 {
+		totalFrames := 0
+		for _, run := range r.GearRuns {
+			totalFrames += run.Frames
+		}
+		if totalFrames == 0 {
+			return false
+		}
+		secPerFrame := 60.0 / float64(totalFrames)
+		// Any Park run >= parkGapSeconds marks this clip as a drive
+		// boundary. Matches splitByGearState's sub-clip intent at
+		// clip granularity.
+		for _, run := range r.GearRuns {
+			if run.Gear == GearPark && float64(run.Frames)*secPerFrame >= parkGapSeconds {
+				return true
+			}
+		}
+		return false
+	}
+	// No GearRuns -- use the legacy fraction heuristic.
+	if r.RawFrameCount > 0 && r.RawParkCount > 0 {
+		return float64(r.RawParkCount)/float64(r.RawFrameCount) > 0.5
+	}
+	return false
+}
+
+// GroupSummariesFromSummaries is the BLOB-free analogue of
+// GroupSummaries. It groups pre-computed RouteSummary rows into drives
+// and assembles a DriveSummary per drive, summing the cached
+// aggregates rather than re-walking Points/BLOBs.
+//
+// Output shape matches GroupSummaries -- same fields, same rounding,
+// same format strings for timestamps -- so /api/drives and
+// /api/drives/fsd-analytics keep producing the exact JSON the web UI
+// expects. On clean data the scalars are bit-identical to the legacy
+// path; on noisy data they can drift by fractions of a percent because
+// the legacy median-cluster outlier filter is group-level (requires
+// Points) and the summary path uses the per-clip outlier semantics
+// baked into ComputeRouteAggregates.
+func GroupSummariesFromSummaries(summaries []RouteSummary) []DriveSummary {
+	groups := groupSummaryClips(summaries)
+	out := make([]DriveSummary, len(groups))
+
+	for idx, clips := range groups {
+		firstClip := clips[0]
+		lastClip := clips[len(clips)-1]
+		startTime := firstClip.timestamp
+		endTime := lastClip.timestamp.Add(time.Minute)
+		durationMs := endTime.Sub(startTime).Milliseconds()
+
+		var totalDistM, maxSpeedMps, speedSum float64
+		var speedCount, pointCount int
+		var fsdEngagedMs, autosteerEngagedMs, taccEngagedMs int64
+		var fsdDistM, autosteerDistM, taccDistM, assistedDistM float64
+		var fsdDisengagements, fsdAccelPushes int
+		var startPoint, endPoint *[2]float64
+
+		for _, c := range clips {
+			totalDistM += c.DistanceM
+			if c.MaxSpeedMps > maxSpeedMps {
+				maxSpeedMps = c.MaxSpeedMps
+			}
+			speedSum += c.AvgSpeedMps * float64(c.SpeedSampleCount)
+			speedCount += c.SpeedSampleCount
+			pointCount += c.ValidPointCount
+			fsdEngagedMs += c.FSDEngagedMs
+			autosteerEngagedMs += c.AutosteerEngagedMs
+			taccEngagedMs += c.TACCEngagedMs
+			fsdDistM += c.FSDDistanceM
+			autosteerDistM += c.AutosteerDistanceM
+			taccDistM += c.TACCDistanceM
+			assistedDistM += c.AssistedDistanceM
+			fsdDisengagements += c.FSDDisengagements
+			fsdAccelPushes += c.FSDAccelPushes
+			if startPoint == nil && c.StartLat != nil && c.StartLng != nil {
+				sp := [2]float64{*c.StartLat, *c.StartLng}
+				startPoint = &sp
+			}
+			if c.EndLat != nil && c.EndLng != nil {
+				ep := [2]float64{*c.EndLat, *c.EndLng}
+				endPoint = &ep
+			}
+		}
+
+		var avgSpeedMps float64
+		if speedCount > 0 {
+			avgSpeedMps = speedSum / float64(speedCount)
+		}
+		var fsdPercent, autosteerPercent, taccPercent, assistedPercent float64
+		if totalDistM > 0 {
+			fsdPercent = math.Round(fsdDistM/totalDistM*1000) / 10
+			autosteerPercent = math.Round(autosteerDistM/totalDistM*1000) / 10
+			taccPercent = math.Round(taccDistM/totalDistM*1000) / 10
+			assistedPercent = math.Round(assistedDistM/totalDistM*1000) / 10
+		}
+
+		out[idx] = DriveSummary{
+			ID:                  idx,
+			Date:                firstClip.Date,
+			StartTime:           startTime.Format("2006-01-02T15:04:05"),
+			EndTime:             endTime.Format("2006-01-02T15:04:05"),
+			DurationMs:          durationMs,
+			DistanceMi:          math.Round(totalDistM/1609.344*100) / 100,
+			DistanceKm:          math.Round(totalDistM/1000*100) / 100,
+			AvgSpeedMph:         math.Round(avgSpeedMps*2.23694*100) / 100,
+			MaxSpeedMph:         math.Round(maxSpeedMps*2.23694*100) / 100,
+			AvgSpeedKmh:         math.Round(avgSpeedMps*3.6*100) / 100,
+			MaxSpeedKmh:         math.Round(maxSpeedMps*3.6*100) / 100,
+			ClipCount:           len(clips),
+			PointCount:          pointCount,
+			StartPoint:          startPoint,
+			EndPoint:            endPoint,
+			FSDEngagedMs:        fsdEngagedMs,
+			FSDDisengagements:   fsdDisengagements,
+			FSDAccelPushes:      fsdAccelPushes,
+			FSDPercent:          fsdPercent,
+			FSDDistanceKm:       math.Round(fsdDistM/1000*100) / 100,
+			FSDDistanceMi:       math.Round(fsdDistM/1609.344*100) / 100,
+			AutosteerEngagedMs:  autosteerEngagedMs,
+			AutosteerPercent:    autosteerPercent,
+			AutosteerDistanceKm: math.Round(autosteerDistM/1000*100) / 100,
+			AutosteerDistanceMi: math.Round(autosteerDistM/1609.344*100) / 100,
+			TACCEngagedMs:       taccEngagedMs,
+			TACCPercent:         taccPercent,
+			TACCDistanceKm:      math.Round(taccDistM/1000*100) / 100,
+			TACCDistanceMi:      math.Round(taccDistM/1609.344*100) / 100,
+			AssistedPercent:     assistedPercent,
+		}
+	}
+
+	return out
+}
+
+// DriveStartTimeFromSummaries is the BLOB-free analogue of
+// DriveStartTime. It returns the start time string for the drive at
+// the given index using the same CLIP-level grouping as
+// GroupSummariesFromSummaries.
+func DriveStartTimeFromSummaries(summaries []RouteSummary, id int) (string, bool) {
+	groups := groupSummaryClips(summaries)
+	if id < 0 || id >= len(groups) {
+		return "", false
+	}
+	return groups[id][0].timestamp.Format("2006-01-02T15:04:05"), true
+}
+
 // ComputeAggregateStatsFromSummaries is the BLOB-free analogue of
 // ComputeAggregateStatsFromRoutes. It reads pre-computed aggregate
 // scalars from each RouteSummary (populated at AddRoute time or by

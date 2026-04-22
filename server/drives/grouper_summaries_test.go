@@ -137,3 +137,62 @@ func TestComputeAggregateStatsFromSummaries_EmptyInput(t *testing.T) {
 		t.Errorf("empty input should produce zero stats, got %+v", got)
 	}
 }
+
+// TestGroupSummariesFromSummaries_MatchesLegacyOnCleanData is the
+// equivalence test for the list-view refactor. On a synthetic dataset
+// where every clip is either fully-driving or fully-parked (no
+// mid-clip Park gaps), GroupSummariesFromSummaries must produce the
+// same drives and the same per-drive scalars as GroupSummaries.
+// Mid-clip Park splitting IS a known divergence on real noisy data
+// (documented in grouper_summaries.go) and is not covered by this test.
+func TestGroupSummariesFromSummaries_MatchesLegacyOnCleanData(t *testing.T) {
+	routes := buildSyntheticRoutes(8)
+	summaries := summariesFromRoutes(routes)
+
+	want := GroupSummaries(routes)
+	got := GroupSummariesFromSummaries(summaries)
+
+	if len(got) != len(want) {
+		t.Fatalf("drive count: got %d want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i].ID != want[i].ID {
+			t.Errorf("[%d] ID: got %d want %d", i, got[i].ID, want[i].ID)
+		}
+		if got[i].StartTime != want[i].StartTime {
+			t.Errorf("[%d] StartTime: got %q want %q",
+				i, got[i].StartTime, want[i].StartTime)
+		}
+		if got[i].ClipCount != want[i].ClipCount {
+			t.Errorf("[%d] ClipCount: got %d want %d",
+				i, got[i].ClipCount, want[i].ClipCount)
+		}
+		if math.Abs(got[i].DistanceKm-want[i].DistanceKm) > 1e-9 {
+			t.Errorf("[%d] DistanceKm: got %v want %v",
+				i, got[i].DistanceKm, want[i].DistanceKm)
+		}
+		if got[i].FSDEngagedMs != want[i].FSDEngagedMs {
+			t.Errorf("[%d] FSDEngagedMs: got %d want %d",
+				i, got[i].FSDEngagedMs, want[i].FSDEngagedMs)
+		}
+		if got[i].FSDDisengagements != want[i].FSDDisengagements {
+			t.Errorf("[%d] FSDDisengagements: got %d want %d",
+				i, got[i].FSDDisengagements, want[i].FSDDisengagements)
+		}
+		if math.Abs(got[i].FSDPercent-want[i].FSDPercent) > 1e-9 {
+			t.Errorf("[%d] FSDPercent: got %v want %v",
+				i, got[i].FSDPercent, want[i].FSDPercent)
+		}
+		if math.Abs(got[i].AssistedPercent-want[i].AssistedPercent) > 1e-9 {
+			t.Errorf("[%d] AssistedPercent: got %v want %v",
+				i, got[i].AssistedPercent, want[i].AssistedPercent)
+		}
+	}
+}
+
+func TestGroupSummariesFromSummaries_EmptyInput(t *testing.T) {
+	got := GroupSummariesFromSummaries(nil)
+	if len(got) != 0 {
+		t.Errorf("empty input should produce 0 drives, got %d", len(got))
+	}
+}
