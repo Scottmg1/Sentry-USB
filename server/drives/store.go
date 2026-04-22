@@ -1,7 +1,9 @@
 package drives
 
 import (
-	"encoding/json"
+	"context"
+	"database/sql"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -9,406 +11,710 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
+
+	_ "modernc.org/sqlite"
 )
 
-// DefaultDataPath is where drive data is stored on the Pi.
-// Uses /mutable/ which is always writable (root FS is read-only).
-const DefaultDataPath = "/mutable/drive-data.json"
+// DefaultDataPath is where the SQLite drive-data store lives on the Pi.
+// Changed from drive-data.json in the JSON->SQLite migration; the JSON
+// mirror used for archive sync lives at defaultJSONMirrorPath below and is
+// regenerated on demand (see future exportToJSON commit).
+const DefaultDataPath = "/mutable/drive-data.db"
 
-// legacyDataPath is the old location on the root filesystem.
-// Checked during Load() for migration.
-const legacyDataPath = "/root/drive-data.json"
+// defaultJSONMirrorPath is where exportToJSON writes the JSON staging file
+// that post-archive-process.sh and SyncToArchive then ship to the archive
+// server. Kept next to the DB so user tooling still finds it at the
+// historical location.
+const defaultJSONMirrorPath = "/mutable/drive-data.json"
 
-// GearRun represents a contiguous run of frames in the same gear state.
-// Computed from raw (pre-dedup) frame data for accurate intra-clip splitting.
-type GearRun struct {
-	Gear   uint8 `json:"gear"`
-	Frames int   `json:"frames"`
-}
+// legacyJSONPath is the pre-SQLite data file. The JSON importer (added in a
+// follow-up commit) reads this on first boot if the DB doesn't already
+// contain imported data; until then, existing installs see an empty Drives
+// page. The original JSON is preserved and renamed to .bak-<ts> only after
+// a successful import.
+const legacyJSONPath = "/root/drive-data.json"
 
-// Route represents GPS data extracted from a single front-camera clip.
-type Route struct {
-	File            string     `json:"file"`
-	Date            string     `json:"date"`
-	Points          []GPSPoint `json:"points"`
-	GearStates      []uint8    `json:"gearStates,omitempty"`
-	AutopilotStates []uint8    `json:"autopilotStates,omitempty"`
-	Speeds          []float32  `json:"speeds,omitempty"`
-	AccelPositions  []float32  `json:"accelPositions,omitempty"`
-	RawParkCount    int        `json:"rawParkCount,omitempty"`
-	RawFrameCount   int        `json:"rawFrameCount,omitempty"`
-	GearRuns        []GearRun  `json:"gearRuns,omitempty"`
-}
+// archiveDataPath is where the archive-side JSON copy lives when a CIFS/NFS
+// archive is mounted at /mnt/archive. Rsync and rclone users bypass this
+// path — their sync is handled by post-archive-process.sh.
+const archiveDataPath = "/mnt/archive/drive-data.json"
 
-// StoreData is the persistent JSON structure.
-type StoreData struct {
-	ProcessedFiles []string            `json:"processedFiles"`
-	Routes         []Route             `json:"routes"`
-	DriveTags      map[string][]string `json:"driveTags,omitempty"`
-}
-
-// Store manages the drive data file with thread-safe access.
+// Store manages drive-map data backed by a SQLite database. The public API
+// is intentionally identical to the prior JSON-backed implementation so
+// server/api/drives.go and server/drives/processor.go don't need changes.
+//
+// Thread-safety: SQLite with WAL handles its own internal locking, but the
+// Store still keeps a sync.RWMutex to preserve the "WithRoutes callback
+// receives a stable slice" contract exercised by GroupSummaries and
+// friends. Writes take the write lock only as long as it takes to hand
+// bytes to the driver; the actual disk work is serialized by SQLite.
 type Store struct {
-	mu             sync.RWMutex
-	path           string
-	data           StoreData
-	processedIndex map[string]bool // normalized path → present; rebuilt on Load
+	mu   sync.RWMutex
+	path string // SQLite DB path
+	db   *sql.DB
+
+	// Cached row counts. Refreshed on mutation so the /api/drives/status
+	// polling endpoint doesn't SELECT COUNT(*) every second. Atomic so
+	// readers don't have to take the RWMutex just for a count.
+	routeCount     atomic.Int64
+	processedCount atomic.Int64
 }
 
-// NewStore creates a store at the given path.
+// NewStore creates a Store that will open/create a SQLite database at the
+// given path when Load is called. Pass "" to use DefaultDataPath.
 func NewStore(path string) *Store {
 	if path == "" {
 		path = DefaultDataPath
 	}
-	return &Store{path: path, processedIndex: make(map[string]bool)}
+	return &Store{path: path}
 }
 
-// Load reads the data file from disk. Returns empty data if file doesn't exist.
-// If the file is missing at the current path but exists at the legacy path
-// (/root/drive-data.json), it is migrated to the new writable location.
+// Load opens the SQLite database, applies any pending schema migrations,
+// and primes the row-count caches. Safe to call multiple times: a second
+// call rebuilds the caches without clobbering the database.
+//
+// A follow-up commit will extend this to run a one-shot JSON import from
+// legacyJSONPath or /mutable/drive-data.json if meta.imported_from_json_at
+// is not yet set. Until then, existing installs see an empty Drives page
+// after upgrading.
 func (s *Store) Load() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	f, err := os.Open(s.path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			// Try migrating from the legacy path on the root filesystem
-			if s.path != legacyDataPath {
-				if lf, lerr := os.Open(legacyDataPath); lerr == nil {
-					defer lf.Close()
-					if decErr := json.NewDecoder(lf).Decode(&s.data); decErr == nil {
-						log.Printf("[drives] Migrated drive data from %s to %s", legacyDataPath, s.path)
-						// Best-effort: write to new path so future loads find it
-						s.saveLocked()
-						s.rebuildProcessedIndex()
-						return nil
-					}
-				}
+	// Open (idempotent) or re-open.
+	if s.db == nil {
+		if dir := filepath.Dir(s.path); dir != "" && dir != "." && dir != "/" {
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				return fmt.Errorf("Load: mkdir %q: %w", dir, err)
 			}
-			s.data = StoreData{}
-			s.rebuildProcessedIndex()
-			return nil
 		}
-		return err
+		dsn := "file:" + s.path +
+			"?_pragma=journal_mode(WAL)" +
+			"&_pragma=synchronous(NORMAL)" +
+			"&_pragma=foreign_keys(on)" +
+			"&_pragma=busy_timeout(5000)" +
+			"&_pragma=temp_store(MEMORY)"
+		db, err := sql.Open("sqlite", dsn)
+		if err != nil {
+			return fmt.Errorf("Load: sql.Open %q: %w", s.path, err)
+		}
+		// One writer at a time keeps WAL contention bounded and simplifies
+		// reasoning about transactions. The Pi workload is read-mostly and
+		// doesn't benefit from a larger pool.
+		db.SetMaxOpenConns(1)
+		db.SetMaxIdleConns(1)
+		s.db = db
 	}
-	defer f.Close()
 
-	dec := json.NewDecoder(f)
-	if err := dec.Decode(&s.data); err != nil {
-		return err
+	ctx := context.Background()
+	if err := migrate(ctx, s.db); err != nil {
+		return fmt.Errorf("Load: migrate: %w", err)
 	}
-	s.rebuildProcessedIndex()
+
+	if err := s.refreshCountsLocked(ctx); err != nil {
+		return fmt.Errorf("Load: refresh counts: %w", err)
+	}
 	return nil
 }
 
-// rebuildProcessedIndex rebuilds the in-memory processed file index and
-// deduplicates the ProcessedFiles list. The old code appended without
-// checking for duplicates, so existing data files may contain many dupes
-// that bloat both the JSON file and memory usage.
-// Caller must hold the write lock.
-func (s *Store) rebuildProcessedIndex() {
-	s.processedIndex = make(map[string]bool, len(s.data.ProcessedFiles))
-	deduped := make([]string, 0, len(s.data.ProcessedFiles))
-	for _, f := range s.data.ProcessedFiles {
-		norm := strings.ReplaceAll(f, "\\", "/")
-		if !s.processedIndex[norm] {
-			s.processedIndex[norm] = true
-			deduped = append(deduped, f)
-		}
-	}
-	if len(deduped) < len(s.data.ProcessedFiles) {
-		log.Printf("[drives] Deduplicated ProcessedFiles: %d → %d entries", len(s.data.ProcessedFiles), len(deduped))
-		s.data.ProcessedFiles = deduped
-	}
-}
-
-// Save writes the current data to disk.
+// Save is a no-op in the SQL backend — writes are already durable via WAL
+// after each AddRoute/MarkProcessed/SetDriveTags call. Kept on the public
+// API because the processor still calls it periodically; we use the call
+// as a hint to run a passive WAL checkpoint so the -wal file doesn't grow
+// unbounded during long processing runs.
 func (s *Store) Save() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.saveLocked()
+	if s.db == nil {
+		return nil
+	}
+	// Passive checkpoint: don't block other readers/writers; whatever can
+	// be checkpointed, is. Errors are not fatal — the data is already
+	// durable in the WAL.
+	_, _ = s.db.ExecContext(context.Background(), `PRAGMA wal_checkpoint(PASSIVE)`)
+	return nil
 }
 
-// saveLocked writes data to disk without acquiring the lock (caller must hold it).
-func (s *Store) saveLocked() error {
-	dir := filepath.Dir(s.path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return err
-	}
-
-	tmp := s.path + ".tmp"
-	f, err := os.Create(tmp)
-	if err != nil {
-		return err
-	}
-
-	enc := json.NewEncoder(f)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(&s.data); err != nil {
-		f.Close()
-		os.Remove(tmp)
-		return err
-	}
-	// Flush to disk before rename to prevent data loss if the process is
-	// killed (OOM, power loss) between write and rename.
-	if err := f.Sync(); err != nil {
-		f.Close()
-		os.Remove(tmp)
-		return err
-	}
-	if err := f.Close(); err != nil {
-		os.Remove(tmp)
-		return err
-	}
-
-	return os.Rename(tmp, s.path)
-}
-
-// ProcessedSet returns a set of already-processed file paths (normalized to forward slashes).
+// ProcessedSet returns all processed file paths, normalized to forward
+// slashes. Called once per ProcessDirectory run.
 func (s *Store) ProcessedSet() map[string]bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-
-	// Return a copy of the index so callers can't mutate it
-	set := make(map[string]bool, len(s.processedIndex))
-	for k, v := range s.processedIndex {
-		set[k] = v
+	set := map[string]bool{}
+	rows, err := s.db.QueryContext(context.Background(), `SELECT file FROM processed_files`)
+	if err != nil {
+		log.Printf("[drives] ProcessedSet: %v", err)
+		return set
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var f string
+		if err := rows.Scan(&f); err != nil {
+			log.Printf("[drives] ProcessedSet scan: %v", err)
+			continue
+		}
+		set[normalizePath(f)] = true
 	}
 	return set
 }
 
-// AddRoute adds a processed file and its route data.
-// gears is a parallel slice of gear states (same length as points); may be nil for legacy data.
-// apStates is a parallel slice of autopilot states (0=off, >0=engaged).
-// speeds is a parallel slice of speeds in m/s.
-// accelPositions is a parallel slice of accelerator pedal positions (0-1 or 0-100 scale per firmware).
-// rawParkCount/rawFrameCount are pre-dedup counts for accurate park time estimation.
-// gearRuns stores contiguous gear transitions from raw data for intra-clip drive splitting.
-//
-// If a route for relativePath already exists it is replaced in-place (upsert),
-// so reprocessing a file overwrites its old data rather than duplicating it.
-func (s *Store) AddRoute(relativePath, dateDir string, points []GPSPoint, gears []uint8, apStates []uint8, speeds []float32, accelPositions []float32, rawParkCount, rawFrameCount int, gearRuns []GearRun) {
+// AddRoute adds a processed file and its route data. If points is empty the
+// route row is skipped (the clip is still marked processed). If a route
+// for file already exists it is upserted in place.
+func (s *Store) AddRoute(
+	relativePath, dateDir string,
+	points []GPSPoint, gears []uint8, apStates []uint8,
+	speeds []float32, accelPositions []float32,
+	rawParkCount, rawFrameCount int,
+	gearRuns []GearRun,
+) {
+	norm := normalizePath(relativePath)
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	norm := strings.ReplaceAll(relativePath, "\\", "/")
-
-	// Only add to processed list if not already present (O(1) lookup)
-	if !s.processedIndex[norm] {
-		s.data.ProcessedFiles = append(s.data.ProcessedFiles, relativePath)
-		s.processedIndex[norm] = true
+	ctx := context.Background()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		log.Printf("[drives] AddRoute begin: %v", err)
+		return
 	}
+	defer func() {
+		if tx != nil {
+			_ = tx.Rollback()
+		}
+	}()
 
-	if len(points) == 0 {
+	// Mark processed (INSERT OR IGNORE so repeated calls are cheap).
+	if _, err := tx.ExecContext(ctx,
+		`INSERT OR IGNORE INTO processed_files(file, added_at) VALUES(?, ?)`,
+		norm, time.Now().Unix()); err != nil {
+		log.Printf("[drives] AddRoute processed_files insert: %v", err)
 		return
 	}
 
-	newRoute := Route{
-		File:            relativePath,
-		Date:            dateDir,
-		Points:          points,
-		GearStates:      gears,
-		AutopilotStates: apStates,
-		Speeds:          speeds,
-		AccelPositions:  accelPositions,
-		RawParkCount:    rawParkCount,
-		RawFrameCount:   rawFrameCount,
-		GearRuns:        gearRuns,
-	}
+	if len(points) > 0 {
+		pb := encodePoints(points)
+		gb := encodeUint8s(gears)
+		ab := encodeUint8s(apStates)
+		sb := encodeFloat32s(speeds)
+		acb := encodeFloat32s(accelPositions)
+		rb := encodeGearRuns(gearRuns)
 
-	// Upsert: replace existing route for this file path if present.
-	for i, r := range s.data.Routes {
-		if strings.ReplaceAll(r.File, "\\", "/") == norm {
-			s.data.Routes[i] = newRoute
+		var firstLat, firstLon sql.NullFloat64
+		firstLat.Float64, firstLat.Valid = points[0][0], true
+		firstLon.Float64, firstLon.Valid = points[0][1], true
+
+		// start_ts / end_ts / distance_m will be computed in a follow-up
+		// commit so summary queries can skip decoding the point BLOB.
+		// For now we store NULLs / 0 and let the Go-side grouper compute
+		// as before. The index idx_routes_start_ts is still useful once
+		// we backfill.
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO routes(
+				file, date_dir, point_count, raw_park_count, raw_frame_count,
+				start_ts, end_ts, distance_m, first_lat, first_lon,
+				points_blob, gear_states_blob, ap_states_blob,
+				speeds_blob, accel_blob, gear_runs_blob, updated_at)
+			VALUES(?, ?, ?, ?, ?, NULL, NULL, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(file) DO UPDATE SET
+				date_dir        = excluded.date_dir,
+				point_count     = excluded.point_count,
+				raw_park_count  = excluded.raw_park_count,
+				raw_frame_count = excluded.raw_frame_count,
+				first_lat       = excluded.first_lat,
+				first_lon       = excluded.first_lon,
+				points_blob     = excluded.points_blob,
+				gear_states_blob = excluded.gear_states_blob,
+				ap_states_blob  = excluded.ap_states_blob,
+				speeds_blob     = excluded.speeds_blob,
+				accel_blob      = excluded.accel_blob,
+				gear_runs_blob  = excluded.gear_runs_blob,
+				updated_at      = excluded.updated_at`,
+			norm, dateDir, len(points), rawParkCount, rawFrameCount,
+			firstLat, firstLon,
+			pb, gb, ab, sb, acb, rb, time.Now().Unix()); err != nil {
+			log.Printf("[drives] AddRoute route upsert: %v", err)
 			return
 		}
 	}
-	s.data.Routes = append(s.data.Routes, newRoute)
-}
 
-// MarkProcessed marks a file as processed without adding route data (e.g. no GPS found).
-func (s *Store) MarkProcessed(relativePath string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	norm := strings.ReplaceAll(relativePath, "\\", "/")
-	if s.processedIndex[norm] {
+	if err := tx.Commit(); err != nil {
+		log.Printf("[drives] AddRoute commit: %v", err)
 		return
 	}
-	s.data.ProcessedFiles = append(s.data.ProcessedFiles, relativePath)
-	s.processedIndex[norm] = true
+	tx = nil
+
+	_ = s.refreshCountsLocked(ctx)
 }
 
-// RouteCount returns the number of routes stored.
+// MarkProcessed marks a file as processed without adding route data.
+// Idempotent: calling twice with the same file is a no-op.
+func (s *Store) MarkProcessed(relativePath string) {
+	norm := normalizePath(relativePath)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.db.ExecContext(context.Background(),
+		`INSERT OR IGNORE INTO processed_files(file, added_at) VALUES(?, ?)`,
+		norm, time.Now().Unix()); err != nil {
+		log.Printf("[drives] MarkProcessed: %v", err)
+		return
+	}
+	_ = s.refreshCountsLocked(context.Background())
+}
+
+// RouteCount returns the number of route rows. O(1) from cache.
 func (s *Store) RouteCount() int {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return len(s.data.Routes)
+	return int(s.routeCount.Load())
 }
 
-// ProcessedCount returns the number of processed files.
+// ProcessedCount returns the number of processed_files rows. O(1) from cache.
 func (s *Store) ProcessedCount() int {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return len(s.data.ProcessedFiles)
+	return int(s.processedCount.Load())
 }
 
-// GetRoutes returns a copy of all routes.
+// GetRoutes returns a fresh []Route decoded from the DB. Used only by
+// /api/drives/data/download and tests; the hot-path readers go through
+// WithRoutes.
 func (s *Store) GetRoutes() []Route {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-
-	routes := make([]Route, len(s.data.Routes))
-	copy(routes, s.data.Routes)
+	routes, err := s.selectAllRoutesLocked(context.Background())
+	if err != nil {
+		log.Printf("[drives] GetRoutes: %v", err)
+		return nil
+	}
 	return routes
 }
 
-// WithRoutes calls fn with a direct reference to the routes slice while
-// holding the read lock. This avoids the allocation of GetRoutes' copy,
-// which matters on memory-constrained Pis where the route data can be
-// hundreds of MB. Callers MUST NOT retain references to the slice or
-// its elements after fn returns.
+// WithRoutes materializes all routes from the DB and invokes fn with the
+// resulting slice while holding the read lock. The slice and its elements
+// must not be retained after fn returns; the SQLite memory backing them
+// will be reused.
+//
+// A follow-up commit will add ForEachRoute(func(Route) bool) for true
+// streaming (important on the 512 MB Pi Zero 2 W), and convert the
+// biggest callers (GroupSummaries, GroupRoutesOverview, stats). Today we
+// preserve the existing signature so api/drives.go needs zero changes.
 func (s *Store) WithRoutes(fn func(routes []Route)) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	fn(s.data.Routes)
+	routes, err := s.selectAllRoutesLocked(context.Background())
+	if err != nil {
+		log.Printf("[drives] WithRoutes: %v", err)
+		fn(nil)
+		return
+	}
+	fn(routes)
 }
 
-// Path returns the data file path.
+// Path returns the database path passed to NewStore (or DefaultDataPath).
 func (s *Store) Path() string {
 	return s.path
 }
 
-// ReplaceData replaces the entire store data (used for upload).
+// ReplaceData wipes routes, processed_files, and drive_tags then bulk-
+// inserts the supplied data. Used by POST /api/drives/data/upload to
+// restore a previously-downloaded drive-data.json.
 func (s *Store) ReplaceData(data StoreData) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.data = data
-	s.rebuildProcessedIndex()
+
+	ctx := context.Background()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		log.Printf("[drives] ReplaceData begin: %v", err)
+		return
+	}
+	defer func() {
+		if tx != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	for _, stmt := range []string{
+		`DELETE FROM routes`,
+		`DELETE FROM processed_files`,
+		`DELETE FROM drive_tags`,
+	} {
+		if _, err := tx.ExecContext(ctx, stmt); err != nil {
+			log.Printf("[drives] ReplaceData wipe (%s): %v", stmt, err)
+			return
+		}
+	}
+
+	// Processed files first so duplicate file paths in Routes (which also
+	// INSERT into processed_files below) collide cleanly.
+	now := time.Now().Unix()
+	seen := map[string]bool{}
+	pfStmt, err := tx.PrepareContext(ctx, `INSERT OR IGNORE INTO processed_files(file, added_at) VALUES(?, ?)`)
+	if err != nil {
+		log.Printf("[drives] ReplaceData prepare processed: %v", err)
+		return
+	}
+	defer pfStmt.Close()
+	for _, f := range data.ProcessedFiles {
+		n := normalizePath(f)
+		if seen[n] {
+			continue
+		}
+		seen[n] = true
+		if _, err := pfStmt.ExecContext(ctx, n, now); err != nil {
+			log.Printf("[drives] ReplaceData processed insert: %v", err)
+			return
+		}
+	}
+
+	routeStmt, err := tx.PrepareContext(ctx, `
+		INSERT INTO routes(
+			file, date_dir, point_count, raw_park_count, raw_frame_count,
+			start_ts, end_ts, distance_m, first_lat, first_lon,
+			points_blob, gear_states_blob, ap_states_blob,
+			speeds_blob, accel_blob, gear_runs_blob, updated_at)
+		VALUES(?, ?, ?, ?, ?, NULL, NULL, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	if err != nil {
+		log.Printf("[drives] ReplaceData prepare routes: %v", err)
+		return
+	}
+	defer routeStmt.Close()
+	for _, r := range data.Routes {
+		n := normalizePath(r.File)
+		var firstLat, firstLon sql.NullFloat64
+		if len(r.Points) > 0 {
+			firstLat.Float64, firstLat.Valid = r.Points[0][0], true
+			firstLon.Float64, firstLon.Valid = r.Points[0][1], true
+		}
+		pb := encodePoints(r.Points)
+		gb := encodeUint8s(r.GearStates)
+		ab := encodeUint8s(r.AutopilotStates)
+		sb := encodeFloat32s(r.Speeds)
+		acb := encodeFloat32s(r.AccelPositions)
+		rb := encodeGearRuns(r.GearRuns)
+		if _, err := routeStmt.ExecContext(ctx,
+			n, r.Date, len(r.Points), r.RawParkCount, r.RawFrameCount,
+			firstLat, firstLon,
+			pb, gb, ab, sb, acb, rb, now); err != nil {
+			log.Printf("[drives] ReplaceData route insert: %v", err)
+			return
+		}
+		if !seen[n] {
+			seen[n] = true
+			if _, err := pfStmt.ExecContext(ctx, n, now); err != nil {
+				log.Printf("[drives] ReplaceData aux processed insert: %v", err)
+				return
+			}
+		}
+	}
+
+	tagStmt, err := tx.PrepareContext(ctx, `INSERT OR IGNORE INTO drive_tags(drive_key, tag) VALUES(?, ?)`)
+	if err != nil {
+		log.Printf("[drives] ReplaceData prepare tags: %v", err)
+		return
+	}
+	defer tagStmt.Close()
+	for key, tags := range data.DriveTags {
+		for _, t := range tags {
+			if _, err := tagStmt.ExecContext(ctx, key, t); err != nil {
+				log.Printf("[drives] ReplaceData tag insert: %v", err)
+				return
+			}
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		log.Printf("[drives] ReplaceData commit: %v", err)
+		return
+	}
+	tx = nil
+	_ = s.refreshCountsLocked(ctx)
 }
 
-// GetData returns a copy of the store data.
+// GetData returns a copy of the entire store as a StoreData value. Used by
+// /api/drives/data/download. A follow-up commit will add a streaming
+// exporter for the Pi Zero 2 W; today GetData allocates the whole payload
+// in memory.
 func (s *Store) GetData() StoreData {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	sd := StoreData{
-		ProcessedFiles: append([]string{}, s.data.ProcessedFiles...),
-		Routes:         append([]Route{}, s.data.Routes...),
+
+	ctx := context.Background()
+	data := StoreData{}
+
+	if rs, err := s.selectAllRoutesLocked(ctx); err == nil {
+		data.Routes = rs
+	} else {
+		log.Printf("[drives] GetData routes: %v", err)
 	}
-	if s.data.DriveTags != nil {
-		sd.DriveTags = make(map[string][]string, len(s.data.DriveTags))
-		for k, v := range s.data.DriveTags {
-			sd.DriveTags[k] = append([]string{}, v...)
+
+	rows, err := s.db.QueryContext(ctx, `SELECT file FROM processed_files ORDER BY file`)
+	if err != nil {
+		log.Printf("[drives] GetData processed_files: %v", err)
+	} else {
+		defer rows.Close()
+		for rows.Next() {
+			var f string
+			if err := rows.Scan(&f); err != nil {
+				log.Printf("[drives] GetData scan: %v", err)
+				continue
+			}
+			data.ProcessedFiles = append(data.ProcessedFiles, f)
 		}
 	}
-	return sd
+
+	tagRows, err := s.db.QueryContext(ctx, `SELECT drive_key, tag FROM drive_tags`)
+	if err != nil {
+		log.Printf("[drives] GetData drive_tags: %v", err)
+	} else {
+		defer tagRows.Close()
+		data.DriveTags = map[string][]string{}
+		for tagRows.Next() {
+			var key, tag string
+			if err := tagRows.Scan(&key, &tag); err != nil {
+				log.Printf("[drives] GetData tag scan: %v", err)
+				continue
+			}
+			data.DriveTags[key] = append(data.DriveTags[key], tag)
+		}
+		if len(data.DriveTags) == 0 {
+			data.DriveTags = nil
+		}
+	}
+
+	return data
 }
 
-// SetDriveTags sets the tags for a drive identified by its start time key.
+// SetDriveTags replaces the tags for a drive key. An empty/nil tags slice
+// removes the entry entirely.
 func (s *Store) SetDriveTags(driveKey string, tags []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.data.DriveTags == nil {
-		s.data.DriveTags = make(map[string][]string)
+	ctx := context.Background()
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		log.Printf("[drives] SetDriveTags begin: %v", err)
+		return
 	}
-	if len(tags) == 0 {
-		delete(s.data.DriveTags, driveKey)
-	} else {
-		s.data.DriveTags[driveKey] = tags
+	defer func() {
+		if tx != nil {
+			_ = tx.Rollback()
+		}
+	}()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM drive_tags WHERE drive_key = ?`, driveKey); err != nil {
+		log.Printf("[drives] SetDriveTags delete: %v", err)
+		return
 	}
+	for _, t := range tags {
+		if t == "" {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx,
+			`INSERT OR IGNORE INTO drive_tags(drive_key, tag) VALUES(?, ?)`,
+			driveKey, t); err != nil {
+			log.Printf("[drives] SetDriveTags insert: %v", err)
+			return
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		log.Printf("[drives] SetDriveTags commit: %v", err)
+		return
+	}
+	tx = nil
 }
 
-// GetDriveTags returns the tags for a drive identified by its start time key.
+// GetDriveTags returns the tags attached to a drive key, or nil if none.
 func (s *Store) GetDriveTags(driveKey string) []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.data.DriveTags[driveKey]
+	rows, err := s.db.QueryContext(context.Background(),
+		`SELECT tag FROM drive_tags WHERE drive_key = ? ORDER BY tag`, driveKey)
+	if err != nil {
+		log.Printf("[drives] GetDriveTags: %v", err)
+		return nil
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var t string
+		if err := rows.Scan(&t); err != nil {
+			continue
+		}
+		out = append(out, t)
+	}
+	return out
 }
 
-// GetAllDriveTags returns the full tag map.
+// GetAllDriveTags returns the full drive_key -> tags map.
 func (s *Store) GetAllDriveTags() map[string][]string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if s.data.DriveTags == nil {
+	rows, err := s.db.QueryContext(context.Background(),
+		`SELECT drive_key, tag FROM drive_tags ORDER BY drive_key, tag`)
+	if err != nil {
+		log.Printf("[drives] GetAllDriveTags: %v", err)
 		return nil
 	}
-	copy := make(map[string][]string, len(s.data.DriveTags))
-	for k, v := range s.data.DriveTags {
-		copy[k] = append([]string{}, v...)
+	defer rows.Close()
+	out := map[string][]string{}
+	for rows.Next() {
+		var key, tag string
+		if err := rows.Scan(&key, &tag); err != nil {
+			continue
+		}
+		out[key] = append(out[key], tag)
 	}
-	return copy
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
-// GetAllTagNames returns a deduplicated sorted list of all tag names in use.
+// GetAllTagNames returns a sorted, deduplicated list of every tag name in use.
 func (s *Store) GetAllTagNames() []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	seen := make(map[string]bool)
-	for _, tags := range s.data.DriveTags {
-		for _, t := range tags {
-			seen[t] = true
+	rows, err := s.db.QueryContext(context.Background(),
+		`SELECT DISTINCT tag FROM drive_tags ORDER BY tag`)
+	if err != nil {
+		log.Printf("[drives] GetAllTagNames: %v", err)
+		return nil
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var t string
+		if err := rows.Scan(&t); err != nil {
+			continue
 		}
+		out = append(out, t)
 	}
-	names := make([]string, 0, len(seen))
-	for t := range seen {
-		names = append(names, t)
-	}
-	sort.Strings(names)
-	return names
+	sort.Strings(out) // belt & suspenders
+	return out
 }
 
-// ClearProcessedForReprocess clears the processed-files list so every clip
-// found on disk is eligible for re-extraction.  Existing route data is
-// intentionally kept: clips that no longer exist on disk retain their
-// previously extracted data, while clips that are found and re-scanned
-// have their routes overwritten in-place by AddRoute's upsert behaviour.
-// Drive tags are preserved.
+// ClearProcessedForReprocess empties processed_files so every clip on disk
+// is eligible for re-extraction. Routes and drive_tags are preserved.
 func (s *Store) ClearProcessedForReprocess() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.data.ProcessedFiles = nil
-	s.processedIndex = make(map[string]bool)
+	if _, err := s.db.ExecContext(context.Background(), `DELETE FROM processed_files`); err != nil {
+		log.Printf("[drives] ClearProcessedForReprocess: %v", err)
+		return
+	}
+	_ = s.refreshCountsLocked(context.Background())
 }
 
-// ArchivePath returns the path where drive data is backed up on the archive mount.
-const archiveDataPath = "/mnt/archive/drive-data.json"
-
-// SyncToArchive copies the local drive data file to the archive mount.
-// This is best-effort — it silently returns nil if the archive is not mounted.
+// SyncToArchive is temporarily a no-op during the SQLite migration — the
+// old implementation copied the local JSON file byte-for-byte to the
+// archive mount, but the local file is now a SQLite database. A follow-up
+// commit adds a streaming JSON exporter and rewires SyncToArchive to
+// regenerate /mutable/drive-data.json on demand and copy that to the
+// archive, with the size-guard from PR 1 still protecting the backup.
 //
-// It enforces a size-guard backed by a local cache at DefaultSyncCachePath
-// (/mutable/.drive-data-last-sync). If the new file is less than
-// syncGuardRatio (50%) the size of the last successful sync AND the last
-// sync was above syncGuardMinThreshold (10 MB), the sync is refused and
-// *ErrSyncGuard is returned so callers can warn the user. This protects
-// against the failure mode where a corrupted/empty local drive-data.json
-// overwrites a healthy archive copy.
+// Meanwhile rsync and rclone users are untouched (their sync is handled
+// in post-archive-process.sh). Only CIFS/NFS mount users are briefly
+// affected, and only while this branch is in flight.
 func (s *Store) SyncToArchive() error {
-	// Check if archive directory exists
-	if _, err := os.Stat("/mnt/archive"); err != nil {
-		return nil
-	}
-
-	// Verify it's actually a mounted filesystem (not just an empty local dir).
-	// On Linux, check /proc/mounts; on other platforms skip the check.
-	if mounts, err := os.ReadFile("/proc/mounts"); err == nil {
-		if !strings.Contains(string(mounts), "/mnt/archive") {
-			return nil
-		}
-	}
-
-	return s.syncToPath(archiveDataPath, DefaultSyncCachePath)
+	log.Printf("[drives] SyncToArchive: temporarily disabled during SQLite migration " +
+		"(CIFS/NFS archive-side JSON will regenerate once the exporter lands)")
+	return nil
 }
 
-// syncToPath copies s.path to destPath atomically, enforcing the size-guard
-// using cachePath to remember the last successful sync size. On a successful
-// sync the cache is updated with the new size. On a refused sync (*ErrSyncGuard)
-// the destination and cache are left untouched — the existing archive copy
-// is preserved.
+// RestoreFromArchive is temporarily a no-op alongside SyncToArchive. The
+// old implementation restored a JSON copy from /mnt/archive into
+// /mutable/drive-data.json on first boot; in the new world that copy is
+// fed into the one-shot JSON->DB importer (landing in the next commit),
+// at which point this becomes the trigger for that import.
+func (s *Store) RestoreFromArchive() error {
+	return nil
+}
+
+// -----------------------------------------------------------------------------
+// Internal helpers
+// -----------------------------------------------------------------------------
+
+// selectAllRoutesLocked reads every route from the DB, decoding all BLOB
+// columns into the Go representation. Caller must hold s.mu (read).
+func (s *Store) selectAllRoutesLocked(ctx context.Context) ([]Route, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT file, date_dir, raw_park_count, raw_frame_count,
+		       points_blob, gear_states_blob, ap_states_blob,
+		       speeds_blob, accel_blob, gear_runs_blob
+		FROM routes
+		ORDER BY file`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []Route
+	for rows.Next() {
+		var r Route
+		var pb, gb, ab, sb, acb, rb []byte
+		if err := rows.Scan(
+			&r.File, &r.Date, &r.RawParkCount, &r.RawFrameCount,
+			&pb, &gb, &ab, &sb, &acb, &rb,
+		); err != nil {
+			return nil, err
+		}
+		points, err := decodePoints(pb)
+		if err != nil {
+			return nil, fmt.Errorf("decode points for %q: %w", r.File, err)
+		}
+		r.Points = points
+		r.GearStates = decodeUint8s(gb)
+		r.AutopilotStates = decodeUint8s(ab)
+		speeds, err := decodeFloat32s(sb)
+		if err != nil {
+			return nil, fmt.Errorf("decode speeds for %q: %w", r.File, err)
+		}
+		r.Speeds = speeds
+		accel, err := decodeFloat32s(acb)
+		if err != nil {
+			return nil, fmt.Errorf("decode accel for %q: %w", r.File, err)
+		}
+		r.AccelPositions = accel
+		runs, err := decodeGearRuns(rb)
+		if err != nil {
+			return nil, fmt.Errorf("decode gear_runs for %q: %w", r.File, err)
+		}
+		r.GearRuns = runs
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// refreshCountsLocked updates the atomic row-count caches. Caller must hold s.mu.
+func (s *Store) refreshCountsLocked(ctx context.Context) error {
+	var rc, pc int64
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM routes`).Scan(&rc); err != nil {
+		return err
+	}
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM processed_files`).Scan(&pc); err != nil {
+		return err
+	}
+	s.routeCount.Store(rc)
+	s.processedCount.Store(pc)
+	return nil
+}
+
+// normalizePath converts backslashes to forward slashes so Windows-shaped
+// paths collide with their POSIX equivalents in processed_files and routes.
+func normalizePath(p string) string {
+	return strings.ReplaceAll(p, "\\", "/")
+}
+
+// syncToPath copies s.path (whatever file is there — the SQLite DB today,
+// the regenerated JSON mirror in a follow-up commit) to destPath atomically,
+// enforcing the size-guard using cachePath. On success the cache is updated
+// with the new size; on *ErrSyncGuard the destination and cache are left
+// untouched.
 //
-// Extracted from SyncToArchive for testability: production callers go through
-// SyncToArchive (which also does the mount check); tests can call this
-// directly against a tempdir.
+// This is the primitive underneath SyncToArchive (Go side) and is exercised
+// directly by the size-guard integration tests (syncguard_integration_test.go).
+// It does not require s.db to be open, so it works even before Load().
 func (s *Store) syncToPath(destPath, cachePath string) error {
 	// Stat source first so we know the new size before the guard decision.
 	srcInfo, err := os.Stat(s.path)
@@ -423,19 +729,16 @@ func (s *Store) syncToPath(destPath, cachePath string) error {
 		return err
 	}
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
 	src, err := os.Open(s.path)
 	if err != nil {
 		return err
 	}
 	defer src.Close()
 
-	// Ensure the destination directory exists (tests use tempdirs without
-	// it; production always has /mnt/archive but this is cheap insurance).
-	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
-		return err
+	if dir := filepath.Dir(destPath); dir != "" && dir != "." && dir != "/" {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
 	}
 
 	tmp := destPath + ".tmp"
@@ -459,47 +762,14 @@ func (s *Store) syncToPath(destPath, cachePath string) error {
 		os.Remove(tmp)
 		return err
 	}
-
 	if err := os.Rename(tmp, destPath); err != nil {
 		os.Remove(tmp)
 		return err
 	}
 
-	// Record the successful sync size. Cache write failures are logged
-	// but not fatal — the copy succeeded, we'd rather tolerate a stale
-	// cache (which fails open on next sync) than report a sync error.
 	if err := writeSyncCache(cachePath, n); err != nil {
 		log.Printf("[drives] Warning: failed to update sync-size cache at %s: %v", cachePath, err)
 	}
-
 	log.Printf("[drives] Synced drive data to archive (%d bytes)", n)
-	return nil
-}
-
-// RestoreFromArchive copies drive data from the archive mount to the local path
-// if the local file does not exist but the archive copy does.
-// This is best-effort and should be called before Load().
-func (s *Store) RestoreFromArchive() error {
-	// Only restore if local file is missing
-	if _, err := os.Stat(s.path); err == nil {
-		return nil
-	}
-
-	// Check if archive copy exists
-	src, err := os.ReadFile(archiveDataPath)
-	if err != nil {
-		return nil // archive not mounted or no backup — nothing to do
-	}
-
-	dir := filepath.Dir(s.path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return err
-	}
-
-	if err := os.WriteFile(s.path, src, 0644); err != nil {
-		return err
-	}
-
-	log.Printf("[drives] Restored drive data from archive (%d bytes)", len(src))
 	return nil
 }
