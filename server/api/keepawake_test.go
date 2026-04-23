@@ -1,6 +1,8 @@
 package api
 
 import (
+	"os"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -19,6 +21,7 @@ func installHooks(t *testing.T) *hookCounters {
 	origStop := stopKeepAwakeFn
 	origTick := expirationTickInterval
 	origIdle := idleCheckInterval
+	origFlag := webuiWantedFlagPath
 
 	startKeepAwakeFn = func(_ string, _ time.Time) {
 		atomic.AddInt32(&h.start, 1)
@@ -28,14 +31,21 @@ func installHooks(t *testing.T) *hookCounters {
 	}
 	expirationTickInterval = 5 * time.Millisecond
 	idleCheckInterval = 5 * time.Millisecond
+	webuiWantedFlagPath = filepath.Join(t.TempDir(), "keep_awake_webui_wanted")
 
 	t.Cleanup(func() {
 		startKeepAwakeFn = origStart
 		stopKeepAwakeFn = origStop
 		expirationTickInterval = origTick
 		idleCheckInterval = origIdle
+		webuiWantedFlagPath = origFlag
 	})
 	return &h
+}
+
+func wantedFlagExists() bool {
+	_, err := os.Stat(webuiWantedFlagPath)
+	return err == nil
 }
 
 func waitFor(t *testing.T, timeout time.Duration, cond func() bool) bool {
@@ -148,5 +158,74 @@ func TestUserStop_Idle_CallsStop(t *testing.T) {
 		return atomic.LoadInt32(&h.stop) > 0
 	}) {
 		t.Fatal("user Stop while idle must call stopKeepAwakeFn")
+	}
+}
+
+func TestWantedFlag_LifecycleActive(t *testing.T) {
+	installHooks(t)
+	m := NewKeepAwakeManager(func() bool { return false })
+
+	if wantedFlagExists() {
+		t.Fatal("flag should not exist before Start")
+	}
+	if err := m.Start("manual", 10*time.Minute); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if !wantedFlagExists() {
+		t.Fatal("flag must exist while Active")
+	}
+	m.Stop()
+	if wantedFlagExists() {
+		t.Fatal("flag must be cleared after Stop")
+	}
+}
+
+func TestWantedFlag_LifecyclePending(t *testing.T) {
+	installHooks(t)
+	m := NewKeepAwakeManager(func() bool { return true })
+
+	if err := m.Start("manual", 10*time.Minute); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if !wantedFlagExists() {
+		t.Fatal("flag must exist while Pending")
+	}
+	m.Stop()
+	if wantedFlagExists() {
+		t.Fatal("flag must be cleared after Stop from Pending")
+	}
+}
+
+func TestWantedFlag_ClearedOnExpire(t *testing.T) {
+	installHooks(t)
+	m := NewKeepAwakeManager(func() bool { return false })
+
+	if err := m.Start("manual", 30*time.Millisecond); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if !wantedFlagExists() {
+		t.Fatal("flag must exist immediately after Active start")
+	}
+	if !waitFor(t, 500*time.Millisecond, func() bool {
+		return m.Status()["state"] == string(KeepAwakeIdle)
+	}) {
+		t.Fatal("expected idle after expiration")
+	}
+	if wantedFlagExists() {
+		t.Fatal("flag must be cleared after expire → idle")
+	}
+}
+
+func TestWantedFlag_StaleClearedByConstructor(t *testing.T) {
+	origFlag := webuiWantedFlagPath
+	webuiWantedFlagPath = filepath.Join(t.TempDir(), "stale")
+	t.Cleanup(func() { webuiWantedFlagPath = origFlag })
+
+	if err := os.WriteFile(webuiWantedFlagPath, []byte("1"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	_ = NewKeepAwakeManager(func() bool { return false })
+	if wantedFlagExists() {
+		t.Fatal("constructor must clear a stale flag left from a prior run")
 	}
 }

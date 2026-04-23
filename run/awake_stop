@@ -59,6 +59,18 @@ ble_restore_gatt_daemon() {
     return
   fi
 
+  # Webui KeepAwakeManager sets this flag while its state is Active or
+  # Pending. If present, a re-arm or pending-start will call awake_start
+  # within seconds — skip the GATT restore to avoid churning mobile-app
+  # Bluetooth off and back on during handoffs. The lock file stays in
+  # place, so the next awake_start's ble_disable_gatt_daemon sees it and
+  # no-ops (no double systemctl stop).
+  local webui_wanted="/tmp/keep_awake_webui_wanted"
+  if [ -e "$webui_wanted" ]; then
+    log "Tesla BLE: webui keep-awake still Active/Pending — deferring GATT restore for handoff."
+    return
+  fi
+
   rm -f "$BLE_LOCK"
   if [ "$have_lock" = "0" ]; then
     log "Tesla BLE: Keep-awake lock was lost but GATT daemon is down — restoring mobile-app Bluetooth..."

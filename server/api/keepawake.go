@@ -25,6 +25,13 @@ var (
 	// waiting for archive / processing / migration to finish. Poll
 	// cadence doesn't affect correctness — 30s keeps the cost low.
 	idleCheckInterval = 30 * time.Second
+
+	// webuiWantedFlagPath signals to awake_stop that the webui manager
+	// is Active or Pending — i.e. a re-arm / pending-start will fire
+	// startKeepAwake within seconds, so awake_stop should skip the
+	// GATT-daemon restore to avoid churning mobile-app Bluetooth off
+	// and back on during handoffs.
+	webuiWantedFlagPath = "/tmp/keep_awake_webui_wanted"
 )
 
 // KeepAwakeState represents the current state of the webui keep-awake manager.
@@ -72,9 +79,24 @@ func keepAwakeReasonLabel(mode string) string {
 // NewKeepAwakeManager creates a new manager with a function to check if the
 // system is busy (archiving or processing drives).
 func NewKeepAwakeManager(isBusy func() bool) *KeepAwakeManager {
+	// A fresh manager is Idle; clear any stale flag left by a crashed
+	// prior run of this process so awake_stop doesn't wrongly defer
+	// GATT restore.
+	_ = os.Remove(webuiWantedFlagPath)
 	return &KeepAwakeManager{
 		state:  KeepAwakeIdle,
 		isBusy: isBusy,
+	}
+}
+
+// setState updates the state and mirrors it to the wanted-flag file.
+// Must be called with m.mu held.
+func (m *KeepAwakeManager) setState(s KeepAwakeState) {
+	m.state = s
+	if s == KeepAwakeActive || s == KeepAwakePending {
+		_ = os.WriteFile(webuiWantedFlagPath, []byte("1"), 0644)
+	} else {
+		_ = os.Remove(webuiWantedFlagPath)
 	}
 }
 
@@ -117,12 +139,12 @@ func (m *KeepAwakeManager) Start(mode string, duration time.Duration) error {
 	m.doneCh = make(chan struct{})
 
 	if m.isBusy() {
-		m.state = KeepAwakePending
+		m.setState(KeepAwakePending)
 		keepAwakeLog("Queued (mode: %s, duration: %s) — waiting for archive/processing to finish", mode, duration)
 		log.Printf("[keep-awake] Queued (mode: %s) — system busy", mode)
 		go m.waitForIdleThenStart()
 	} else {
-		m.state = KeepAwakeActive
+		m.setState(KeepAwakeActive)
 		m.startedAt = time.Now()
 		m.expiresAt = time.Now().Add(duration)
 		keepAwakeLog("Started (mode: %s, duration: %s)", mode, duration)
@@ -187,7 +209,7 @@ func (m *KeepAwakeManager) stopInternal() {
 		close(m.stopCh)
 		m.stopCh = nil
 	}
-	m.state = KeepAwakeIdle
+	m.setState(KeepAwakeIdle)
 	m.expiresAt = time.Time{}
 	m.startedAt = time.Time{}
 }
@@ -231,7 +253,7 @@ func (m *KeepAwakeManager) waitForIdleThenStart() {
 					m.mu.Unlock()
 					return
 				}
-				m.state = KeepAwakeActive
+				m.setState(KeepAwakeActive)
 				m.startedAt = time.Now()
 				m.expiresAt = time.Now().Add(m.pendingDuration)
 				mode := m.mode
@@ -273,7 +295,7 @@ func (m *KeepAwakeManager) expirationWatcher() {
 				m.mu.Lock()
 				if m.state == KeepAwakeActive {
 					busyNow := m.isBusy()
-					m.state = KeepAwakeIdle
+					m.setState(KeepAwakeIdle)
 					m.expiresAt = time.Time{}
 					m.startedAt = time.Time{}
 					if busyNow {
