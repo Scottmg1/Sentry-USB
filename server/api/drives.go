@@ -24,6 +24,17 @@ type broadcaster interface {
 	Broadcast(msgType string, data interface{})
 }
 
+// migrationKeepAwake is the minimal slice of KeepAwakeManager that
+// DriveHandlers uses to pin the Tesla awake while the aggregate
+// backfill runs. Accepting an interface keeps api/drives.go decoupled
+// from api/keepawake.go's concrete type and avoids an import cycle in
+// tests that don't care about keep-awake.
+type migrationKeepAwake interface {
+	Start(mode string, duration time.Duration) error
+	Heartbeat() KeepAwakeState
+	Stop()
+}
+
 // DriveHandlers holds the drive map state.
 type DriveHandlers struct {
 	store     *drives.Store
@@ -32,10 +43,19 @@ type DriveHandlers struct {
 
 	importMu  sync.Mutex
 	importing bool
+
+	// Migration coordination. backfillCancel stops the background
+	// aggregate backfill on server shutdown; keepAwake (optional) is
+	// pinged every few minutes while the backfill runs so the Tesla
+	// doesn't go to sleep mid-migration and yank power from the Pi.
+	backfillCancel context.CancelFunc
+	keepAwake      migrationKeepAwake
 }
 
 // NewDriveHandlers creates handlers with a store at the given data path.
-func NewDriveHandlers(dataPath string, hub broadcaster) *DriveHandlers {
+// If kam is non-nil, the background migration will periodically nudge
+// the Tesla awake so the Pi keeps getting power during a long backfill.
+func NewDriveHandlers(dataPath string, hub broadcaster, kam migrationKeepAwake) *DriveHandlers {
 	store := drives.NewStore(dataPath)
 	if err := store.RestoreFromArchive(); err != nil {
 		log.Printf("[drives] Warning: failed to restore from archive: %v", err)
@@ -43,10 +63,85 @@ func NewDriveHandlers(dataPath string, hub broadcaster) *DriveHandlers {
 	if err := store.Load(); err != nil {
 		log.Printf("[drives] Warning: failed to load drive data: %v", err)
 	}
-	return &DriveHandlers{
-		store:     store,
-		processor: drives.NewProcessor(store),
-		hub:       hub,
+	ctx, cancel := context.WithCancel(context.Background())
+	dh := &DriveHandlers{
+		store:          store,
+		processor:      drives.NewProcessor(store),
+		hub:            hub,
+		backfillCancel: cancel,
+		keepAwake:      kam,
+	}
+
+	// Kick off the async aggregate backfill. On fresh installs this
+	// is a no-op (StartBackgroundBackfill returns false when no NULL
+	// aggregate rows exist). On a first-boot-after-upgrade from a
+	// pre-v2 binary it starts the long backfill in a goroutine so the
+	// HTTP server can answer requests immediately.
+	started := dh.store.StartBackgroundBackfill(ctx, func(done, total int) {
+		if dh.hub != nil {
+			dh.hub.Broadcast("drives.migration.progress", map[string]interface{}{
+				"active": true,
+				"done":   done,
+				"total":  total,
+			})
+		}
+	})
+	if started {
+		log.Printf("[drives] Background aggregate backfill started; UI will show migration banner")
+		go dh.driveMigrationKeepAwakeLoop(ctx)
+	}
+	return dh
+}
+
+// driveMigrationKeepAwakeLoop pings the KeepAwakeManager every 5 minutes
+// while the backfill is running so the Tesla (and therefore the Pi) stays
+// powered. When the backfill finishes it issues Stop() and broadcasts a
+// final WS event so the UI dismisses the banner.
+//
+// No-op when keepAwake is nil (test harnesses that don't wire one up).
+func (dh *DriveHandlers) driveMigrationKeepAwakeLoop(ctx context.Context) {
+	if dh.keepAwake != nil {
+		// Auto mode + a generous initial duration; Heartbeat() below
+		// keeps extending while the backfill runs.
+		if err := dh.keepAwake.Start("auto", 15*time.Minute); err != nil {
+			log.Printf("[drives] keep-awake Start during migration: %v", err)
+		}
+	}
+	tick := time.NewTicker(5 * time.Minute)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			dh.finishMigrationBroadcast()
+			return
+		case <-tick.C:
+			status := dh.store.MigrationStatus()
+			if !status.Active {
+				dh.finishMigrationBroadcast()
+				return
+			}
+			if dh.keepAwake != nil {
+				_ = dh.keepAwake.Heartbeat()
+			}
+		}
+	}
+}
+
+// finishMigrationBroadcast fires the one-shot "migration done" WS event
+// and stops keep-awake. Safe to call multiple times.
+func (dh *DriveHandlers) finishMigrationBroadcast() {
+	status := dh.store.MigrationStatus()
+	if dh.keepAwake != nil {
+		dh.keepAwake.Stop()
+	}
+	if dh.hub != nil {
+		dh.hub.Broadcast("drives.migration.progress", map[string]interface{}{
+			"active":    false,
+			"done":      status.Done,
+			"total":     status.Total,
+			"error":     status.Error,
+			"disk_full": status.DiskFull,
+		})
 	}
 }
 
@@ -64,8 +159,47 @@ func RegisterDriveRoutes(mux *http.ServeMux, dh *DriveHandlers) {
 	mux.HandleFunc("POST /api/drives/data/export-for-sync", dh.exportForSync)
 	mux.HandleFunc("GET /api/drives/stats", dh.driveStats)
 	mux.HandleFunc("GET /api/drives/fsd-analytics", dh.fsdAnalytics)
+	mux.HandleFunc("GET /api/drives/migration-status", dh.migrationStatus)
 	mux.HandleFunc("PUT /api/drives/{id}/tags", dh.setDriveTags)
 	mux.HandleFunc("GET /api/drives/{id}", dh.singleDrive)
+}
+
+// GET /api/drives/migration-status — returns the async aggregate backfill
+// state so the UI can render a "Migrating drive data..." banner + progress
+// bar during a first-boot-after-upgrade. Safe to poll at 2-3s cadence;
+// the handler just reads an atomic.Value snapshot.
+//
+// Response shape:
+//
+//	{
+//	  "active": true,
+//	  "done": 1234,
+//	  "total": 5500,
+//	  "pct": 22.4,
+//	  "error": "",
+//	  "disk_full": false
+//	}
+//
+// "active=false" + "error=''" + "done==total" means migration finished
+// cleanly. "active=false" + "error!=''" is a failed/paused run the user
+// should act on (e.g., disk_full=true means free space then reboot).
+func (dh *DriveHandlers) migrationStatus(w http.ResponseWriter, r *http.Request) {
+	s := dh.store.MigrationStatus()
+	pct := 0.0
+	if s.Total > 0 {
+		pct = 100 * float64(s.Done) / float64(s.Total)
+		if pct > 100 {
+			pct = 100
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"active":    s.Active,
+		"done":      s.Done,
+		"total":     s.Total,
+		"pct":       pct,
+		"error":     s.Error,
+		"disk_full": s.DiskFull,
+	})
 }
 
 // Store returns the underlying drive store (for external integration like post-archive hooks).
@@ -568,19 +702,29 @@ func (dh *DriveHandlers) uploadData(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		var data drives.StoreData
-		if err := json.NewDecoder(f).Decode(&data); err != nil {
-			f.Close()
-			archiveLog("Drive data import error: invalid JSON: %v", err)
-			log.Printf("[drives] Import error: invalid JSON: %v", err)
+		// Stream directly from the temp file into the per-batch SQLite
+		// importer. Previously the handler json.Decode'd the whole payload
+		// into a drives.StoreData struct, which OOMed a 512MB Pi on
+		// multi-GB backups. ReplaceDataFromReader commits every ~200 routes
+		// so peak heap stays ~10MB regardless of upload size.
+		stats, err := dh.store.ReplaceDataFromReader(context.Background(), f,
+			func(routesImported int) {
+				dh.hub.Broadcast("drive_import", map[string]interface{}{
+					"status":         "progress",
+					"routes_written": routesImported,
+				})
+			})
+		f.Close()
+		if err != nil {
+			archiveLog("Drive data import error: %v", err)
+			log.Printf("[drives] Import error: %v", err)
 			dh.hub.Broadcast("drive_import", map[string]interface{}{
-				"status": "error", "error": fmt.Sprintf("invalid JSON: %v", err),
+				"status": "error", "error": err.Error(),
 			})
 			return
 		}
-		f.Close()
 
-		if len(data.Routes) == 0 && len(data.ProcessedFiles) == 0 {
+		if stats.Routes == 0 && stats.ProcessedFiles == 0 {
 			archiveLog("Drive data import error: file contains no routes or processed files")
 			log.Printf("[drives] Import error: decoded file contains no routes or processed files")
 			dh.hub.Broadcast("drive_import", map[string]interface{}{
@@ -589,10 +733,6 @@ func (dh *DriveHandlers) uploadData(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Free decoder memory before replacing store data
-		runtime.GC()
-
-		dh.store.ReplaceData(data)
 		if err := dh.store.Save(); err != nil {
 			archiveLog("Drive data import error: failed to save: %v", err)
 			log.Printf("[drives] Import error: failed to save: %v", err)
@@ -603,13 +743,13 @@ func (dh *DriveHandlers) uploadData(w http.ResponseWriter, r *http.Request) {
 		}
 
 		archiveLog("Drive data import complete: %d routes, %d processed files",
-			len(data.Routes), len(data.ProcessedFiles))
+			stats.Routes, stats.ProcessedFiles)
 		log.Printf("[drives] Import complete: %d routes, %d processed files",
-			len(data.Routes), len(data.ProcessedFiles))
+			stats.Routes, stats.ProcessedFiles)
 		dh.hub.Broadcast("drive_import", map[string]interface{}{
 			"status":          "complete",
-			"routes_count":    len(data.Routes),
-			"processed_count": len(data.ProcessedFiles),
+			"routes_count":    stats.Routes,
+			"processed_count": stats.ProcessedFiles,
 		})
 	}()
 

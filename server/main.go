@@ -59,14 +59,27 @@ func main() {
 	// API routes
 	api.RegisterRoutes(mux, hub)
 
-	// Drive map routes
-	driveHandlers := api.NewDriveHandlers(drives.DefaultDataPath, hub)
-	api.RegisterDriveRoutes(mux, driveHandlers)
-
-	// Keep-awake manager (user-controlled from web UI)
+	// Drive map + keep-awake wiring. The drive aggregate backfill on a
+	// first-boot-after-upgrade can take 10+ minutes on a 512MB Pi with
+	// millions of route points; we hand the KeepAwakeManager to
+	// NewDriveHandlers so the migration goroutine can pin the Tesla
+	// awake while it runs, preventing the car from sleeping and cutting
+	// the Pi's power mid-backfill.
+	//
+	// Chicken-and-egg: KeepAwakeManager's isBusy callback needs to check
+	// the drive processor, but the processor lives inside DriveHandlers.
+	// We resolve with a forward-declared pointer that isBusy closes over
+	// -- the closure tolerates driveHandlers==nil during the brief
+	// window before assignment.
+	var driveHandlers *api.DriveHandlers
 	kam := api.NewKeepAwakeManager(func() bool {
+		if driveHandlers == nil {
+			return api.IsArchiving()
+		}
 		return api.IsArchiving() || driveHandlers.Processor().IsRunning()
 	})
+	driveHandlers = api.NewDriveHandlers(drives.DefaultDataPath, hub, kam)
+	api.RegisterDriveRoutes(mux, driveHandlers)
 	api.RegisterKeepAwakeRoutes(mux, kam)
 
 	// Away Mode manager (user-controlled AP from web UI)
