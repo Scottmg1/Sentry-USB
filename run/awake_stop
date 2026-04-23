@@ -6,6 +6,44 @@ then
 fi
 
 # ---------------------------------------------------------------------------
+# Handoff guard
+#
+# Skip the entire stop when any other keep-awake owner still wants the
+# car awake. Two signals, either of which defers the stop:
+#
+#   1. Go-side registry flag (/tmp/keep_awake_webui_wanted): any of
+#      webui / drive processor / migration wants keep-awake. Owners
+#      register on start and release on end; file is created on the
+#      0→1 transition and removed on the last release.
+#
+#   2. /tmp/archive_status.json: archiveloop writes this while an
+#      archive cycle is running (phase="archiving") and clears it when
+#      archive_clips finishes. We match Go's IsArchiving logic (fresh
+#      within 120s) to ignore crashed-archive stale files.
+#
+# Skipping is safe because awake_start is idempotent:
+#   - Case 1/2 (Sentry Mode): re-calling enable-sentry when already on
+#     is a car-level no-op.
+#   - Case 3 (nudge loop): awake_start kills any existing nudge PID
+#     before spawning a new one.
+#
+# The next awake_stop that runs with NEITHER signal set does the real
+# cleanup — disables Sentry Mode and/or restores the GATT daemon.
+# ---------------------------------------------------------------------------
+if [ -e "/tmp/keep_awake_webui_wanted" ]; then
+  log "Keep-awake: Go-side owner (webui/processor/migration) still active — deferring stop for handoff."
+  exit 0
+fi
+if [ -e "/tmp/archive_status.json" ]; then
+  # Treat files older than 120s as stale (archiveloop crashed without clearing).
+  # `find -mmin -2` prints the path iff modified within the last 2 minutes.
+  if [ -n "$(find /tmp/archive_status.json -mmin -2 2>/dev/null)" ]; then
+    log "Keep-awake: archive cycle still in progress — deferring stop for handoff."
+    exit 0
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 # BLE radio restore
 #
 # Restore the GATT daemon (mobile-app Bluetooth) after keep-awake ends.
@@ -59,17 +97,9 @@ ble_restore_gatt_daemon() {
     return
   fi
 
-  # Webui KeepAwakeManager sets this flag while its state is Active or
-  # Pending. If present, a re-arm or pending-start will call awake_start
-  # within seconds — skip the GATT restore to avoid churning mobile-app
-  # Bluetooth off and back on during handoffs. The lock file stays in
-  # place, so the next awake_start's ble_disable_gatt_daemon sees it and
-  # no-ops (no double systemctl stop).
-  local webui_wanted="/tmp/keep_awake_webui_wanted"
-  if [ -e "$webui_wanted" ]; then
-    log "Tesla BLE: webui keep-awake still Active/Pending — deferring GATT restore for handoff."
-    return
-  fi
+  # Note: the top-of-script handoff guard already skips awake_stop entirely
+  # when the webui KeepAwakeManager flag is set, so we're only reached when
+  # the full priority chain has drained to idle.
 
   rm -f "$BLE_LOCK"
   if [ "$have_lock" = "0" ]; then

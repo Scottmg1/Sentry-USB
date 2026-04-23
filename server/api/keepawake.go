@@ -26,13 +26,63 @@ var (
 	// cadence doesn't affect correctness — 30s keeps the cost low.
 	idleCheckInterval = 30 * time.Second
 
-	// webuiWantedFlagPath signals to awake_stop that the webui manager
-	// is Active or Pending — i.e. a re-arm / pending-start will fire
-	// startKeepAwake within seconds, so awake_stop should skip the
-	// GATT-daemon restore to avoid churning mobile-app Bluetooth off
-	// and back on during handoffs.
-	webuiWantedFlagPath = "/tmp/keep_awake_webui_wanted"
+	// keepAwakeWantedFlagPath signals to awake_stop that at least one
+	// Go-side caller (webui / processor / migration) still wants keep-
+	// awake to stay on. awake_stop exits early when this flag is present
+	// so we don't churn Sentry Mode (Case 1/2) or the nudge / GATT radio
+	// (Case 3) during handoffs. Path kept stable for forward compat.
+	keepAwakeWantedFlagPath = "/tmp/keep_awake_webui_wanted"
 )
+
+// keepAwakeRegistry is a reference-counted set of Go-side keep-awake
+// wanters. Owners are opaque strings ("webui", "processor", "migration").
+// While the set is non-empty, keepAwakeWantedFlagPath exists and awake_stop
+// defers. Archive (bash-side) signals its presence separately via
+// /tmp/archive_status.json; awake_stop checks both.
+var (
+	keepAwakeRegistryMu sync.Mutex
+	keepAwakeRegistry   = map[string]bool{}
+)
+
+// registerKeepAwakeWant marks owner as wanting keep-awake. Idempotent per
+// owner. Creates the flag on the 0→1 transition.
+func registerKeepAwakeWant(owner string) {
+	keepAwakeRegistryMu.Lock()
+	defer keepAwakeRegistryMu.Unlock()
+	if !keepAwakeRegistry[owner] {
+		keepAwakeRegistry[owner] = true
+		if len(keepAwakeRegistry) == 1 {
+			_ = os.WriteFile(keepAwakeWantedFlagPath, []byte("1"), 0644)
+		}
+	}
+}
+
+// releaseKeepAwakeWant drops owner's want. Returns true if this was the
+// last holder (refcount reached 0) — callers use this to decide whether
+// to shell out to awake_stop at all. Idempotent per owner.
+func releaseKeepAwakeWant(owner string) (wasLast bool) {
+	keepAwakeRegistryMu.Lock()
+	defer keepAwakeRegistryMu.Unlock()
+	if !keepAwakeRegistry[owner] {
+		return len(keepAwakeRegistry) == 0
+	}
+	delete(keepAwakeRegistry, owner)
+	if len(keepAwakeRegistry) == 0 {
+		_ = os.Remove(keepAwakeWantedFlagPath)
+		return true
+	}
+	return false
+}
+
+// resetKeepAwakeRegistry clears all registrations and the flag. Called
+// from NewKeepAwakeManager on process start to wipe any stale state from
+// a crashed prior run.
+func resetKeepAwakeRegistry() {
+	keepAwakeRegistryMu.Lock()
+	defer keepAwakeRegistryMu.Unlock()
+	keepAwakeRegistry = map[string]bool{}
+	_ = os.Remove(keepAwakeWantedFlagPath)
+}
 
 // KeepAwakeState represents the current state of the webui keep-awake manager.
 type KeepAwakeState string
@@ -77,26 +127,24 @@ func keepAwakeReasonLabel(mode string) string {
 }
 
 // NewKeepAwakeManager creates a new manager with a function to check if the
-// system is busy (archiving or processing drives).
+// system is busy (archiving or processing drives). Also clears any stale
+// registry state left by a crashed prior run.
 func NewKeepAwakeManager(isBusy func() bool) *KeepAwakeManager {
-	// A fresh manager is Idle; clear any stale flag left by a crashed
-	// prior run of this process so awake_stop doesn't wrongly defer
-	// GATT restore.
-	_ = os.Remove(webuiWantedFlagPath)
+	resetKeepAwakeRegistry()
 	return &KeepAwakeManager{
 		state:  KeepAwakeIdle,
 		isBusy: isBusy,
 	}
 }
 
-// setState updates the state and mirrors it to the wanted-flag file.
-// Must be called with m.mu held.
+// setState updates the state and registers / releases the "webui" slot
+// in the keep-awake registry. Must be called with m.mu held.
 func (m *KeepAwakeManager) setState(s KeepAwakeState) {
 	m.state = s
 	if s == KeepAwakeActive || s == KeepAwakePending {
-		_ = os.WriteFile(webuiWantedFlagPath, []byte("1"), 0644)
+		registerKeepAwakeWant("webui")
 	} else {
-		_ = os.Remove(webuiWantedFlagPath)
+		releaseKeepAwakeWant("webui")
 	}
 }
 

@@ -92,6 +92,7 @@ func NewDriveHandlers(dataPath string, hub broadcaster) *DriveHandlers {
 // migration and its defer-stopKeepAwake kills our nudge, we reclaim it
 // within one tick.
 func (dh *DriveHandlers) driveMigrationKeepAwakeLoop(ctx context.Context) {
+	registerKeepAwakeWant("migration")
 	startKeepAwake("Migration", time.Time{})
 
 	tick := time.NewTicker(5 * time.Minute)
@@ -113,15 +114,14 @@ func (dh *DriveHandlers) driveMigrationKeepAwakeLoop(ctx context.Context) {
 }
 
 // finishMigrationBroadcast fires the one-shot "migration done" WS event
-// and releases the nudge loop. Safe to call multiple times. Skips
-// stopKeepAwake if Archive / Drive Processing currently owns the nudge
-// (mirrors the webui manager's busy guard so we never interrupt a
-// higher-priority system op).
+// and releases migration's claim on the nudge loop. awake_stop's handoff
+// guard checks both our registry flag (webui/processor) and the bash-side
+// /tmp/archive_status.json; if anyone else still wants keep-awake the
+// stop is a no-op there. Safe to call multiple times.
 func (dh *DriveHandlers) finishMigrationBroadcast() {
 	status := dh.store.MigrationStatus()
-	if !IsArchiving() && !dh.processor.IsRunning() {
-		stopKeepAwake()
-	}
+	releaseKeepAwakeWant("migration")
+	stopKeepAwake()
 	if dh.hub != nil {
 		dh.hub.Broadcast("drives.migration.progress", map[string]interface{}{
 			"active":    false,
@@ -458,8 +458,17 @@ func (dh *DriveHandlers) processFiles(w http.ResponseWriter, r *http.Request) {
 	// sleep after archiving; archiveloop will stop its own keep-awake task.
 	go func() {
 		if !postArchive {
+			registerKeepAwakeWant("processor")
 			startKeepAwake("Drive Processing", time.Time{})
-			defer stopKeepAwake()
+			defer func() {
+				// Release before stopKeepAwake so awake_stop sees a
+				// cleared flag (when we're the last wanter) and proceeds
+				// normally. If another Go-side caller still wants keep-
+				// awake, the flag stays and awake_stop's handoff guard
+				// defers — correct.
+				releaseKeepAwakeWant("processor")
+				stopKeepAwake()
+			}()
 		}
 
 		dh.hub.Broadcast("drive_process", map[string]interface{}{
@@ -532,8 +541,12 @@ func (dh *DriveHandlers) reprocessAll(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go func() {
+		registerKeepAwakeWant("processor")
 		startKeepAwake("Drive Processing", time.Time{})
-		defer stopKeepAwake()
+		defer func() {
+			releaseKeepAwakeWant("processor")
+			stopKeepAwake()
+		}()
 
 		archiveLog("Starting reprocess (all) on %s", clipsDir)
 		dh.hub.Broadcast("drive_process", map[string]interface{}{

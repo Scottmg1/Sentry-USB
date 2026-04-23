@@ -21,7 +21,7 @@ func installHooks(t *testing.T) *hookCounters {
 	origStop := stopKeepAwakeFn
 	origTick := expirationTickInterval
 	origIdle := idleCheckInterval
-	origFlag := webuiWantedFlagPath
+	origFlag := keepAwakeWantedFlagPath
 
 	startKeepAwakeFn = func(_ string, _ time.Time) {
 		atomic.AddInt32(&h.start, 1)
@@ -31,20 +31,22 @@ func installHooks(t *testing.T) *hookCounters {
 	}
 	expirationTickInterval = 5 * time.Millisecond
 	idleCheckInterval = 5 * time.Millisecond
-	webuiWantedFlagPath = filepath.Join(t.TempDir(), "keep_awake_webui_wanted")
+	keepAwakeWantedFlagPath = filepath.Join(t.TempDir(), "keep_awake_wanted")
+	resetKeepAwakeRegistry()
 
 	t.Cleanup(func() {
 		startKeepAwakeFn = origStart
 		stopKeepAwakeFn = origStop
 		expirationTickInterval = origTick
 		idleCheckInterval = origIdle
-		webuiWantedFlagPath = origFlag
+		keepAwakeWantedFlagPath = origFlag
+		resetKeepAwakeRegistry()
 	})
 	return &h
 }
 
 func wantedFlagExists() bool {
-	_, err := os.Stat(webuiWantedFlagPath)
+	_, err := os.Stat(keepAwakeWantedFlagPath)
 	return err == nil
 }
 
@@ -217,15 +219,85 @@ func TestWantedFlag_ClearedOnExpire(t *testing.T) {
 }
 
 func TestWantedFlag_StaleClearedByConstructor(t *testing.T) {
-	origFlag := webuiWantedFlagPath
-	webuiWantedFlagPath = filepath.Join(t.TempDir(), "stale")
-	t.Cleanup(func() { webuiWantedFlagPath = origFlag })
+	origFlag := keepAwakeWantedFlagPath
+	keepAwakeWantedFlagPath = filepath.Join(t.TempDir(), "stale")
+	t.Cleanup(func() {
+		keepAwakeWantedFlagPath = origFlag
+		resetKeepAwakeRegistry()
+	})
 
-	if err := os.WriteFile(webuiWantedFlagPath, []byte("1"), 0644); err != nil {
+	if err := os.WriteFile(keepAwakeWantedFlagPath, []byte("1"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	_ = NewKeepAwakeManager(func() bool { return false })
 	if wantedFlagExists() {
 		t.Fatal("constructor must clear a stale flag left from a prior run")
+	}
+}
+
+func TestRegistry_MultipleOwnersHoldFlag(t *testing.T) {
+	installHooks(t)
+
+	registerKeepAwakeWant("processor")
+	if !wantedFlagExists() {
+		t.Fatal("flag must exist after first register")
+	}
+	registerKeepAwakeWant("migration")
+	if !wantedFlagExists() {
+		t.Fatal("flag must still exist with two owners")
+	}
+
+	if last := releaseKeepAwakeWant("processor"); last {
+		t.Fatal("release with other owner still registered must return wasLast=false")
+	}
+	if !wantedFlagExists() {
+		t.Fatal("flag must still exist while migration holds")
+	}
+
+	if last := releaseKeepAwakeWant("migration"); !last {
+		t.Fatal("last release must return wasLast=true")
+	}
+	if wantedFlagExists() {
+		t.Fatal("flag must be cleared after last release")
+	}
+}
+
+func TestRegistry_RegisterIsIdempotent(t *testing.T) {
+	installHooks(t)
+
+	registerKeepAwakeWant("processor")
+	registerKeepAwakeWant("processor") // duplicate — must not corrupt count
+	if last := releaseKeepAwakeWant("processor"); !last {
+		t.Fatal("single logical owner should release in one call even after duplicate register")
+	}
+	if wantedFlagExists() {
+		t.Fatal("flag must be gone after the sole owner releases")
+	}
+}
+
+func TestRegistry_WebuiAndProcessorCoexist(t *testing.T) {
+	installHooks(t)
+	m := NewKeepAwakeManager(func() bool { return false })
+
+	if err := m.Start("manual", 10*time.Minute); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	registerKeepAwakeWant("processor")
+	if !wantedFlagExists() {
+		t.Fatal("flag must exist with webui + processor")
+	}
+
+	// Webui stops — processor still holds.
+	m.Stop()
+	if !wantedFlagExists() {
+		t.Fatal("flag must remain while processor still holds")
+	}
+
+	// Processor releases — flag clears.
+	if last := releaseKeepAwakeWant("processor"); !last {
+		t.Fatal("processor release should be last")
+	}
+	if wantedFlagExists() {
+		t.Fatal("flag must be gone after processor release")
 	}
 }
