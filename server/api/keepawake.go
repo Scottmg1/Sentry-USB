@@ -10,6 +10,14 @@ import (
 	"time"
 )
 
+// Indirection for tests: swap these to avoid shelling out to awake_start / awake_stop.
+var (
+	startKeepAwakeFn       = startKeepAwake
+	stopKeepAwakeFn        = stopKeepAwake
+	expirationTickInterval = 30 * time.Second
+	idleCheckInterval      = 30 * time.Second
+)
+
 // KeepAwakeState represents the current state of the webui keep-awake manager.
 type KeepAwakeState string
 
@@ -110,7 +118,7 @@ func (m *KeepAwakeManager) Start(mode string, duration time.Duration) error {
 		m.expiresAt = time.Now().Add(duration)
 		keepAwakeLog("Started (mode: %s, duration: %s)", mode, duration)
 		log.Printf("[keep-awake] Started (mode: %s, duration: %s)", mode, duration)
-		go startKeepAwake(keepAwakeReasonLabel(mode), m.expiresAt)
+		go startKeepAwakeFn(keepAwakeReasonLabel(mode), m.expiresAt)
 		go m.expirationWatcher()
 	}
 
@@ -147,13 +155,18 @@ func (m *KeepAwakeManager) Stop() {
 	defer m.mu.Unlock()
 
 	wasActive := m.state == KeepAwakeActive
+	busy := m.isBusy()
 	m.stopInternal()
 
-	if wasActive {
+	switch {
+	case wasActive && busy:
+		keepAwakeLog("Stopped by user — archive/processing still active, nudge left in archive's ownership")
+		log.Printf("[keep-awake] Stopped by user (busy — nudge left alone)")
+	case wasActive:
 		keepAwakeLog("Stopped by user")
 		log.Printf("[keep-awake] Stopped by user")
-		go stopKeepAwake()
-	} else {
+		go stopKeepAwakeFn()
+	default:
 		keepAwakeLog("Cancelled (was pending)")
 		log.Printf("[keep-awake] Cancelled (was pending)")
 	}
@@ -195,7 +208,7 @@ func (m *KeepAwakeManager) Status() map[string]interface{} {
 // waitForIdleThenStart polls until the system is no longer busy, then starts
 // the keep-awake.
 func (m *KeepAwakeManager) waitForIdleThenStart() {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(idleCheckInterval)
 	defer ticker.Stop()
 
 	for {
@@ -218,7 +231,7 @@ func (m *KeepAwakeManager) waitForIdleThenStart() {
 
 				keepAwakeLog("Started (mode: %s, duration: %s) — archive/processing finished", mode, dur)
 				log.Printf("[keep-awake] Started (mode: %s) — system now idle", mode)
-				go startKeepAwake(keepAwakeReasonLabel(mode), m.expiresAt)
+				go startKeepAwakeFn(keepAwakeReasonLabel(mode), m.expiresAt)
 				go m.expirationWatcher()
 				return
 			}
@@ -230,7 +243,7 @@ func (m *KeepAwakeManager) waitForIdleThenStart() {
 // It also detects when archiving finishes (busy→idle) while keep-awake is still active
 // and re-launches the nudge loop, because archiveloop's awake_stop kills our nudge.
 func (m *KeepAwakeManager) expirationWatcher() {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(expirationTickInterval)
 	defer ticker.Stop()
 
 	wasBusy := m.isBusy()
@@ -250,12 +263,20 @@ func (m *KeepAwakeManager) expirationWatcher() {
 			if expired {
 				m.mu.Lock()
 				if m.state == KeepAwakeActive {
+					busyNow := m.isBusy()
 					m.state = KeepAwakeIdle
 					m.expiresAt = time.Time{}
 					m.startedAt = time.Time{}
-					keepAwakeLog("Expired, stopping keep-awake")
-					log.Printf("[keep-awake] Expired")
-					go stopKeepAwake()
+					if busyNow {
+						// Archive/processing owns the nudge loop and will stop it
+						// when it finishes. Killing it now would interrupt archive.
+						keepAwakeLog("Expired while archive/processing active — leaving nudge alone (owned by archive)")
+						log.Printf("[keep-awake] Expired while busy — leaving nudge alone")
+					} else {
+						keepAwakeLog("Expired, stopping keep-awake")
+						log.Printf("[keep-awake] Expired")
+						go stopKeepAwakeFn()
+					}
 				}
 				if m.stopCh != nil {
 					close(m.stopCh)
@@ -271,7 +292,7 @@ func (m *KeepAwakeManager) expirationWatcher() {
 			if wasBusy && !nowBusy && active {
 				keepAwakeLog("Archive/processing finished — re-launching keep-awake (mode: %s)", mode)
 				log.Printf("[keep-awake] Re-arming nudge after archive finished (mode: %s)", mode)
-				go startKeepAwake(keepAwakeReasonLabel(mode), expiresAt)
+				go startKeepAwakeFn(keepAwakeReasonLabel(mode), expiresAt)
 			}
 			wasBusy = nowBusy
 		}
