@@ -3,8 +3,17 @@ package drives
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 )
+
+// ErrBackfillDiskFull is returned by the backfill when a SQLITE_FULL
+// surfaces during commit. Callers must NOT retry on their own --
+// looping on a full SD card burns CPU and SD-card writes without making
+// progress. The async runner maps this to a "migration paused: disk
+// full" state exposed via /api/drives/migration-status so the UI can
+// show an actionable message instead of a spinner that never resolves.
+var ErrBackfillDiskFull = errors.New("drives: backfill paused; SQLite reported SQLITE_FULL (disk full)")
 
 // BackfillStats is what backfillRouteAggregates reports to its caller
 // and (via the Load path) to WebSocket progress listeners. Updated is
@@ -59,8 +68,21 @@ func backfillRouteAggregates(
 	}
 
 	for {
+		// Graceful shutdown: on SIGTERM the async runner cancels this ctx
+		// so the in-flight batch's tx rolls back cleanly. The WHERE
+		// max_speed_mps IS NULL sentinel guarantees the next boot's run
+		// resumes from whatever rows are still NULL -- no progress
+		// marker needed.
+		select {
+		case <-ctx.Done():
+			return stats, ctx.Err()
+		default:
+		}
 		batch, err := backfillOneBatch(ctx, db)
 		if err != nil {
+			if isDiskFullErr(err) {
+				return stats, fmt.Errorf("%w: %v", ErrBackfillDiskFull, err)
+			}
 			return stats, err
 		}
 		if batch == 0 {
@@ -164,58 +186,67 @@ func backfillOneBatch(ctx context.Context, db *sql.DB) (int, error) {
 		aggs = append(aggs, agg{file: r.file, RouteAggregates: ComputeRouteAggregates(route)})
 	}
 
-	// Write phase: apply updates in one transaction.
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, fmt.Errorf("begin: %w", err)
-	}
-	defer func() {
-		if tx != nil {
-			_ = tx.Rollback()
+	// Write phase: apply updates in one transaction. Wrapped in the
+	// busy-retry helper because modernc.org/sqlite doesn't auto-retry
+	// on SQLITE_BUSY / SQLITE_LOCKED (e.g., WAL checkpoint contention
+	// from a concurrent AddRoute during boot-time processor startup).
+	if err := withBusyRetry(ctx, func() error {
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("begin: %w", err)
 		}
-	}()
-	stmt, err := tx.PrepareContext(ctx, `UPDATE routes SET
-		distance_m           = ?,
-		max_speed_mps        = ?,
-		avg_speed_mps        = ?,
-		speed_sample_count   = ?,
-		valid_point_count    = ?,
-		fsd_engaged_ms       = ?,
-		autosteer_engaged_ms = ?,
-		tacc_engaged_ms      = ?,
-		fsd_distance_m       = ?,
-		autosteer_distance_m = ?,
-		tacc_distance_m      = ?,
-		assisted_distance_m  = ?,
-		fsd_disengagements   = ?,
-		fsd_accel_pushes     = ?,
-		start_lat            = ?,
-		start_lon            = ?,
-		end_lat              = ?,
-		end_lon              = ?
-		WHERE file = ?`)
-	if err != nil {
-		return 0, fmt.Errorf("prepare update: %w", err)
-	}
-	defer stmt.Close()
+		committed := false
+		defer func() {
+			if !committed {
+				_ = tx.Rollback()
+			}
+		}()
+		stmt, err := tx.PrepareContext(ctx, `UPDATE routes SET
+			distance_m           = ?,
+			max_speed_mps        = ?,
+			avg_speed_mps        = ?,
+			speed_sample_count   = ?,
+			valid_point_count    = ?,
+			fsd_engaged_ms       = ?,
+			autosteer_engaged_ms = ?,
+			tacc_engaged_ms      = ?,
+			fsd_distance_m       = ?,
+			autosteer_distance_m = ?,
+			tacc_distance_m      = ?,
+			assisted_distance_m  = ?,
+			fsd_disengagements   = ?,
+			fsd_accel_pushes     = ?,
+			start_lat            = ?,
+			start_lon            = ?,
+			end_lat              = ?,
+			end_lon              = ?
+			WHERE file = ?`)
+		if err != nil {
+			return fmt.Errorf("prepare update: %w", err)
+		}
+		defer stmt.Close()
 
-	for _, a := range aggs {
-		if _, err := stmt.ExecContext(ctx,
-			a.DistanceM, a.MaxSpeedMps, a.AvgSpeedMps, a.SpeedSampleCount,
-			a.ValidPointCount, a.FSDEngagedMs, a.AutosteerEngagedMs,
-			a.TACCEngagedMs, a.FSDDistanceM, a.AutosteerDistanceM,
-			a.TACCDistanceM, a.AssistedDistanceM,
-			a.FSDDisengagements, a.FSDAccelPushes,
-			nullFloat(a.StartLat), nullFloat(a.StartLng),
-			nullFloat(a.EndLat), nullFloat(a.EndLng),
-			a.file,
-		); err != nil {
-			return 0, fmt.Errorf("update %q: %w", a.file, err)
+		for _, a := range aggs {
+			if _, err := stmt.ExecContext(ctx,
+				a.DistanceM, a.MaxSpeedMps, a.AvgSpeedMps, a.SpeedSampleCount,
+				a.ValidPointCount, a.FSDEngagedMs, a.AutosteerEngagedMs,
+				a.TACCEngagedMs, a.FSDDistanceM, a.AutosteerDistanceM,
+				a.TACCDistanceM, a.AssistedDistanceM,
+				a.FSDDisengagements, a.FSDAccelPushes,
+				nullFloat(a.StartLat), nullFloat(a.StartLng),
+				nullFloat(a.EndLat), nullFloat(a.EndLng),
+				a.file,
+			); err != nil {
+				return fmt.Errorf("update %q: %w", a.file, err)
+			}
 		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit: %w", err)
+		}
+		committed = true
+		return nil
+	}); err != nil {
+		return 0, err
 	}
-	if err := tx.Commit(); err != nil {
-		return 0, fmt.Errorf("commit: %w", err)
-	}
-	tx = nil
 	return len(aggs), nil
 }

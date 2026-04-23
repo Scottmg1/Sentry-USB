@@ -3,8 +3,10 @@ package drives
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // TestBackfillRouteAggregates_PopulatesNullRows simulates the upgrade
@@ -117,7 +119,13 @@ func TestBackfillRouteAggregates_EmptyDBSucceeds(t *testing.T) {
 
 // TestLoad_TriggersBackfillOnUpgrade builds a v1-shaped DB in a tempdir
 // (routes inserted with NULL aggregate columns via raw SQL), opens a
-// Store against it, and verifies Load() runs the backfill.
+// Store against it, calls StartBackgroundBackfill, waits for it to
+// drain, and verifies the aggregates + marker landed.
+//
+// The backfill is intentionally async now: Load() no longer runs it
+// synchronously so HTTP can start serving immediately on first boot
+// after upgrade. The server wiring in cmd/main.go calls
+// StartBackgroundBackfill right after Load(); this test simulates that.
 func TestLoad_TriggersBackfillOnUpgrade(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "test.db")
@@ -162,7 +170,19 @@ func TestLoad_TriggersBackfillOnUpgrade(t *testing.T) {
 	}
 	t.Cleanup(func() { s2.db.Close() })
 
-	// After Load: the NULL aggregates should now be populated.
+	// Simulate the server-startup sequence: Load() doesn't run the
+	// backfill anymore -- the HTTP layer triggers it asynchronously so
+	// the API can start serving immediately. Drive that path here.
+	if !s2.StartBackgroundBackfill(context.Background(), nil) {
+		t.Fatal("StartBackgroundBackfill returned false; expected a NULL row to trigger it")
+	}
+	waitCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := s2.WaitForMigration(waitCtx); err != nil {
+		t.Fatalf("WaitForMigration: %v", err)
+	}
+
+	// After backfill: the NULL aggregates should now be populated.
 	var dist float64
 	if err := s2.db.QueryRow(
 		`SELECT distance_m FROM routes WHERE file = ?`, route.File,
@@ -170,7 +190,7 @@ func TestLoad_TriggersBackfillOnUpgrade(t *testing.T) {
 		t.Fatalf("scan: %v", err)
 	}
 	if dist <= 0 {
-		t.Errorf("distance_m after upgrade Load = %v, want > 0", dist)
+		t.Errorf("distance_m after upgrade backfill = %v, want > 0", dist)
 	}
 	// Marker should be set.
 	m, err := metaGet(context.Background(), s2.db, "summary_backfilled_at")
@@ -180,4 +200,118 @@ func TestLoad_TriggersBackfillOnUpgrade(t *testing.T) {
 	if m == "" {
 		t.Error("summary_backfilled_at should be non-empty after upgrade")
 	}
+	// MigrationStatus should report non-active after drain.
+	status := s2.MigrationStatus()
+	if status.Active {
+		t.Error("MigrationStatus.Active still true after WaitForMigration")
+	}
+	if status.Error != "" {
+		t.Errorf("MigrationStatus.Error = %q, want empty", status.Error)
+	}
+}
+
+// TestBackfill_CancelsOnContext verifies that cancelling the context
+// aborts the backfill mid-run and that a fresh run (with a fresh ctx)
+// picks up the remaining NULL rows. This is the behaviour the async
+// runner in Store depends on when the server receives SIGTERM.
+func TestBackfill_CancelsOnContext(t *testing.T) {
+	s := newStore(t)
+
+	// Seed enough NULL-aggregate rows that at least one batch will
+	// complete before the cancel lands, leaving remaining work for the
+	// resume run.
+	const total = backfillBatchSize*2 + 10
+	for i := 0; i < total; i++ {
+		route := sampleRoute(
+			"2026-04-20/clip-"+intStr(i)+".mp4",
+			"2026-04-20_14-30-00",
+		)
+		pb := encodePoints(route.Points)
+		gb := encodeUint8s(route.GearStates)
+		ab := encodeUint8s(route.AutopilotStates)
+		sb := encodeFloat32s(route.Speeds)
+		acb := encodeFloat32s(route.AccelPositions)
+		rb := encodeGearRuns(route.GearRuns)
+		if _, err := s.db.Exec(`
+			INSERT INTO routes(
+				file, date_dir, point_count, raw_park_count, raw_frame_count,
+				points_blob, gear_states_blob, ap_states_blob,
+				speeds_blob, accel_blob, gear_runs_blob, updated_at)
+			VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+			route.File, route.Date, len(route.Points),
+			route.RawParkCount, route.RawFrameCount,
+			pb, gb, ab, sb, acb, rb); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Cancel after one batch has completed.
+	ctx, cancel := context.WithCancel(context.Background())
+	progressCh := make(chan struct{}, 4)
+	go func() {
+		<-progressCh // wait for first onProgress
+		cancel()
+	}()
+	_, err := backfillRouteAggregates(ctx, s.db, func(done, _ int) {
+		select {
+		case progressCh <- struct{}{}:
+		default:
+		}
+	})
+	if err == nil {
+		t.Fatal("expected context.Canceled, got nil")
+	}
+	if !isCanceledErr(err) {
+		t.Fatalf("expected context.Canceled, got %v", err)
+	}
+
+	// Count rows still NULL. Must be non-zero (cancel came before all
+	// batches) AND less than total (at least one batch committed).
+	var remaining int
+	if err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM routes WHERE max_speed_mps IS NULL`,
+	).Scan(&remaining); err != nil {
+		t.Fatal(err)
+	}
+	if remaining == 0 || remaining == total {
+		t.Fatalf("cancel test didn't exercise mid-run cancel: remaining=%d, total=%d", remaining, total)
+	}
+
+	// Resume: fresh ctx, second run should finish the rest.
+	stats, err := backfillRouteAggregates(context.Background(), s.db, nil)
+	if err != nil {
+		t.Fatalf("resume: %v", err)
+	}
+	if stats.Updated != remaining {
+		t.Errorf("resume updated %d, want %d", stats.Updated, remaining)
+	}
+	var stillNull int
+	if err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM routes WHERE max_speed_mps IS NULL`,
+	).Scan(&stillNull); err != nil {
+		t.Fatal(err)
+	}
+	if stillNull != 0 {
+		t.Errorf("rows still NULL after resume: %d", stillNull)
+	}
+}
+
+// intStr is a minimal int-to-string for generating unique file names
+// in test loops without pulling strconv into the test imports.
+func intStr(i int) string {
+	if i == 0 {
+		return "0"
+	}
+	var buf [20]byte
+	pos := len(buf)
+	for i > 0 {
+		pos--
+		buf[pos] = byte('0' + i%10)
+		i /= 10
+	}
+	return string(buf[pos:])
+}
+
+func isCanceledErr(err error) bool {
+	return errors.Is(err, context.Canceled)
 }

@@ -3,6 +3,7 @@ package drives
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -78,6 +79,17 @@ type Store struct {
 	// readers don't have to take the RWMutex just for a count.
 	routeCount     atomic.Int64
 	processedCount atomic.Int64
+
+	// Migration (async aggregate backfill) state. migrationStatus is
+	// updated by the background goroutine and read by the
+	// /api/drives/migration-status handler without holding s.mu.
+	// migrationDoneCh is closed by the goroutine on completion so
+	// WaitForMigration can block without polling. backfillCancel is the
+	// cancel func paired with the ctx Close() uses to interrupt an
+	// in-flight backfill on SIGTERM.
+	migrationStatus atomic.Value // *migrationState
+	migrationDoneCh chan struct{}
+	backfillCancel  context.CancelFunc
 }
 
 // NewStore creates a Store that will open/create a SQLite database at the
@@ -108,12 +120,20 @@ func (s *Store) Load() error {
 				return fmt.Errorf("Load: mkdir %q: %w", dir, err)
 			}
 		}
+		// auto_vacuum=INCREMENTAL lets SQLite reclaim freelist pages via
+		// PRAGMA incremental_vacuum instead of letting the .db file grow
+		// forever after DELETEs (notably ReplaceData's wipe-and-rewrite).
+		// SQLite only honors this on a brand-new DB; on existing DBs
+		// opened by a pre-fix binary the pragma is a silent no-op and the
+		// file won't shrink without a manual VACUUM. Acceptable tradeoff
+		// for the Pi target: fresh reflashes get the new behavior for free.
 		dsn := "file:" + s.path +
 			"?_pragma=journal_mode(WAL)" +
 			"&_pragma=synchronous(NORMAL)" +
 			"&_pragma=foreign_keys(on)" +
 			"&_pragma=busy_timeout(5000)" +
-			"&_pragma=temp_store(MEMORY)"
+			"&_pragma=temp_store(FILE)" +
+			"&_pragma=auto_vacuum(incremental)"
 		db, err := sql.Open("sqlite", dsn)
 		if err != nil {
 			return fmt.Errorf("Load: sql.Open %q: %w", s.path, err)
@@ -127,6 +147,19 @@ func (s *Store) Load() error {
 	}
 
 	ctx := context.Background()
+
+	// Assert that the DSN pragmas actually took effect. A future
+	// modernc.org/sqlite release that silently changes pragma parsing
+	// must fail loudly here rather than silently shipping with e.g.
+	// journal_mode=DELETE (which would corrupt on power loss).
+	var journalMode string
+	if err := s.db.QueryRowContext(ctx, `PRAGMA journal_mode`).Scan(&journalMode); err != nil {
+		return fmt.Errorf("Load: read journal_mode: %w", err)
+	}
+	if !strings.EqualFold(journalMode, "wal") {
+		return fmt.Errorf("Load: journal_mode is %q, expected wal -- DSN pragma may have been ignored by the driver", journalMode)
+	}
+
 	if err := migrate(ctx, s.db); err != nil {
 		return fmt.Errorf("Load: migrate: %w", err)
 	}
@@ -137,47 +170,16 @@ func (s *Store) Load() error {
 		return fmt.Errorf("Load: import: %w", err)
 	}
 
-	// One-shot aggregate backfill. Upgrading from schema v1 leaves every
-	// pre-existing route row with NULL aggregate columns; the refactored
-	// summary endpoints assume those columns are populated, so we fill
-	// them here before Load() returns. The backfill itself is idempotent
-	// on already-populated rows -- the marker is belt-and-suspenders so
-	// a fresh install with zero NULL rows still skips the COUNT(*) scan
-	// on subsequent boots.
-	if err := s.runAggregateBackfillLocked(ctx); err != nil {
-		return fmt.Errorf("Load: backfill: %w", err)
-	}
+	// NOTE: the aggregate backfill that used to run synchronously here
+	// is now triggered by the caller (NewDriveHandlers) via
+	// StartBackgroundBackfill so HTTP can start serving immediately on
+	// a first-boot-after-upgrade even when the backfill will take
+	// minutes. The NULL-aggregate sentinel keeps everything crash-safe:
+	// summary endpoints read 0 for NULL columns (graceful degradation)
+	// until the backfill populates the real values.
 
 	if err := s.refreshCountsLocked(ctx); err != nil {
 		return fmt.Errorf("Load: refresh counts: %w", err)
-	}
-	return nil
-}
-
-// runAggregateBackfillLocked populates NULL aggregate columns on any
-// route row. The backfill is self-healing: it uses `max_speed_mps IS
-// NULL` as the sentinel, so it picks up pre-v2 rows on a first upgrade
-// AND any NULL rows introduced by other paths (ReplaceData on upload,
-// rollback-then-re-upgrade, future callers that forget to populate the
-// aggregate columns). The COUNT(*) scan is trivial on realistic
-// datasets; we pay it every boot so there's no silent data-shape drift.
-//
-// The meta.summary_backfilled_at marker is written after a non-empty
-// run for observability only (shows up in diagnostics) — it is NOT
-// used as an exit condition.
-//
-// Caller must hold s.mu (write lock).
-func (s *Store) runAggregateBackfillLocked(ctx context.Context) error {
-	stats, err := backfillRouteAggregates(ctx, s.db, func(done, total int) {
-		log.Printf("[drives] Backfilling summary aggregates: %d/%d routes", done, total)
-	})
-	if err != nil {
-		return err
-	}
-	if stats.Updated > 0 {
-		log.Printf("[drives] Summary backfill complete: %d routes updated", stats.Updated)
-		return metaSet(ctx, s.db, "summary_backfilled_at",
-			time.Now().UTC().Format(time.RFC3339))
 	}
 	return nil
 }
@@ -381,34 +383,25 @@ func (s *Store) AddRoute(
 	defer s.mu.Unlock()
 
 	ctx := context.Background()
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		log.Printf("[drives] AddRoute begin: %v", err)
-		return
-	}
-	defer func() {
-		if tx != nil {
-			_ = tx.Rollback()
-		}
-	}()
 
-	// Mark processed (INSERT OR IGNORE so repeated calls are cheap).
-	if _, err := tx.ExecContext(ctx,
-		`INSERT OR IGNORE INTO processed_files(file, added_at) VALUES(?, ?)`,
-		norm, time.Now().Unix()); err != nil {
-		log.Printf("[drives] AddRoute processed_files insert: %v", err)
-		return
-	}
-
+	// Precompute BLOBs + aggregates once. They're pure functions of the
+	// arguments, so the retry loop below can safely replay the tx using
+	// the same values without re-encoding on every attempt.
+	var (
+		pb, gb, ab, sb, acb, rb []byte
+		firstLat, firstLon      sql.NullFloat64
+		agg                     RouteAggregates
+		startLat, startLon      sql.NullFloat64
+		endLat, endLon          sql.NullFloat64
+	)
 	if len(points) > 0 {
-		pb := encodePoints(points)
-		gb := encodeUint8s(gears)
-		ab := encodeUint8s(apStates)
-		sb := encodeFloat32s(speeds)
-		acb := encodeFloat32s(accelPositions)
-		rb := encodeGearRuns(gearRuns)
+		pb = encodePoints(points)
+		gb = encodeUint8s(gears)
+		ab = encodeUint8s(apStates)
+		sb = encodeFloat32s(speeds)
+		acb = encodeFloat32s(accelPositions)
+		rb = encodeGearRuns(gearRuns)
 
-		var firstLat, firstLon sql.NullFloat64
 		firstLat.Float64, firstLat.Valid = points[0][0], true
 		firstLon.Float64, firstLon.Valid = points[0][1], true
 
@@ -416,7 +409,7 @@ func (s *Store) AddRoute(
 		// Drives-page summary endpoints can operate on BLOB-free rows.
 		// Semantics live in aggregate.go; this call is the only place
 		// AddRoute walks the parallel slices for stats purposes.
-		agg := ComputeRouteAggregates(Route{
+		agg = ComputeRouteAggregates(Route{
 			File:            relativePath,
 			Date:            dateDir,
 			Points:          points,
@@ -428,13 +421,34 @@ func (s *Store) AddRoute(
 			RawFrameCount:   rawFrameCount,
 			GearRuns:        gearRuns,
 		})
-		startLat := nullFloat(agg.StartLat)
-		startLon := nullFloat(agg.StartLng)
-		endLat := nullFloat(agg.EndLat)
-		endLon := nullFloat(agg.EndLng)
+		startLat = nullFloat(agg.StartLat)
+		startLon = nullFloat(agg.StartLng)
+		endLat = nullFloat(agg.EndLat)
+		endLon = nullFloat(agg.EndLng)
+	}
 
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO routes(
+	err := withBusyRetry(ctx, func() error {
+		tx, err := s.db.BeginTx(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("begin: %w", err)
+		}
+		committed := false
+		defer func() {
+			if !committed {
+				_ = tx.Rollback()
+			}
+		}()
+
+		// Mark processed (INSERT OR IGNORE so repeated calls are cheap).
+		if _, err := tx.ExecContext(ctx,
+			`INSERT OR IGNORE INTO processed_files(file, added_at) VALUES(?, ?)`,
+			norm, time.Now().Unix()); err != nil {
+			return fmt.Errorf("processed_files insert: %w", err)
+		}
+
+		if len(points) > 0 {
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO routes(
 				file, date_dir, point_count, raw_park_count, raw_frame_count,
 				start_ts, end_ts, distance_m, first_lat, first_lon,
 				points_blob, gear_states_blob, ap_states_blob,
@@ -492,17 +506,21 @@ func (s *Store) AddRoute(
 			agg.FSDEngagedMs, agg.AutosteerEngagedMs, agg.TACCEngagedMs,
 			agg.FSDDistanceM, agg.AutosteerDistanceM, agg.TACCDistanceM, agg.AssistedDistanceM,
 			agg.FSDDisengagements, agg.FSDAccelPushes,
-			startLat, startLon, endLat, endLon); err != nil {
-			log.Printf("[drives] AddRoute route upsert: %v", err)
-			return
+				startLat, startLon, endLat, endLon); err != nil {
+				return fmt.Errorf("route upsert: %w", err)
+			}
 		}
-	}
 
-	if err := tx.Commit(); err != nil {
-		log.Printf("[drives] AddRoute commit: %v", err)
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit: %w", err)
+		}
+		committed = true
+		return nil
+	})
+	if err != nil {
+		log.Printf("[drives] AddRoute: %v", err)
 		return
 	}
-	tx = nil
 
 	_ = s.refreshCountsLocked(ctx)
 }
@@ -513,13 +531,18 @@ func (s *Store) MarkProcessed(relativePath string) {
 	norm := normalizePath(relativePath)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, err := s.db.ExecContext(context.Background(),
-		`INSERT OR IGNORE INTO processed_files(file, added_at) VALUES(?, ?)`,
-		norm, time.Now().Unix()); err != nil {
+	ctx := context.Background()
+	err := withBusyRetry(ctx, func() error {
+		_, err := s.db.ExecContext(ctx,
+			`INSERT OR IGNORE INTO processed_files(file, added_at) VALUES(?, ?)`,
+			norm, time.Now().Unix())
+		return err
+	})
+	if err != nil {
 		log.Printf("[drives] MarkProcessed: %v", err)
 		return
 	}
-	_ = s.refreshCountsLocked(context.Background())
+	_ = s.refreshCountsLocked(ctx)
 }
 
 // RouteCount returns the number of route rows. O(1) from cache.
@@ -598,137 +621,32 @@ func (s *Store) Path() string {
 	return s.path
 }
 
-// ReplaceData wipes routes, processed_files, and drive_tags then bulk-
-// inserts the supplied data. Used by POST /api/drives/data/upload to
-// restore a previously-downloaded drive-data.json.
+// ReplaceData is a thin compatibility shim around ReplaceDataFromReader.
+// Production callers (the upload HTTP handler) should use
+// ReplaceDataFromReader directly so the upload body never has to be
+// json.Unmarshal'd into memory. This signature exists for the in-process
+// test suite, where materializing a tiny StoreData is fine and rewriting
+// every test to push through an io.Pipe would just add noise.
+//
+// Uses io.Pipe so the JSON is still streamed into the importer -- no
+// intermediate full-payload buffer.
 func (s *Store) ReplaceData(data StoreData) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	ctx := context.Background()
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		log.Printf("[drives] ReplaceData begin: %v", err)
-		return
-	}
-	defer func() {
-		if tx != nil {
-			_ = tx.Rollback()
-		}
+	pr, pw := io.Pipe()
+	encErr := make(chan error, 1)
+	go func() {
+		defer pw.Close()
+		enc := json.NewEncoder(pw)
+		encErr <- enc.Encode(data)
 	}()
-
-	for _, stmt := range []string{
-		`DELETE FROM routes`,
-		`DELETE FROM processed_files`,
-		`DELETE FROM drive_tags`,
-	} {
-		if _, err := tx.ExecContext(ctx, stmt); err != nil {
-			log.Printf("[drives] ReplaceData wipe (%s): %v", stmt, err)
-			return
-		}
-	}
-
-	// Processed files first so duplicate file paths in Routes (which also
-	// INSERT into processed_files below) collide cleanly.
-	now := time.Now().Unix()
-	seen := map[string]bool{}
-	pfStmt, err := tx.PrepareContext(ctx, `INSERT OR IGNORE INTO processed_files(file, added_at) VALUES(?, ?)`)
-	if err != nil {
-		log.Printf("[drives] ReplaceData prepare processed: %v", err)
+	if _, err := s.ReplaceDataFromReader(ctx, pr, nil); err != nil {
+		_ = pr.CloseWithError(err)
+		log.Printf("[drives] ReplaceData: %v", err)
 		return
 	}
-	defer pfStmt.Close()
-	for _, f := range data.ProcessedFiles {
-		n := normalizePath(f)
-		if seen[n] {
-			continue
-		}
-		seen[n] = true
-		if _, err := pfStmt.ExecContext(ctx, n, now); err != nil {
-			log.Printf("[drives] ReplaceData processed insert: %v", err)
-			return
-		}
+	if err := <-encErr; err != nil {
+		log.Printf("[drives] ReplaceData encode: %v", err)
 	}
-
-	routeStmt, err := tx.PrepareContext(ctx, `
-		INSERT INTO routes(
-			file, date_dir, point_count, raw_park_count, raw_frame_count,
-			start_ts, end_ts, distance_m, first_lat, first_lon,
-			points_blob, gear_states_blob, ap_states_blob,
-			speeds_blob, accel_blob, gear_runs_blob, updated_at,
-			max_speed_mps, avg_speed_mps, speed_sample_count, valid_point_count,
-			fsd_engaged_ms, autosteer_engaged_ms, tacc_engaged_ms,
-			fsd_distance_m, autosteer_distance_m, tacc_distance_m, assisted_distance_m,
-			fsd_disengagements, fsd_accel_pushes,
-			start_lat, start_lon, end_lat, end_lon)
-		VALUES(?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-			?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-	if err != nil {
-		log.Printf("[drives] ReplaceData prepare routes: %v", err)
-		return
-	}
-	defer routeStmt.Close()
-	for _, r := range data.Routes {
-		n := normalizePath(r.File)
-		var firstLat, firstLon sql.NullFloat64
-		if len(r.Points) > 0 {
-			firstLat.Float64, firstLat.Valid = r.Points[0][0], true
-			firstLon.Float64, firstLon.Valid = r.Points[0][1], true
-		}
-		pb := encodePoints(r.Points)
-		gb := encodeUint8s(r.GearStates)
-		ab := encodeUint8s(r.AutopilotStates)
-		sb := encodeFloat32s(r.Speeds)
-		acb := encodeFloat32s(r.AccelPositions)
-		rb := encodeGearRuns(r.GearRuns)
-		// Populate the v2 aggregate columns so the BLOB-free summary
-		// endpoints return correct data after an upload/restore. Without
-		// this, WithRouteSummaries reads NULL->0 for every field and the
-		// Drives page shows zeros across the board.
-		agg := ComputeRouteAggregates(r)
-		if _, err := routeStmt.ExecContext(ctx,
-			n, r.Date, len(r.Points), r.RawParkCount, r.RawFrameCount,
-			agg.DistanceM, firstLat, firstLon,
-			pb, gb, ab, sb, acb, rb, now,
-			agg.MaxSpeedMps, agg.AvgSpeedMps, agg.SpeedSampleCount, agg.ValidPointCount,
-			agg.FSDEngagedMs, agg.AutosteerEngagedMs, agg.TACCEngagedMs,
-			agg.FSDDistanceM, agg.AutosteerDistanceM, agg.TACCDistanceM, agg.AssistedDistanceM,
-			agg.FSDDisengagements, agg.FSDAccelPushes,
-			nullFloat(agg.StartLat), nullFloat(agg.StartLng),
-			nullFloat(agg.EndLat), nullFloat(agg.EndLng)); err != nil {
-			log.Printf("[drives] ReplaceData route insert: %v", err)
-			return
-		}
-		if !seen[n] {
-			seen[n] = true
-			if _, err := pfStmt.ExecContext(ctx, n, now); err != nil {
-				log.Printf("[drives] ReplaceData aux processed insert: %v", err)
-				return
-			}
-		}
-	}
-
-	tagStmt, err := tx.PrepareContext(ctx, `INSERT OR IGNORE INTO drive_tags(drive_key, tag) VALUES(?, ?)`)
-	if err != nil {
-		log.Printf("[drives] ReplaceData prepare tags: %v", err)
-		return
-	}
-	defer tagStmt.Close()
-	for key, tags := range data.DriveTags {
-		for _, t := range tags {
-			if _, err := tagStmt.ExecContext(ctx, key, t); err != nil {
-				log.Printf("[drives] ReplaceData tag insert: %v", err)
-				return
-			}
-		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		log.Printf("[drives] ReplaceData commit: %v", err)
-		return
-	}
-	tx = nil
-	_ = s.refreshCountsLocked(ctx)
 }
 
 // GetData returns a copy of the entire store as a StoreData value. Used by
@@ -792,36 +710,39 @@ func (s *Store) SetDriveTags(driveKey string, tags []string) {
 	defer s.mu.Unlock()
 	ctx := context.Background()
 
-	tx, err := s.db.BeginTx(ctx, nil)
+	err := withBusyRetry(ctx, func() error {
+		tx, err := s.db.BeginTx(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("begin: %w", err)
+		}
+		committed := false
+		defer func() {
+			if !committed {
+				_ = tx.Rollback()
+			}
+		}()
+		if _, err := tx.ExecContext(ctx, `DELETE FROM drive_tags WHERE drive_key = ?`, driveKey); err != nil {
+			return fmt.Errorf("delete: %w", err)
+		}
+		for _, t := range tags {
+			if t == "" {
+				continue
+			}
+			if _, err := tx.ExecContext(ctx,
+				`INSERT OR IGNORE INTO drive_tags(drive_key, tag) VALUES(?, ?)`,
+				driveKey, t); err != nil {
+				return fmt.Errorf("insert: %w", err)
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit: %w", err)
+		}
+		committed = true
+		return nil
+	})
 	if err != nil {
-		log.Printf("[drives] SetDriveTags begin: %v", err)
-		return
+		log.Printf("[drives] SetDriveTags: %v", err)
 	}
-	defer func() {
-		if tx != nil {
-			_ = tx.Rollback()
-		}
-	}()
-	if _, err := tx.ExecContext(ctx, `DELETE FROM drive_tags WHERE drive_key = ?`, driveKey); err != nil {
-		log.Printf("[drives] SetDriveTags delete: %v", err)
-		return
-	}
-	for _, t := range tags {
-		if t == "" {
-			continue
-		}
-		if _, err := tx.ExecContext(ctx,
-			`INSERT OR IGNORE INTO drive_tags(drive_key, tag) VALUES(?, ?)`,
-			driveKey, t); err != nil {
-			log.Printf("[drives] SetDriveTags insert: %v", err)
-			return
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		log.Printf("[drives] SetDriveTags commit: %v", err)
-		return
-	}
-	tx = nil
 }
 
 // GetDriveTags returns the tags attached to a drive key, or nil if none.
@@ -932,34 +853,73 @@ func (s *Store) SyncToArchive() error {
 	return s.syncToPath(mirror, archiveDataPath, DefaultSyncCachePath)
 }
 
+// maxRestoreSize caps what RestoreFromArchive will copy from /mnt/archive
+// into /mutable. Bigger than this (>2GB) is almost certainly a corrupt or
+// runaway file; the 512MB-RAM Pi would burn through free space on /mutable
+// and the subsequent importer would spend hours trying to parse it. Fail
+// loudly instead.
+const maxRestoreSize = 2 << 30 // 2 GiB
+
 // RestoreFromArchive copies a JSON drive-data file from the archive mount
 // into one of the importSourceCandidates paths so the next Load() picks
 // it up via the one-shot importer. Useful when /mutable has been wiped
 // (Pi reflash) but the archive still has the user's data.
 //
 // Best-effort: silently returns nil if /mnt/archive isn't mounted or no
-// JSON is present.
+// JSON is present. Returns a non-nil error only if the copy itself fails
+// after we've decided to proceed (disk full, permission, etc.).
 func (s *Store) RestoreFromArchive() error {
-	if _, err := os.Stat(archiveDataPath); err != nil {
+	return restoreFromArchive(archiveDataPath, defaultJSONMirrorPath)
+}
+
+// restoreFromArchive is the testable body of RestoreFromArchive. The copy
+// is streamed through an io.Copy + tmp/fsync/rename so peak memory is one
+// 32KB buffer no matter how large the archive JSON is — critical on a
+// 512MB Pi where the pre-fix ReadFile+WriteFile would OOM on anything
+// larger than the free heap.
+func restoreFromArchive(srcPath, dstPath string) error {
+	info, err := os.Stat(srcPath)
+	if err != nil || info.IsDir() {
 		return nil
 	}
 	// Don't restore if we already have data — the one-shot importer
 	// will respect the import marker and skip anyway, but we'd rather
-	// not write a duplicate JSON to /mutable.
-	if _, err := os.Stat(defaultJSONMirrorPath); err == nil {
+	// not rewrite /mutable and burn SD-card writes needlessly.
+	if _, err := os.Stat(dstPath); err == nil {
 		return nil
 	}
-	src, err := os.ReadFile(archiveDataPath)
+	if info.Size() > maxRestoreSize {
+		return fmt.Errorf("RestoreFromArchive: %q is %d bytes, exceeds %d-byte cap",
+			srcPath, info.Size(), maxRestoreSize)
+	}
+	if err := os.MkdirAll(filepath.Dir(dstPath), 0o755); err != nil {
+		return fmt.Errorf("RestoreFromArchive: mkdir %q: %w", filepath.Dir(dstPath), err)
+	}
+
+	src, err := os.Open(srcPath)
 	if err != nil {
-		return nil
+		return nil // mount disappeared between stat and open; best-effort
 	}
-	if err := os.MkdirAll(filepath.Dir(defaultJSONMirrorPath), 0o755); err != nil {
-		return err
+	defer src.Close()
+
+	tmp := dstPath + ".restore.tmp"
+	dst, err := os.Create(tmp)
+	if err != nil {
+		return fmt.Errorf("RestoreFromArchive: create %q: %w", tmp, err)
 	}
-	if err := os.WriteFile(defaultJSONMirrorPath, src, 0o644); err != nil {
-		return err
+	n, copyErr := io.Copy(dst, src)
+	syncErr := dst.Sync()
+	closeErr := dst.Close()
+	if copyErr != nil || syncErr != nil || closeErr != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("RestoreFromArchive: copy/sync/close: copy=%v sync=%v close=%v",
+			copyErr, syncErr, closeErr)
 	}
-	log.Printf("[drives] Restored drive-data.json from archive (%d bytes); next Load() will import it", len(src))
+	if err := os.Rename(tmp, dstPath); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("RestoreFromArchive: rename %q -> %q: %w", tmp, dstPath, err)
+	}
+	log.Printf("[drives] Restored drive-data.json from archive (%d bytes); next Load() will import it", n)
 	return nil
 }
 
