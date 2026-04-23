@@ -12,10 +12,19 @@ import (
 
 // Indirection for tests: swap these to avoid shelling out to awake_start / awake_stop.
 var (
-	startKeepAwakeFn       = startKeepAwake
-	stopKeepAwakeFn        = stopKeepAwake
-	expirationTickInterval = 30 * time.Second
-	idleCheckInterval      = 30 * time.Second
+	startKeepAwakeFn = startKeepAwake
+	stopKeepAwakeFn  = stopKeepAwake
+
+	// expirationTickInterval drives both the expire check and the
+	// busy→idle re-arm detection. 5s keeps the handoff gap (archive /
+	// processing ending → webui nudge coming back) short enough that
+	// the car's 300s nudge cadence never notices.
+	expirationTickInterval = 5 * time.Second
+
+	// idleCheckInterval polls isBusy() while a webui request is queued
+	// waiting for archive / processing / migration to finish. Poll
+	// cadence doesn't affect correctness — 30s keeps the cost low.
+	idleCheckInterval = 30 * time.Second
 )
 
 // KeepAwakeState represents the current state of the webui keep-awake manager.

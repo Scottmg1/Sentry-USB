@@ -24,17 +24,6 @@ type broadcaster interface {
 	Broadcast(msgType string, data interface{})
 }
 
-// migrationKeepAwake is the minimal slice of KeepAwakeManager that
-// DriveHandlers uses to pin the Tesla awake while the aggregate
-// backfill runs. Accepting an interface keeps api/drives.go decoupled
-// from api/keepawake.go's concrete type and avoids an import cycle in
-// tests that don't care about keep-awake.
-type migrationKeepAwake interface {
-	Start(mode string, duration time.Duration) error
-	Heartbeat() KeepAwakeState
-	Stop()
-}
-
 // DriveHandlers holds the drive map state.
 type DriveHandlers struct {
 	store     *drives.Store
@@ -44,18 +33,17 @@ type DriveHandlers struct {
 	importMu  sync.Mutex
 	importing bool
 
-	// Migration coordination. backfillCancel stops the background
-	// aggregate backfill on server shutdown; keepAwake (optional) is
-	// pinged every few minutes while the backfill runs so the Tesla
-	// doesn't go to sleep mid-migration and yank power from the Pi.
+	// backfillCancel stops the background aggregate backfill on server
+	// shutdown.
 	backfillCancel context.CancelFunc
-	keepAwake      migrationKeepAwake
 }
 
 // NewDriveHandlers creates handlers with a store at the given data path.
-// If kam is non-nil, the background migration will periodically nudge
-// the Tesla awake so the Pi keeps getting power during a long backfill.
-func NewDriveHandlers(dataPath string, hub broadcaster, kam migrationKeepAwake) *DriveHandlers {
+// If a background aggregate backfill is kicked off it owns the nudge loop
+// directly via startKeepAwake/stopKeepAwake, so the webui KeepAwakeManager
+// stays out of its way (migration is treated as a system operation, same
+// tier as Archive and Drive Processing).
+func NewDriveHandlers(dataPath string, hub broadcaster) *DriveHandlers {
 	store := drives.NewStore(dataPath)
 	if err := store.RestoreFromArchive(); err != nil {
 		log.Printf("[drives] Warning: failed to restore from archive: %v", err)
@@ -69,7 +57,6 @@ func NewDriveHandlers(dataPath string, hub broadcaster, kam migrationKeepAwake) 
 		processor:      drives.NewProcessor(store),
 		hub:            hub,
 		backfillCancel: cancel,
-		keepAwake:      kam,
 	}
 
 	// Kick off the async aggregate backfill. On fresh installs this
@@ -93,20 +80,20 @@ func NewDriveHandlers(dataPath string, hub broadcaster, kam migrationKeepAwake) 
 	return dh
 }
 
-// driveMigrationKeepAwakeLoop pings the KeepAwakeManager every 5 minutes
-// while the backfill is running so the Tesla (and therefore the Pi) stays
-// powered. When the backfill finishes it issues Stop() and broadcasts a
-// final WS event so the UI dismisses the banner.
+// driveMigrationKeepAwakeLoop owns the nudge loop while the aggregate
+// backfill is running, so the Tesla (and the Pi's power) stays up.
+// Same tier as Archive / Drive Processing: it calls startKeepAwake /
+// stopKeepAwake directly rather than going through the webui
+// KeepAwakeManager.
 //
-// No-op when keepAwake is nil (test harnesses that don't wire one up).
+// The 5-minute tick re-asserts ownership. awake_start is idempotent
+// (kills any existing PID in /tmp/keep_awake_nudge_pid and spawns a
+// fresh nudge with our label), so if another system op ends mid-
+// migration and its defer-stopKeepAwake kills our nudge, we reclaim it
+// within one tick.
 func (dh *DriveHandlers) driveMigrationKeepAwakeLoop(ctx context.Context) {
-	if dh.keepAwake != nil {
-		// Auto mode + a generous initial duration; Heartbeat() below
-		// keeps extending while the backfill runs.
-		if err := dh.keepAwake.Start("auto", 15*time.Minute); err != nil {
-			log.Printf("[drives] keep-awake Start during migration: %v", err)
-		}
-	}
+	startKeepAwake("Migration", time.Time{})
+
 	tick := time.NewTicker(5 * time.Minute)
 	defer tick.Stop()
 	for {
@@ -120,19 +107,20 @@ func (dh *DriveHandlers) driveMigrationKeepAwakeLoop(ctx context.Context) {
 				dh.finishMigrationBroadcast()
 				return
 			}
-			if dh.keepAwake != nil {
-				_ = dh.keepAwake.Heartbeat()
-			}
+			startKeepAwake("Migration", time.Time{})
 		}
 	}
 }
 
 // finishMigrationBroadcast fires the one-shot "migration done" WS event
-// and stops keep-awake. Safe to call multiple times.
+// and releases the nudge loop. Safe to call multiple times. Skips
+// stopKeepAwake if Archive / Drive Processing currently owns the nudge
+// (mirrors the webui manager's busy guard so we never interrupt a
+// higher-priority system op).
 func (dh *DriveHandlers) finishMigrationBroadcast() {
 	status := dh.store.MigrationStatus()
-	if dh.keepAwake != nil {
-		dh.keepAwake.Stop()
+	if !IsArchiving() && !dh.processor.IsRunning() {
+		stopKeepAwake()
 	}
 	if dh.hub != nil {
 		dh.hub.Broadcast("drives.migration.progress", map[string]interface{}{
