@@ -20,7 +20,9 @@ func openTestDB(t *testing.T) *sql.DB {
 		"?_pragma=journal_mode(WAL)" +
 		"&_pragma=synchronous(NORMAL)" +
 		"&_pragma=foreign_keys(on)" +
-		"&_pragma=busy_timeout(5000)"
+		"&_pragma=busy_timeout(5000)" +
+		"&_pragma=temp_store(FILE)" +
+		"&_pragma=auto_vacuum(incremental)"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		t.Fatalf("sql.Open: %v", err)
@@ -91,6 +93,27 @@ func TestMigrate_CreatesAllTables(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("tables[%d]: got %q, want %q", i, got[i], want[i])
 		}
+	}
+}
+
+// TestMigrate_EnablesIncrementalAutoVacuum confirms that a fresh DB ends
+// up in auto_vacuum=INCREMENTAL mode. This is the only mode SQLite can
+// adopt via PRAGMA alone (FULL and NONE require a VACUUM on populated
+// DBs). It's what stops the .db file from growing unbounded across
+// repeated ReplaceData wipe-and-restore cycles on SD-card storage.
+//
+// auto_vacuum modes per SQLite: 0=NONE, 1=FULL, 2=INCREMENTAL.
+func TestMigrate_EnablesIncrementalAutoVacuum(t *testing.T) {
+	db := openTestDB(t)
+	if err := migrate(context.Background(), db); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	var mode int
+	if err := db.QueryRow(`PRAGMA auto_vacuum`).Scan(&mode); err != nil {
+		t.Fatalf("read auto_vacuum: %v", err)
+	}
+	if mode != 2 {
+		t.Errorf("auto_vacuum = %d, want 2 (INCREMENTAL) on fresh DB", mode)
 	}
 }
 

@@ -44,11 +44,15 @@ func TestSQLiteDriverLoads(t *testing.T) {
 }
 
 // TestSQLiteWALAndPragmas verifies the pragmas we plan to use in production
-// (WAL, synchronous=NORMAL, foreign_keys=on, busy_timeout, temp_store=MEMORY)
+// (WAL, synchronous=NORMAL, foreign_keys=on, busy_timeout, temp_store=FILE)
 // are accepted and reported back correctly by the driver. This pins a known-
 // good configuration so a future modernc.org/sqlite upgrade that changes
 // pragma handling fails here visibly instead of silently regressing
 // durability.
+//
+// temp_store is set to FILE (not MEMORY) so SQLite spills internal sort/
+// group temporaries to /mutable on 512MB Pis instead of bloating the Go
+// heap during backfill and ReplaceData.
 func TestSQLiteWALAndPragmas(t *testing.T) {
 	// Use a file-backed DB in a tempdir so WAL can actually engage
 	// (WAL is not supported on :memory: databases).
@@ -58,7 +62,7 @@ func TestSQLiteWALAndPragmas(t *testing.T) {
 		"&_pragma=synchronous(NORMAL)" +
 		"&_pragma=foreign_keys(on)" +
 		"&_pragma=busy_timeout(5000)" +
-		"&_pragma=temp_store(MEMORY)"
+		"&_pragma=temp_store(FILE)"
 
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
@@ -78,7 +82,7 @@ func TestSQLiteWALAndPragmas(t *testing.T) {
 		{"journal_mode", "wal"},
 		{"synchronous", "1"}, // NORMAL
 		{"foreign_keys", "1"},
-		{"temp_store", "2"}, // MEMORY
+		{"temp_store", "1"}, // FILE
 	}
 	for _, c := range checks {
 		var got string
