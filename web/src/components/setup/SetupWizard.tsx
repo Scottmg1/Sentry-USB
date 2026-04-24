@@ -103,18 +103,6 @@ function securityError(data: SetupFormData): string | null {
   return null
 }
 
-function mqttError(data: SetupFormData): string | null {
-  if (data.MQTT_ENABLED !== "true") return null
-  if (!data.MQTT_HOST?.trim()) return "MQTT Host is required when MQTT is enabled."
-  if (!data.MQTT_PORT?.trim()) return "MQTT Port is required."
-  const port = parseInt(data.MQTT_PORT)
-  if (isNaN(port) || port < 1 || port > 65535) {
-    return "MQTT Port must be a valid port number (1-65535)."
-  }
-  if (!data.MQTT_BASE_TOPIC?.trim()) return "MQTT Base Topic is required."
-  return null
-}
-
 function getStepError(stepIdx: number, data: SetupFormData): string | null {
   switch (stepIdx) {
     case 1: return networkError(data)
@@ -123,7 +111,6 @@ function getStepError(stepIdx: number, data: SetupFormData): string | null {
     case 4: return keepAwakeError(data)
     case 5: return notificationsError(data)
     case 6: return securityError(data)
-    case 7: return mqttError(data)
     default: return null
   }
 }
