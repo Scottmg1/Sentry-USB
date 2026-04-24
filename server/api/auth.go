@@ -244,20 +244,20 @@ func (h *handlers) authCheck(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// // NewAuthMiddleware returns an http.Handler that enforces web authentication
-// // on /api/* routes (except exempt paths). If no credentials are configured,
-// // all requests pass through.
-// func NewAuthMiddleware(next http.Handler) http.Handler {
-// 	exemptExact := map[string]bool{
-// 		// "/api/status":             true,
-// 		// "/api/auth/login":         true,
-// 		// "/api/auth/logout":        true,
-// 		// "/api/auth/check":         true,
-// 		// "/api/setup/status":       true,
-// 		// "/api/setup/config":       true,
-// 		// "/api/setup/run":          true,
-// 		// "/api/setup/test-archive": true,
-// 	}
+// NewAuthMiddleware returns an http.Handler that enforces web authentication
+// on /api/* routes (except exempt paths). If no credentials are configured,
+// all requests pass through.
+func NewAuthMiddleware(next http.Handler) http.Handler {
+	// exemptExact := map[string]bool{
+	// 	// "/api/status":             true,
+	// 	// "/api/auth/login":         true,
+	// 	// "/api/auth/logout":        true,
+	// 	// "/api/auth/check":         true,
+	// 	// "/api/setup/status":       true,
+	// 	// "/api/setup/config":       true,
+	// 	// "/api/setup/run":          true,
+	// 	// "/api/setup/test-archive": true,
+	// }
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Skip auth if not configured
