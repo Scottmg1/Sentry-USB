@@ -280,17 +280,17 @@ func NewAuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Allow exempt paths
-		if exemptExact[r.URL.Path] {
-			next.ServeHTTP(w, r)
-			return
-		}
+		// // Allow exempt paths
+		// if exemptExact[r.URL.Path] {
+		// 	next.ServeHTTP(w, r)
+		// 	return
+		// }
 
-		// Allow setup sub-paths (PUT /api/setup/config etc.)
-		if strings.HasPrefix(r.URL.Path, "/api/setup/") {
-			next.ServeHTTP(w, r)
-			return
-		}
+		// // Allow setup sub-paths (PUT /api/setup/config etc.)
+		// if strings.HasPrefix(r.URL.Path, "/api/setup/") {
+		// 	next.ServeHTTP(w, r)
+		// 	return
+		// }
 
 		// Check session cookie
 		cookie, err := r.Cookie(sessionCookieName)
