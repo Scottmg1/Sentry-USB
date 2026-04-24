@@ -7,14 +7,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Scottmg1/Sentry-USB/server/config"
 	"github.com/Scottmg1/Sentry-USB/server/shell"
 )
 
 const (
-	versionFile  = "/opt/sentryusb/version"
-	migrateDir   = "/opt/sentryusb"
-	migrateRepo  = "Scottmg1/Sentry-USB"
-	migrateBranch = "main-dev"
+	versionFile = "/opt/sentryusb/version"
+	migrateDir  = "/opt/sentryusb"
 )
 
 // runStartupMigration checks whether peripheral files (shell scripts, BLE
@@ -44,6 +43,8 @@ func runStartupMigration() {
 	}
 
 	log.Printf("[migrate] Running startup migration for %s...", currentVersion)
+
+	migrateRepo, migrateBranch := config.GetRepoAndBranch()
 
 	// Determine which branch/tag to pull scripts from
 	scriptRef := currentVersion

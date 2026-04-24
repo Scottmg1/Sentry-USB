@@ -13,8 +13,8 @@
 #   sudo -i
 #   curl -fsSL https://sentryusb.sentry-six.com | bash
 
-REPO="Scottmg1/Sentry-USB"
-BRANCH="main-dev"
+REPO="${REPO:-Scottmg1/Sentry-USB}"
+BRANCH="${BRANCH:-main-dev}"
 INSTALL_DIR="/opt/sentryusb"
 SERVICE_NAME="sentryusb"
 BINARY_NAME="sentryusb"

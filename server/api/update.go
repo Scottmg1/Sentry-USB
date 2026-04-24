@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Scottmg1/Sentry-USB/server/config"
 	"github.com/Scottmg1/Sentry-USB/server/shell"
 )
 
@@ -116,8 +117,6 @@ func sendTelemetrySync(currentVersion string, updateAvailable bool, newVersion s
 	doSendTelemetry(currentVersion, updateAvailable, newVersion)
 }
 
-const updateRepo = "Scottmg1/Sentry-USB"
-
 // parseSemver extracts major, minor, patch from a version string like "v1.2.3" or "v1.2.3-beta.1".
 // Returns (major, minor, patch, prerelease, ok). The prerelease part is everything after the first "-".
 func parseSemver(v string) (int, int, int, string, bool) {
@@ -194,6 +193,7 @@ type releaseInfo struct {
 
 // fetchReleases fetches the most recent GitHub releases (both stable and prerelease).
 func fetchReleases() ([]releaseInfo, error) {
+	updateRepo, _ := config.GetRepoAndBranch()
 	output, err := shell.RunWithTimeout(10*time.Second, "curl", "-sfL", "--max-time", "8",
 		fmt.Sprintf("https://api.github.com/repos/%s/releases?per_page=20", updateRepo))
 	if err != nil {
@@ -273,6 +273,7 @@ func (h *handlers) runUpdate(w http.ResponseWriter, r *http.Request) {
 		// 2. Build download URL — tag-specific if a version was requested, otherwise latest
 		broadcast("checking", "Checking for release...")
 		suffix := binarySuffix()
+		updateRepo, updateBranch := config.GetRepoAndBranch()
 
 		var downloadURL string
 		if targetVersion != "" {
@@ -325,6 +326,7 @@ func (h *handlers) runUpdate(w http.ResponseWriter, r *http.Request) {
 			versionTag = "unknown"
 			tagOutput, tagErr := shell.RunWithTimeout(10*time.Second, "curl", "-sfL", "--max-time", "8",
 				fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", updateRepo))
+
 			if tagErr == nil {
 				var rel struct {
 					TagName string `json:"tag_name"`
@@ -373,7 +375,7 @@ func (h *handlers) runUpdate(w http.ResponseWriter, r *http.Request) {
 		broadcast("updating_scripts", "Updating shell scripts...")
 		scriptRef := versionTag
 		if scriptRef == "unknown" || scriptRef == "" {
-			scriptRef = "main-dev"
+			scriptRef = updateBranch
 		}
 		tarballURL := fmt.Sprintf("https://github.com/%s/archive/%s.tar.gz", updateRepo, scriptRef)
 		scriptUpdateCmd := fmt.Sprintf(`set -e
