@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react"
-import { Wifi, Loader2, CheckCircle, AlertCircle, Save, RotateCcw } from "lucide-react"
-import { api } from "@/lib/api"
+import { Wifi, Loader2, CheckCircle, AlertCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 type MQTTFormState = "idle" | "testing" | "saving" | "success" | "error"
