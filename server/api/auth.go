@@ -249,14 +249,14 @@ func (h *handlers) authCheck(w http.ResponseWriter, r *http.Request) {
 // all requests pass through.
 func NewAuthMiddleware(next http.Handler) http.Handler {
 	exemptExact := map[string]bool{
-		"/api/status":             true,
-		"/api/auth/login":         true,
-		"/api/auth/logout":        true,
-		"/api/auth/check":         true,
-		"/api/setup/status":       true,
-		"/api/setup/config":       true,
-		"/api/setup/run":          true,
-		"/api/setup/test-archive": true,
+		// "/api/status":             true,
+		// "/api/auth/login":         true,
+		// "/api/auth/logout":        true,
+		// "/api/auth/check":         true,
+		// "/api/setup/status":       true,
+		// "/api/setup/config":       true,
+		// "/api/setup/run":          true,
+		// "/api/setup/test-archive": true,
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
