@@ -15,6 +15,7 @@ import {
   ChevronRight,
   Download,
   AlertTriangle,
+  Wind,
 } from "lucide-react"
 import { api } from "@/lib/api"
 import { useKeepAwake } from "@/hooks/useKeepAwake"
@@ -336,6 +337,13 @@ export default function Dashboard() {
                       : "text-slate-100"
                   }`}>
                     {cpuTemp > 0 ? formatTemp(cpuTemp, useFahrenheit) : "N/A"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Wind className="h-3.5 w-3.5 text-slate-500" />
+                  <span className="text-xs text-slate-400">Fan Speed</span>
+                  <span className="ml-auto text-sm font-semibold text-slate-100">
+                    {status.fan_speed ? `${status.fan_speed} RPM` : "N/A"}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">

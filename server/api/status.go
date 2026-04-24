@@ -14,6 +14,7 @@ import (
 
 type piStatus struct {
 	CPUTemp        string `json:"cpu_temp"`
+	FanSpeed       string `json:"fan_speed"`
 	NumSnapshots   string `json:"num_snapshots"`
 	SnapshotOldest string `json:"snapshot_oldest"`
 	SnapshotNewest string `json:"snapshot_newest"`
@@ -48,6 +49,14 @@ func (h *handlers) getStatus(w http.ResponseWriter, r *http.Request) {
 	// CPU temperature
 	if data, err := os.ReadFile("/sys/class/thermal/thermal_zone0/temp"); err == nil {
 		status.CPUTemp = strings.TrimSpace(string(data))
+	}
+
+	// Fan speed (Raspberry Pi cooling fan RPM from hwmon device)
+	matches, err := filepath.Glob("/sys/devices/platform/cooling_fan/hwmon/*/fan1_input")
+	if err == nil && len(matches) > 0 {
+		if data, err := os.ReadFile(matches[0]); err == nil {
+			status.FanSpeed = strings.TrimSpace(string(data))
+		}
 	}
 
 	// Uptime

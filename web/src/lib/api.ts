@@ -21,6 +21,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
 export interface PiStatus {
   cpu_temp: string
+  fan_speed: string
   num_snapshots: string
   snapshot_oldest: string
   snapshot_newest: string
