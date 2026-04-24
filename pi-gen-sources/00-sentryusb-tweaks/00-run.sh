@@ -40,7 +40,8 @@ echo "dtoverlay=dwc2" >> "${ROOTFS_DIR}/boot/firmware/config.txt"
 
 # ── Pre-install SentryUSB binary ──
 # Detect target architecture from the pi-gen build context
-REPO="Scottmg1/Sentry-USB"
+REPO="${REPO:-Scottmg1/Sentry-USB}"
+BRANCH="${BRANCH:-main-dev}"
 case "$(dpkg --print-architecture 2>/dev/null || echo arm64)" in
     arm64|aarch64) BINARY_SUFFIX="linux-arm64" ;;
     armhf)         BINARY_SUFFIX="linux-armv6" ;;
@@ -77,7 +78,7 @@ if [ -f "files/sentryusb-ble.py" ]; then
 elif [ -f "../../server/ble/sentryusb-ble.py" ]; then
     cp "../../server/ble/sentryusb-ble.py" "${BLE_SCRIPT}"
 else
-    curl -fsSL "https://raw.githubusercontent.com/${REPO}/main-dev/server/ble/sentryusb-ble.py" \
+    curl -fsSL "https://raw.githubusercontent.com/${REPO}/${BRANCH}/server/ble/sentryusb-ble.py" \
         -o "${BLE_SCRIPT}" 2>/dev/null || echo "WARNING: Could not fetch BLE daemon script"
 fi
 chmod +x "${BLE_SCRIPT}" 2>/dev/null || true
@@ -116,7 +117,7 @@ if [ -f "files/sentryusb-ble.service" ]; then
 elif [ -f "../../server/ble/sentryusb-ble.service" ]; then
     cp "../../server/ble/sentryusb-ble.service" "${BLE_SERVICE}"
 else
-    curl -fsSL "https://raw.githubusercontent.com/${REPO}/main-dev/server/ble/sentryusb-ble.service" \
+    curl -fsSL "https://raw.githubusercontent.com/${REPO}/${BRANCH}/server/ble/sentryusb-ble.service" \
         -o "${BLE_SERVICE}" 2>/dev/null || echo "WARNING: Could not fetch BLE service file"
 fi
 

@@ -60,6 +60,35 @@ func FindConfigPath() string {
 	return DefaultConfigPath
 }
 
+// GetRepoAndBranch reads REPO, REPO_NAME, and BRANCH from the user's
+// sentryusb.conf, returning "Scottmg1/Sentry-USB" and "main-dev" as defaults.
+// This allows forks to pull updates and scripts from their own repository.
+func GetRepoAndBranch() (repo, branch string) {
+	searchPaths := []string{DefaultConfigPath, BootConfigPath, "/boot/sentryusb.conf", "/sentryusb/sentryusb.conf"}
+	for _, p := range searchPaths {
+		active, _, err := ParseFile(p)
+		if err != nil {
+			continue
+		}
+		owner := active["REPO"]
+		if owner == "" {
+			owner = "Scottmg1"
+		}
+		name := active["REPO_NAME"]
+		if name == "" {
+			name = "Sentry-USB"
+		}
+		repo = owner + "/" + name
+		if b := active["BRANCH"]; b != "" {
+			branch = b
+		} else {
+			branch = "main-dev"
+		}
+		return
+	}
+	return "Scottmg1/Sentry-USB", "main-dev"
+}
+
 // WriteFile writes the configuration back to the file, preserving comments
 // and structure as much as possible. Variables in newConfig will be written
 // as active exports. Variables not in newConfig that were previously active
