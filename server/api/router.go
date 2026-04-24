@@ -97,6 +97,13 @@ func RegisterRoutes(mux *http.ServeMux, hub *ws.Hub) {
 	mux.HandleFunc("DELETE /api/notifications/history/{id}", h.deleteNotificationHistoryItem)
 	mux.HandleFunc("GET /api/notifications/settings/check", h.checkNotificationType)
 
+	// MQTT / Home Assistant integration
+	mux.HandleFunc("GET /api/mqtt/config", h.getMQTTConfig)
+	mux.HandleFunc("PUT /api/mqtt/config", h.saveMQTTConfig)
+	mux.HandleFunc("POST /api/mqtt/test", h.testMQTT)
+	mux.HandleFunc("GET /api/mqtt/status", h.getMQTTStatus)
+	mux.HandleFunc("POST /api/mqtt/archive", h.triggerArchiveFromMQTT)
+
 	// Support chat (proxy to backend API)
 	mux.HandleFunc("GET /api/support/check", h.checkSupportAvailable)
 	mux.HandleFunc("POST /api/support/ticket", h.createSupportTicket)

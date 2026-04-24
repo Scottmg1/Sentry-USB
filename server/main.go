@@ -32,6 +32,9 @@ func main() {
 	// Load web auth credentials from config
 	api.InitAuth()
 
+	// Initialize MQTT / Home Assistant integration
+	go api.InitMQTTFromPreferences()
+
 	hub := ws.NewHub()
 	go hub.Run()
 

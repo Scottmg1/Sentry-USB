@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { Cog, Thermometer, MapPin, Search, Battery, AlertTriangle } from "lucide-react"
+import { Cog, Thermometer, MapPin, Search, Battery, AlertTriangle, Wifi } from "lucide-react"
 import type { StepProps } from "../SetupWizard"
 
 function Field({ label, field, type = "text", placeholder, data, onChange, hint }: {
@@ -472,6 +472,86 @@ export function AdvancedStep({ data, onChange }: StepProps) {
             data={data} onChange={onChange} />
         </div>
       </div>
-    </div>
+      {/* MQTT / Home Assistant Integration */}
+      <div>
+        <div className="mb-3 flex items-center gap-2">
+          <Wifi className="h-4 w-4 text-blue-400" />
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400">
+            MQTT / Home Assistant
+          </h3>
+        </div>
+        <p className="mb-3 text-xs text-slate-500">
+          Enable MQTT to integrate Sentry-USB with Home Assistant. Your device will automatically
+          appear as a device with sensors for temperature, storage, network status, and more.
+        </p>
+
+        <label className="flex cursor-pointer items-center gap-2">
+          <input
+            type="checkbox"
+            checked={data.MQTT_ENABLED === "true"}
+            onChange={(e) => onChange("MQTT_ENABLED", e.target.checked ? "true" : "false")}
+            className="h-4 w-4 rounded border-white/20 bg-white/5 accent-blue-500"
+          />
+          <span className="text-sm text-slate-300">Enable MQTT Integration</span>
+        </label>
+
+        {data.MQTT_ENABLED === "true" && (
+          <div className="mt-4 space-y-4 rounded-lg border border-blue-500/20 bg-blue-500/5 p-4">
+            <Field
+              label="MQTT Broker Host"
+              field="MQTT_HOST"
+              placeholder="192.168.1.100"
+              data={data}
+              onChange={onChange}
+              hint="IP address or hostname of your MQTT broker"
+            />
+
+            <Field
+              label="MQTT Broker Port"
+              field="MQTT_PORT"
+              type="number"
+              placeholder="1883"
+              data={data}
+              onChange={onChange}
+              hint="Default is 1883 for unencrypted, 8883 for encrypted"
+            />
+
+            <Field
+              label="Username (Optional)"
+              field="MQTT_USERNAME"
+              placeholder="sentryusb"
+              data={data}
+              onChange={onChange}
+              hint="Leave blank if your broker doesn't require authentication"
+            />
+
+            <Field
+              label="Password (Optional)"
+              field="MQTT_PASSWORD"
+              type="password"
+              placeholder="••••••••"
+              data={data}
+              onChange={onChange}
+              hint="Leave blank if your broker doesn't require authentication"
+            />
+
+            <Field
+              label="Base Topic"
+              field="MQTT_BASE_TOPIC"
+              placeholder="sentryusb"
+              data={data}
+              onChange={onChange}
+              hint="MQTT topics will be published under this prefix (e.g., sentryusb/uptime)"
+            />
+
+            <div className="rounded-lg border border-green-500/20 bg-green-500/5 p-3">
+              <p className="text-xs text-slate-400">
+                <strong className="text-green-400">Tip:</strong> Sentry-USB will automatically publish device
+                information and sensor readings to your MQTT broker. Home Assistant can then auto-discover the device.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>    </div>
   )
 }

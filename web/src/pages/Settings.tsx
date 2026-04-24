@@ -29,6 +29,7 @@ import { SetupWizard } from "@/components/setup/SetupWizard"
 import { wsClient } from "@/lib/ws"
 import { useKeepAwake } from "@/hooks/useKeepAwake"
 import { useAwayMode } from "@/hooks/useAwayMode"
+import { MQTTSettings } from "@/components/MQTTSettings"
 
 // ─── Shared primitives ──────────────────────────────────────────────────────
 
@@ -1760,6 +1761,7 @@ export default function Settings() {
           <div className="space-y-2">
             <MobileNotificationsSection />
             {piConfig?.uses_ble === "yes" && <BlePairButton />}
+            <MQTTSettings />
           </div>
 
           {/* Update tile — version + check + banners merged */}
