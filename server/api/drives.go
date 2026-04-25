@@ -294,14 +294,36 @@ func hideTessieOverlappingSEI(summaries []drives.DriveSummary) []drives.DriveSum
 	return out
 }
 
-// GET /api/drives/routes — all routes downsampled for overview map
+// GET /api/drives/routes — all routes downsampled for overview map.
+//
+// Tessie-imported routes whose drive [start,end] overlaps a native SEI
+// drive are filtered out — same hide policy as listDrives — so the map
+// stays consistent with what the drive list shows. The match is by
+// drive ID (GroupRoutesOverview and GroupSummaries use the same
+// groupClips path so IDs align 1:1).
 func (dh *DriveHandlers) allRoutes(w http.ResponseWriter, r *http.Request) {
 	var result []drives.RouteOverview
+	var summaries []drives.DriveSummary
 	dh.store.WithRoutes(func(routes []drives.Route) {
 		result = drives.GroupRoutesOverview(routes, 500)
+		summaries = drives.GroupSummaries(routes)
 	})
 	runtime.GC()
-	writeJSON(w, http.StatusOK, result)
+
+	// Build set of drive IDs that should be hidden (Tessie overlapping SEI).
+	visible := hideTessieOverlappingSEI(summaries)
+	visibleIDs := make(map[int]bool, len(visible))
+	for _, d := range visible {
+		visibleIDs[d.ID] = true
+	}
+	filtered := make([]drives.RouteOverview, 0, len(result))
+	for _, ro := range result {
+		if visibleIDs[ro.ID] {
+			filtered = append(filtered, ro)
+		}
+	}
+
+	writeJSON(w, http.StatusOK, filtered)
 }
 
 // GET /api/drives/{id} — full drive data including all points

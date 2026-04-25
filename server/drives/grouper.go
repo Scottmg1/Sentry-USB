@@ -857,9 +857,12 @@ func GroupSummaries(routes []Route) []DriveSummary {
 }
 
 // RouteOverview is a lightweight per-drive route for the overview map.
+// Source lets the renderer color Tessie-imported drives differently
+// (purple/dashed) from native dashcam drives (solid blue).
 type RouteOverview struct {
 	ID     int          `json:"id"`
 	Points [][2]float64 `json:"points"`
+	Source string       `json:"source,omitempty"`
 }
 
 // GroupRoutesOverview returns downsampled route polylines for every drive
@@ -932,9 +935,18 @@ func GroupRoutesOverview(routes []Route, maxPointsPerDrive int) []RouteOverview 
 			pts = pts[:n]
 		}
 
+		// All clips in a group share the same Source post-grouping
+		// (splitByExternalSignature buckets by signature so a Tessie drive
+		// never mixes with SEI clips inside a single group).
+		source := clips[0].Source
+		if source == "" {
+			source = "sei"
+		}
+
 		result = append(result, RouteOverview{
 			ID:     idx,
 			Points: Downsample(pts, maxPointsPerDrive),
+			Source: source,
 		})
 	}
 

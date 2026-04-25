@@ -67,6 +67,7 @@ interface DriveDetail extends Omit<DriveSummary, "startPoint" | "endPoint"> {
 interface RouteOverview {
   id: number
   points: [number, number][]
+  source?: "sei" | "tessie"
 }
 
 interface DriveStats {
@@ -301,8 +302,16 @@ export default function Drives() {
 
     for (const r of routes) {
       if (r.points && r.points.length > 1) {
+        // Tessie-imported drives render in dashed purple so the user can
+        // tell at a glance which routes came from the API import vs the
+        // dashcam SEI stream.
+        const isTessie = r.source === "tessie"
         const line = L.polyline(r.points as L.LatLngExpression[], {
-          color: "#3b82f6", weight: 2, opacity: 0.4, smoothFactor: 1.2,
+          color: isTessie ? "#a855f7" : "#3b82f6",
+          weight: 2,
+          opacity: isTessie ? 0.55 : 0.4,
+          smoothFactor: 1.2,
+          ...(isTessie ? { dashArray: "6 4" } : {}),
         }).addTo(map)
           ; (line as any)._driveId = r.id
         line.on("click", () => selectDrive(r.id))
