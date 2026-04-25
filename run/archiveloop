@@ -1053,7 +1053,7 @@ function set_time () {
   local -r clocktime_start=$(date +%s.%N)
   for _ in {1..5}
   do
-    if ntpdig -S time.google.com || sntp -S 129.6.15.28
+    if ntpdig -S time.google.com || ntpdig -S 129.6.15.28
     # Fall back to NIST time server if DNS resolution fails (DNS over TLS & Cert is invalid because of wrong time)
     then
       local -r uptime_end=$(awk '{print $1}' /proc/uptime)
