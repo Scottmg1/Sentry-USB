@@ -219,9 +219,22 @@ func GroupSummariesFromSummaries(summaries []RouteSummary) []DriveSummary {
 		var fsdDistM, autosteerDistM, taccDistM, assistedDistM float64
 		var fsdDisengagements, fsdAccelPushes int
 		var startPoint, endPoint *[2]float64
+		// Track previous clip's end so we can add cross-clip-boundary
+		// distance below. Critical for sparse clips (Tessie synthetic
+		// 60s clips often have only 1 GPS point — per-clip distance is
+		// 0, but the actual mile traveled lives in the jump from this
+		// clip's lone point to the next clip's lone point).
+		var prevEndLat, prevEndLng *float64
 
 		for _, c := range clips {
 			totalDistM += c.DistanceM
+			// Cross-clip boundary distance: haversine from the previous
+			// clip's last valid point to this clip's first valid point.
+			// Counted only when both points exist; clips with no valid
+			// GPS contribute nothing to the sum.
+			if prevEndLat != nil && prevEndLng != nil && c.StartLat != nil && c.StartLng != nil {
+				totalDistM += haversineM(*prevEndLat, *prevEndLng, *c.StartLat, *c.StartLng)
+			}
 			if c.MaxSpeedMps > maxSpeedMps {
 				maxSpeedMps = c.MaxSpeedMps
 			}
@@ -244,6 +257,8 @@ func GroupSummariesFromSummaries(summaries []RouteSummary) []DriveSummary {
 			if c.EndLat != nil && c.EndLng != nil {
 				ep := [2]float64{*c.EndLat, *c.EndLng}
 				endPoint = &ep
+				prevEndLat = c.EndLat
+				prevEndLng = c.EndLng
 			}
 		}
 
@@ -353,8 +368,23 @@ func ComputeAggregateStatsFromSummaries(summaries []RouteSummary) AggregateStats
 	})
 
 	// Drive count + total duration via timestamp gaps and gear-state
-	// splitting. Same algorithm as the Route-based path, just reading
-	// metadata fields off RouteSummary instead of Route.
+	// splitting. Cross-clip boundary distance is added here too: per-clip
+	// DistanceM is haversine over the clip's own points, but it misses
+	// the jump from one clip's last point to the next clip's first
+	// point. For dense SEI clips (~60 GPS points each) that gap is
+	// negligible. For sparse Tessie synthetic clips (often 1 point per
+	// 60s window) it's the entire mile traveled — without this, a 30-mi
+	// Tessie drive can show as ~0 miles. The cached start/end lat-lng
+	// columns make this O(routes) without BLOB decode.
+	//
+	// Tessie-aware split:
+	//   - totalDistanceM: every drive (SEI + Tessie) contributes — feeds
+	//     the headline "X miles driven" stat.
+	//   - seiDistanceM: SEI-only — denominator for FSD/AP/TACC %.
+	//   - FSD totals + disengagements / accel pushes: SEI only.
+	var totalDistanceM, seiDistanceM float64
+	var totalFSDDistM, totalAutosteerDistM, totalTACCDistM float64
+
 	if len(timed) > 0 {
 		groupStart := 0
 		for i := 1; i <= len(timed); i++ {
@@ -365,43 +395,43 @@ func ComputeAggregateStatsFromSummaries(summaries []RouteSummary) AggregateStats
 				s.DrivesCount += countGearSplitsInSummaryGroup(summaries, group)
 				// Duration: first clip start → last clip start + 60s
 				s.TotalDurationMs += group[len(group)-1].ts.Add(time.Minute).Sub(group[0].ts).Milliseconds()
+
+				// Per-clip distance + cross-clip boundary distance for
+				// this group. Source is per-clip — within a group SEI
+				// and Tessie clips don't mix in practice (gap-only
+				// overlap policy), but check defensively.
+				var prev *RouteSummary
+				for _, entry := range group {
+					cur := &summaries[entry.idx]
+					totalDistanceM += cur.DistanceM
+					if prev != nil &&
+						prev.EndLat != nil && prev.EndLng != nil &&
+						cur.StartLat != nil && cur.StartLng != nil {
+						crossD := haversineM(*prev.EndLat, *prev.EndLng, *cur.StartLat, *cur.StartLng)
+						totalDistanceM += crossD
+						if cur.Source != "tessie" {
+							seiDistanceM += crossD
+						}
+					}
+					if cur.Source != "tessie" {
+						seiDistanceM += cur.DistanceM
+						totalFSDDistM += cur.FSDDistanceM
+						totalAutosteerDistM += cur.AutosteerDistanceM
+						totalTACCDistM += cur.TACCDistanceM
+						s.FSDEngagedMs += cur.FSDEngagedMs
+						s.AutosteerEngagedMs += cur.AutosteerEngagedMs
+						s.TACCEngagedMs += cur.TACCEngagedMs
+						s.FSDDisengagements += cur.FSDDisengagements
+						s.FSDAccelPushes += cur.FSDAccelPushes
+					}
+					prev = cur
+				}
+
 				if !isEnd {
 					groupStart = i
 				}
 			}
 		}
-	}
-
-	// Per-route sums straight out of the cached aggregate columns. No
-	// BLOB decoding, no inline haversine math. For each route that
-	// contributed to `timed` (dedup + timestamp-parseable), accumulate
-	// its pre-computed scalars.
-	//
-	// Tessie-aware split:
-	//   - totalDistanceM: every drive (SEI + Tessie) contributes — feeds
-	//     the headline "X miles driven" stat.
-	//   - seiDistanceM: SEI-only — denominator for FSD/AP/TACC %.
-	//   - FSD totals + disengagements / accel pushes: SEI only.
-	// This matches the user-visible behavior in Sentry-Drive: imported
-	// Tessie drives count toward total mileage and drive count, but the
-	// FSD score reflects only ground-truth dashcam data.
-	var totalDistanceM, seiDistanceM float64
-	var totalFSDDistM, totalAutosteerDistM, totalTACCDistM float64
-	for _, tr := range timed {
-		r := &summaries[tr.idx]
-		totalDistanceM += r.DistanceM
-		if r.Source == "tessie" {
-			continue
-		}
-		seiDistanceM += r.DistanceM
-		totalFSDDistM += r.FSDDistanceM
-		totalAutosteerDistM += r.AutosteerDistanceM
-		totalTACCDistM += r.TACCDistanceM
-		s.FSDEngagedMs += r.FSDEngagedMs
-		s.AutosteerEngagedMs += r.AutosteerEngagedMs
-		s.TACCEngagedMs += r.TACCEngagedMs
-		s.FSDDisengagements += r.FSDDisengagements
-		s.FSDAccelPushes += r.FSDAccelPushes
 	}
 
 	s.TotalDistanceKm = totalDistanceM / 1000.0

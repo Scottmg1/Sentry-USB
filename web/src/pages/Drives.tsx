@@ -865,13 +865,8 @@ export default function Drives() {
                         )}
                       >
                         <div className="flex items-start justify-between">
-                          <p className="flex items-center gap-1.5 text-sm font-medium text-slate-200">
-                            <span>{formatTime(d.startTime)} — {formatTime(d.endTime)}</span>
-                            {d.source === "tessie" && (
-                              <span className="rounded-full bg-purple-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-purple-300">
-                                Tessie
-                              </span>
-                            )}
+                          <p className="text-sm font-medium text-slate-200">
+                            {formatTime(d.startTime)} — {formatTime(d.endTime)}
                           </p>
                           {totalAssistedPercent(d) > 0 && (
                             <span className={cn(
@@ -882,6 +877,13 @@ export default function Drives() {
                             </span>
                           )}
                         </div>
+                        {d.source === "tessie" && (
+                          <div className="mt-0.5">
+                            <span className="inline-block rounded-full bg-purple-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-purple-300">
+                              Tessie
+                            </span>
+                          </div>
+                        )}
                         <div className="mt-1 flex gap-x-3 text-[11px] text-slate-500">
                           <span>{dist(d)}</span>
                           <span>{formatDuration(d.durationMs)}</span>
@@ -1016,13 +1018,8 @@ export default function Drives() {
                       )}
                     >
                       <div className="flex items-start justify-between">
-                        <p className="flex items-center gap-1.5 text-sm font-medium text-slate-200">
-                          <span>{formatTime(d.startTime)} — {formatTime(d.endTime)}</span>
-                          {d.source === "tessie" && (
-                            <span className="rounded-full bg-purple-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-purple-300">
-                              Tessie
-                            </span>
-                          )}
+                        <p className="text-sm font-medium text-slate-200">
+                          {formatTime(d.startTime)} — {formatTime(d.endTime)}
                         </p>
                         {totalAssistedPercent(d) > 0 && (
                           <span className={cn(
@@ -1033,6 +1030,13 @@ export default function Drives() {
                           </span>
                         )}
                       </div>
+                      {d.source === "tessie" && (
+                        <div className="mt-0.5">
+                          <span className="inline-block rounded-full bg-purple-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-purple-300">
+                            Tessie
+                          </span>
+                        </div>
+                      )}
                       <div className="mt-1 flex gap-x-3 text-[11px] text-slate-500">
                         <span>{dist(d)}</span>
                         <span>{formatDuration(d.durationMs)}</span>
