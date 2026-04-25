@@ -864,7 +864,10 @@ func (s *Store) SyncToArchive() error {
 // runaway file; the 512MB-RAM Pi would burn through free space on /mutable
 // and the subsequent importer would spend hours trying to parse it. Fail
 // loudly instead.
-const maxRestoreSize = 2 << 30 // 2 GiB
+// Typed as int64 so the constant fits on 32-bit architectures (armv7's
+// untyped int is 32-bit, where 2<<30 = 2_147_483_648 overflows). Comparison
+// against os.FileInfo.Size() and fmt.Errorf both expect int64 anyway.
+const maxRestoreSize int64 = 2 << 30 // 2 GiB
 
 // RestoreFromArchive copies a JSON drive-data file from the archive mount
 // into one of the importSourceCandidates paths so the next Load() picks
