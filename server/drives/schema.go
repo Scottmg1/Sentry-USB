@@ -15,7 +15,12 @@ import (
 // autopilot-mode time/distance, disengagement counts, start/end lat-lon)
 // so the Drives-page summary endpoints can scan BLOB-free rows. See
 // aggregate.go for the semantics.
-const currentSchemaVersion = 2
+//
+// v2 -> v3: add per-route provenance columns so Tessie-imported clips
+// can be excluded from aggregate FSD analytics. `source` defaults to
+// 'sei' so legacy rows automatically tag as native dashcam. The added
+// idx_routes_source supports the Tessie filter in the stats endpoint.
+const currentSchemaVersion = 3
 
 // schemaStatements is the DDL for version 1. Each statement is idempotent
 // (CREATE TABLE IF NOT EXISTS / CREATE INDEX IF NOT EXISTS) so migrate() is
@@ -64,6 +69,9 @@ var schemaStatements = []string{
 
 	`CREATE INDEX IF NOT EXISTS idx_routes_date_dir ON routes(date_dir)`,
 	`CREATE INDEX IF NOT EXISTS idx_routes_start_ts ON routes(start_ts)`,
+	// idx_routes_source is created later in migrate() — see post-ALTER
+	// step — because the source column is added by the v3 column loop
+	// and must exist before the index references it.
 
 	`CREATE TABLE IF NOT EXISTS processed_files (
 		file      TEXT PRIMARY KEY,
@@ -106,6 +114,11 @@ var v2RouteSummaryColumns = []struct {
 	{"start_lon", "REAL"},
 	{"end_lat", "REAL"},
 	{"end_lon", "REAL"},
+	// v3: Tessie provenance. `source` defaults to 'sei' so existing
+	// rows backfill to native dashcam without a separate UPDATE pass.
+	{"source", "TEXT NOT NULL DEFAULT 'sei'"},
+	{"external_signature", "TEXT"},
+	{"tessie_autopilot_percent", "REAL"},
 }
 
 // migrate brings the DB up to currentSchemaVersion. Safe to call on every
@@ -141,6 +154,13 @@ func migrate(ctx context.Context, db *sql.DB) error {
 		if _, err := db.ExecContext(ctx, stmt); err != nil {
 			return fmt.Errorf("migrate: adding routes.%s: %w", col.name, err)
 		}
+	}
+
+	// Indexes that depend on v3 columns must be created after the
+	// ALTER TABLE pass — fresh DBs don't have `source` until then.
+	if _, err := db.ExecContext(ctx,
+		`CREATE INDEX IF NOT EXISTS idx_routes_source ON routes(source)`); err != nil {
+		return fmt.Errorf("migrate: creating idx_routes_source: %w", err)
 	}
 
 	// schema_version handling:

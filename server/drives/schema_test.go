@@ -125,8 +125,8 @@ func TestMigrate_CreatesExpectedIndexes(t *testing.T) {
 
 	got := listIndexes(t, db)
 	// The queries we expect to power: date-range (date_dir), time-range
-	// (start_ts), and tag filtering.
-	want := []string{"idx_drive_tags_tag", "idx_routes_date_dir", "idx_routes_start_ts"}
+	// (start_ts), tag filtering, and Tessie-vs-SEI source filtering (v3).
+	want := []string{"idx_drive_tags_tag", "idx_routes_date_dir", "idx_routes_source", "idx_routes_start_ts"}
 	for _, name := range want {
 		found := false
 		for _, g := range got {
@@ -168,8 +168,8 @@ func TestMigrate_SeedsSchemaVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("metaGet schema_version: %v", err)
 	}
-	if v != "2" {
-		t.Fatalf("schema_version = %q, want %q", v, "2")
+	if v != "3" {
+		t.Fatalf("schema_version = %q, want %q", v, "3")
 	}
 }
 
@@ -311,8 +311,8 @@ func TestMigrate_V2UpgradesExistingV1DB(t *testing.T) {
 	}
 	// schema_version must have advanced.
 	v, _ := metaGet(ctx, db, "schema_version")
-	if v != "2" {
-		t.Fatalf("schema_version after upgrade: got %q, want %q", v, "2")
+	if v != "3" {
+		t.Fatalf("schema_version after upgrade: got %q, want %q", v, "3")
 	}
 }
 
@@ -336,17 +336,19 @@ func TestMigrate_DoesNotOverwriteSchemaVersion(t *testing.T) {
 	if err := migrate(ctx, db); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	// Simulate a future version bump having already run by forcing schema_version=2.
-	// migrate() must not clobber it back to 1.
-	if err := metaSet(ctx, db, "schema_version", "2"); err != nil {
+	// Simulate a FUTURE binary having run by forcing schema_version above
+	// currentSchemaVersion. Re-running this binary's migrate() must not
+	// clobber the future marker. (Version "9" is a stable far-future
+	// stand-in so this test stays valid across schema bumps.)
+	if err := metaSet(ctx, db, "schema_version", "9"); err != nil {
 		t.Fatal(err)
 	}
 	if err := migrate(ctx, db); err != nil {
 		t.Fatalf("migrate re-run: %v", err)
 	}
 	v, _ := metaGet(ctx, db, "schema_version")
-	if v != "2" {
-		t.Fatalf("schema_version after re-migrate: got %q, want %q (must not clobber)", v, "2")
+	if v != "9" {
+		t.Fatalf("schema_version after re-migrate: got %q, want %q (must not clobber)", v, "9")
 	}
 }
 

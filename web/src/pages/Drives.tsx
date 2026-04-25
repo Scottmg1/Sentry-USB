@@ -44,6 +44,10 @@ interface DriveSummary {
   taccDistanceKm: number
   taccDistanceMi: number
   assistedPercent: number
+  // Provenance: "sei" (default) or "tessie". Tessie-imported drives are
+  // counted in totals but excluded from FSD score / disengagement counts.
+  source?: "sei" | "tessie"
+  tessieAutopilotPercent?: number
 }
 
 interface FSDEventPoint {
@@ -69,6 +73,7 @@ interface DriveStats {
   drives_count: number
   routes_count: number
   processed_count: number
+  tessie_routes_count?: number
   total_distance_km: number
   total_distance_mi: number
   total_duration_ms: number
@@ -851,8 +856,13 @@ export default function Drives() {
                         )}
                       >
                         <div className="flex items-start justify-between">
-                          <p className="text-sm font-medium text-slate-200">
-                            {formatTime(d.startTime)} — {formatTime(d.endTime)}
+                          <p className="flex items-center gap-1.5 text-sm font-medium text-slate-200">
+                            <span>{formatTime(d.startTime)} — {formatTime(d.endTime)}</span>
+                            {d.source === "tessie" && (
+                              <span className="rounded-full bg-purple-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-purple-300">
+                                Tessie
+                              </span>
+                            )}
                           </p>
                           {totalAssistedPercent(d) > 0 && (
                             <span className={cn(
@@ -997,8 +1007,13 @@ export default function Drives() {
                       )}
                     >
                       <div className="flex items-start justify-between">
-                        <p className="text-sm font-medium text-slate-200">
-                          {formatTime(d.startTime)} — {formatTime(d.endTime)}
+                        <p className="flex items-center gap-1.5 text-sm font-medium text-slate-200">
+                          <span>{formatTime(d.startTime)} — {formatTime(d.endTime)}</span>
+                          {d.source === "tessie" && (
+                            <span className="rounded-full bg-purple-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-purple-300">
+                              Tessie
+                            </span>
+                          )}
                         </p>
                         {totalAssistedPercent(d) > 0 && (
                           <span className={cn(

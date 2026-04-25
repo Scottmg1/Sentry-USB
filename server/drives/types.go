@@ -11,12 +11,19 @@ type GearRun struct {
 	Frames int   `json:"frames"`
 }
 
-// Route represents GPS data extracted from a single front-camera clip.
+// Route represents GPS data extracted from a single front-camera clip,
+// or a synthetic clip imported from an external source like Tessie.
 //
 // The parallel slices (Points, GearStates, AutopilotStates, Speeds,
 // AccelPositions) all have the same length when populated; callers must
 // treat them as a unit. Older drive-data.json files may have some of the
 // optional slices empty or missing, which is why they're all omitempty.
+//
+// Source / ExternalSignature / TessieAutopilotPercent are populated by
+// Sentry-Drive's Tessie API import flow. They flow through Sentry-USB's
+// JSON import unchanged so the Drives page can exclude Tessie clips from
+// the aggregate FSD score (Tessie's per-point autopilot signal is fuzzier
+// than native SEI telemetry — counting it would skew the score).
 type Route struct {
 	File            string     `json:"file"`
 	Date            string     `json:"date"`
@@ -28,6 +35,12 @@ type Route struct {
 	RawParkCount    int        `json:"rawParkCount,omitempty"`
 	RawFrameCount   int        `json:"rawFrameCount,omitempty"`
 	GearRuns        []GearRun  `json:"gearRuns,omitempty"`
+	// Provenance: "" / "sei" = native dashcam, "tessie" = imported from
+	// Tessie API. Empty is treated as "sei" in storage and aggregation
+	// paths so legacy drive-data.json files round-trip unchanged.
+	Source                 string  `json:"source,omitempty"`
+	ExternalSignature      string  `json:"externalSignature,omitempty"`
+	TessieAutopilotPercent float64 `json:"tessieAutopilotPercent,omitempty"`
 }
 
 // RouteAggregates is the per-clip scalar summary computed once from a
@@ -69,12 +82,19 @@ type RouteAggregates struct {
 // endpoints. It carries metadata that groupClips needs plus all the
 // pre-computed scalars from RouteAggregates. Reading 5500 summary rows
 // costs ~5 MB of heap versus ~300 MB for the full Route slice.
+//
+// Source / ExternalSignature / TessieAutopilotPercent mirror the Route
+// fields and are loaded straight from the new routes columns so the
+// Tessie-aware aggregate path doesn't have to re-decode any BLOBs.
 type RouteSummary struct {
-	File          string
-	Date          string
-	RawParkCount  int
-	RawFrameCount int
-	GearRuns      []GearRun // metadata-sized; bytes, not KB
+	File                   string
+	Date                   string
+	RawParkCount           int
+	RawFrameCount          int
+	GearRuns               []GearRun // metadata-sized; bytes, not KB
+	Source                 string
+	ExternalSignature      string
+	TessieAutopilotPercent float64
 
 	RouteAggregates
 }

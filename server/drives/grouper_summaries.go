@@ -73,11 +73,58 @@ func groupSummaryClips(summaries []RouteSummary) [][]timedSummary {
 	// "mostly parked" (either via GearRuns when available or via
 	// RawParkCount/RawFrameCount ratio). Matches the semantics of
 	// splitByGearStateLegacy / countGearSplitsInGroup.
+	//
+	// Third pass: split each gear-group by ExternalSignature. Adjacent
+	// Tessie drives can have synthetic clip timestamps that abut at the
+	// minute boundary; without this pass two distinct Tessie drives
+	// would merge in the UI.
 	var groups [][]timedSummary
 	for _, tg := range timeGroups {
-		groups = append(groups, splitSummaryGroupByGear(tg)...)
+		for _, gearGroup := range splitSummaryGroupByGear(tg) {
+			groups = append(groups, splitSummaryByExternalSignature(gearGroup)...)
+		}
 	}
 	return groups
+}
+
+// splitSummaryByExternalSignature is the BLOB-free analogue of
+// splitByExternalSignature: bucket clips by ExternalSignature so each
+// imported Tessie drive surfaces as its own entry.
+func splitSummaryByExternalSignature(group []timedSummary) [][]timedSummary {
+	if len(group) <= 1 {
+		return [][]timedSummary{group}
+	}
+	hasAny := false
+	for _, c := range group {
+		if c.ExternalSignature != "" {
+			hasAny = true
+			break
+		}
+	}
+	if !hasAny {
+		return [][]timedSummary{group}
+	}
+	buckets := make(map[string][]timedSummary, 4)
+	var noSig []timedSummary
+	var order []string
+	for _, c := range group {
+		if c.ExternalSignature == "" {
+			noSig = append(noSig, c)
+			continue
+		}
+		if _, exists := buckets[c.ExternalSignature]; !exists {
+			order = append(order, c.ExternalSignature)
+		}
+		buckets[c.ExternalSignature] = append(buckets[c.ExternalSignature], c)
+	}
+	var result [][]timedSummary
+	if len(noSig) > 0 {
+		result = append(result, noSig)
+	}
+	for _, sig := range order {
+		result = append(result, buckets[sig])
+	}
+	return result
 }
 
 // splitSummaryGroupByGear breaks a time-bounded cluster of summaries
@@ -212,37 +259,46 @@ func GroupSummariesFromSummaries(summaries []RouteSummary) []DriveSummary {
 			assistedPercent = math.Round(assistedDistM/totalDistM*1000) / 10
 		}
 
+		// Provenance — every clip in a group shares a signature post-split,
+		// so the first clip is authoritative.
+		source := firstClip.Source
+		if source == "" {
+			source = "sei"
+		}
+
 		out[idx] = DriveSummary{
-			ID:                  idx,
-			Date:                firstClip.Date,
-			StartTime:           startTime.Format("2006-01-02T15:04:05"),
-			EndTime:             endTime.Format("2006-01-02T15:04:05"),
-			DurationMs:          durationMs,
-			DistanceMi:          math.Round(totalDistM/1609.344*100) / 100,
-			DistanceKm:          math.Round(totalDistM/1000*100) / 100,
-			AvgSpeedMph:         math.Round(avgSpeedMps*2.23694*100) / 100,
-			MaxSpeedMph:         math.Round(maxSpeedMps*2.23694*100) / 100,
-			AvgSpeedKmh:         math.Round(avgSpeedMps*3.6*100) / 100,
-			MaxSpeedKmh:         math.Round(maxSpeedMps*3.6*100) / 100,
-			ClipCount:           len(clips),
-			PointCount:          pointCount,
-			StartPoint:          startPoint,
-			EndPoint:            endPoint,
-			FSDEngagedMs:        fsdEngagedMs,
-			FSDDisengagements:   fsdDisengagements,
-			FSDAccelPushes:      fsdAccelPushes,
-			FSDPercent:          fsdPercent,
-			FSDDistanceKm:       math.Round(fsdDistM/1000*100) / 100,
-			FSDDistanceMi:       math.Round(fsdDistM/1609.344*100) / 100,
-			AutosteerEngagedMs:  autosteerEngagedMs,
-			AutosteerPercent:    autosteerPercent,
-			AutosteerDistanceKm: math.Round(autosteerDistM/1000*100) / 100,
-			AutosteerDistanceMi: math.Round(autosteerDistM/1609.344*100) / 100,
-			TACCEngagedMs:       taccEngagedMs,
-			TACCPercent:         taccPercent,
-			TACCDistanceKm:      math.Round(taccDistM/1000*100) / 100,
-			TACCDistanceMi:      math.Round(taccDistM/1609.344*100) / 100,
-			AssistedPercent:     assistedPercent,
+			ID:                     idx,
+			Date:                   firstClip.Date,
+			StartTime:              startTime.Format("2006-01-02T15:04:05"),
+			EndTime:                endTime.Format("2006-01-02T15:04:05"),
+			DurationMs:             durationMs,
+			DistanceMi:             math.Round(totalDistM/1609.344*100) / 100,
+			DistanceKm:             math.Round(totalDistM/1000*100) / 100,
+			AvgSpeedMph:            math.Round(avgSpeedMps*2.23694*100) / 100,
+			MaxSpeedMph:            math.Round(maxSpeedMps*2.23694*100) / 100,
+			AvgSpeedKmh:            math.Round(avgSpeedMps*3.6*100) / 100,
+			MaxSpeedKmh:            math.Round(maxSpeedMps*3.6*100) / 100,
+			ClipCount:              len(clips),
+			PointCount:             pointCount,
+			StartPoint:             startPoint,
+			EndPoint:               endPoint,
+			FSDEngagedMs:           fsdEngagedMs,
+			FSDDisengagements:      fsdDisengagements,
+			FSDAccelPushes:         fsdAccelPushes,
+			FSDPercent:             fsdPercent,
+			FSDDistanceKm:          math.Round(fsdDistM/1000*100) / 100,
+			FSDDistanceMi:          math.Round(fsdDistM/1609.344*100) / 100,
+			AutosteerEngagedMs:     autosteerEngagedMs,
+			AutosteerPercent:       autosteerPercent,
+			AutosteerDistanceKm:    math.Round(autosteerDistM/1000*100) / 100,
+			AutosteerDistanceMi:    math.Round(autosteerDistM/1609.344*100) / 100,
+			TACCEngagedMs:          taccEngagedMs,
+			TACCPercent:            taccPercent,
+			TACCDistanceKm:         math.Round(taccDistM/1000*100) / 100,
+			TACCDistanceMi:         math.Round(taccDistM/1609.344*100) / 100,
+			AssistedPercent:        assistedPercent,
+			Source:                 source,
+			TessieAutopilotPercent: firstClip.TessieAutopilotPercent,
 		}
 	}
 
@@ -320,10 +376,24 @@ func ComputeAggregateStatsFromSummaries(summaries []RouteSummary) AggregateStats
 	// BLOB decoding, no inline haversine math. For each route that
 	// contributed to `timed` (dedup + timestamp-parseable), accumulate
 	// its pre-computed scalars.
-	var totalDistanceM, totalFSDDistM, totalAutosteerDistM, totalTACCDistM float64
+	//
+	// Tessie-aware split:
+	//   - totalDistanceM: every drive (SEI + Tessie) contributes — feeds
+	//     the headline "X miles driven" stat.
+	//   - seiDistanceM: SEI-only — denominator for FSD/AP/TACC %.
+	//   - FSD totals + disengagements / accel pushes: SEI only.
+	// This matches the user-visible behavior in Sentry-Drive: imported
+	// Tessie drives count toward total mileage and drive count, but the
+	// FSD score reflects only ground-truth dashcam data.
+	var totalDistanceM, seiDistanceM float64
+	var totalFSDDistM, totalAutosteerDistM, totalTACCDistM float64
 	for _, tr := range timed {
 		r := &summaries[tr.idx]
 		totalDistanceM += r.DistanceM
+		if r.Source == "tessie" {
+			continue
+		}
+		seiDistanceM += r.DistanceM
 		totalFSDDistM += r.FSDDistanceM
 		totalAutosteerDistM += r.AutosteerDistanceM
 		totalTACCDistM += r.TACCDistanceM
@@ -343,10 +413,10 @@ func ComputeAggregateStatsFromSummaries(summaries []RouteSummary) AggregateStats
 	s.TACCDistanceKm = totalTACCDistM / 1000.0
 	s.TACCDistanceMi = totalTACCDistM / 1609.344
 
-	if s.TotalDistanceKm > 0 {
-		s.FSDPercent = math.Round(s.FSDDistanceKm/s.TotalDistanceKm*1000) / 10
-		totalAssistedKm := s.FSDDistanceKm + s.AutosteerDistanceKm + s.TACCDistanceKm
-		s.AssistedPercent = math.Round(totalAssistedKm/s.TotalDistanceKm*1000) / 10
+	if seiDistanceM > 0 {
+		s.FSDPercent = math.Round(totalFSDDistM/seiDistanceM*1000) / 10
+		totalAssistedM := totalFSDDistM + totalAutosteerDistM + totalTACCDistM
+		s.AssistedPercent = math.Round(totalAssistedM/seiDistanceM*1000) / 10
 	}
 
 	return s

@@ -95,6 +95,10 @@ func importJSON(ctx context.Context, db *sql.DB, r io.Reader, onProgress func(ro
 	// first-boot upgrade doesn't have to re-decode every BLOB during
 	// runAggregateBackfillLocked. On the 5500-route / 762 MB dataset
 	// this halves wall-time for the one-shot migration.
+	//
+	// v3 adds source / external_signature / tessie_autopilot_percent
+	// for Tessie-imported clips. The route-level source defaults to
+	// 'sei' on missing input; Tessie clips carry "tessie" explicitly.
 	routeStmt, err := tx.PrepareContext(ctx, `
 		INSERT INTO routes(
 			file, date_dir, point_count, raw_park_count, raw_frame_count,
@@ -105,41 +109,46 @@ func importJSON(ctx context.Context, db *sql.DB, r io.Reader, onProgress func(ro
 			fsd_engaged_ms, autosteer_engaged_ms, tacc_engaged_ms,
 			fsd_distance_m, autosteer_distance_m, tacc_distance_m, assisted_distance_m,
 			fsd_disengagements, fsd_accel_pushes,
-			start_lat, start_lon, end_lat, end_lon)
+			start_lat, start_lon, end_lat, end_lon,
+			source, external_signature, tessie_autopilot_percent)
 		VALUES(?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-			?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+			?, ?, ?)
 		ON CONFLICT(file) DO UPDATE SET
-			date_dir            = excluded.date_dir,
-			point_count         = excluded.point_count,
-			raw_park_count      = excluded.raw_park_count,
-			raw_frame_count     = excluded.raw_frame_count,
-			distance_m          = excluded.distance_m,
-			first_lat           = excluded.first_lat,
-			first_lon           = excluded.first_lon,
-			points_blob         = excluded.points_blob,
-			gear_states_blob    = excluded.gear_states_blob,
-			ap_states_blob      = excluded.ap_states_blob,
-			speeds_blob         = excluded.speeds_blob,
-			accel_blob          = excluded.accel_blob,
-			gear_runs_blob      = excluded.gear_runs_blob,
-			updated_at          = excluded.updated_at,
-			max_speed_mps       = excluded.max_speed_mps,
-			avg_speed_mps       = excluded.avg_speed_mps,
-			speed_sample_count  = excluded.speed_sample_count,
-			valid_point_count   = excluded.valid_point_count,
-			fsd_engaged_ms      = excluded.fsd_engaged_ms,
-			autosteer_engaged_ms= excluded.autosteer_engaged_ms,
-			tacc_engaged_ms     = excluded.tacc_engaged_ms,
-			fsd_distance_m      = excluded.fsd_distance_m,
-			autosteer_distance_m= excluded.autosteer_distance_m,
-			tacc_distance_m     = excluded.tacc_distance_m,
-			assisted_distance_m = excluded.assisted_distance_m,
-			fsd_disengagements  = excluded.fsd_disengagements,
-			fsd_accel_pushes    = excluded.fsd_accel_pushes,
-			start_lat           = excluded.start_lat,
-			start_lon           = excluded.start_lon,
-			end_lat             = excluded.end_lat,
-			end_lon             = excluded.end_lon`)
+			date_dir                = excluded.date_dir,
+			point_count             = excluded.point_count,
+			raw_park_count          = excluded.raw_park_count,
+			raw_frame_count         = excluded.raw_frame_count,
+			distance_m              = excluded.distance_m,
+			first_lat               = excluded.first_lat,
+			first_lon               = excluded.first_lon,
+			points_blob             = excluded.points_blob,
+			gear_states_blob        = excluded.gear_states_blob,
+			ap_states_blob          = excluded.ap_states_blob,
+			speeds_blob             = excluded.speeds_blob,
+			accel_blob              = excluded.accel_blob,
+			gear_runs_blob          = excluded.gear_runs_blob,
+			updated_at              = excluded.updated_at,
+			max_speed_mps           = excluded.max_speed_mps,
+			avg_speed_mps           = excluded.avg_speed_mps,
+			speed_sample_count      = excluded.speed_sample_count,
+			valid_point_count       = excluded.valid_point_count,
+			fsd_engaged_ms          = excluded.fsd_engaged_ms,
+			autosteer_engaged_ms    = excluded.autosteer_engaged_ms,
+			tacc_engaged_ms         = excluded.tacc_engaged_ms,
+			fsd_distance_m          = excluded.fsd_distance_m,
+			autosteer_distance_m    = excluded.autosteer_distance_m,
+			tacc_distance_m         = excluded.tacc_distance_m,
+			assisted_distance_m     = excluded.assisted_distance_m,
+			fsd_disengagements      = excluded.fsd_disengagements,
+			fsd_accel_pushes        = excluded.fsd_accel_pushes,
+			start_lat               = excluded.start_lat,
+			start_lon               = excluded.start_lon,
+			end_lat                 = excluded.end_lat,
+			end_lon                 = excluded.end_lon,
+			source                  = excluded.source,
+			external_signature      = excluded.external_signature,
+			tessie_autopilot_percent = excluded.tessie_autopilot_percent`)
 	if err != nil {
 		return stats, fmt.Errorf("importJSON: prepare routes: %w", err)
 	}
@@ -307,6 +316,22 @@ func streamRoutes(
 
 		agg := ComputeRouteAggregates(r)
 
+		// Source coercion: "" → "sei". The DB column also has DEFAULT
+		// 'sei', but binding it explicitly keeps the data intentional
+		// rather than relying on default fallback for legacy SEI clips.
+		source := r.Source
+		if source == "" {
+			source = "sei"
+		}
+		var extSig sql.NullString
+		if r.ExternalSignature != "" {
+			extSig = sql.NullString{String: r.ExternalSignature, Valid: true}
+		}
+		var tessieAP sql.NullFloat64
+		if r.TessieAutopilotPercent != 0 {
+			tessieAP = sql.NullFloat64{Float64: r.TessieAutopilotPercent, Valid: true}
+		}
+
 		if _, err := routeStmt.ExecContext(ctx,
 			norm, r.Date, len(r.Points), r.RawParkCount, r.RawFrameCount,
 			agg.DistanceM, firstLat, firstLon,
@@ -316,7 +341,8 @@ func streamRoutes(
 			agg.FSDDistanceM, agg.AutosteerDistanceM, agg.TACCDistanceM, agg.AssistedDistanceM,
 			agg.FSDDisengagements, agg.FSDAccelPushes,
 			nullFloat(agg.StartLat), nullFloat(agg.StartLng),
-			nullFloat(agg.EndLat), nullFloat(agg.EndLng)); err != nil {
+			nullFloat(agg.EndLat), nullFloat(agg.EndLng),
+			source, extSig, tessieAP); err != nil {
 			return count, pfCount, fmt.Errorf("routes: insert %q: %w", norm, err)
 		}
 

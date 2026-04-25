@@ -142,7 +142,8 @@ func writeRoutesArray(ctx context.Context, db *sql.DB, w io.Writer) error {
 	rows, err := db.QueryContext(ctx, `
 		SELECT file, date_dir, raw_park_count, raw_frame_count,
 		       points_blob, gear_states_blob, ap_states_blob,
-		       speeds_blob, accel_blob, gear_runs_blob
+		       speeds_blob, accel_blob, gear_runs_blob,
+		       source, external_signature, tessie_autopilot_percent
 		FROM routes
 		ORDER BY file`)
 	if err != nil {
@@ -154,9 +155,12 @@ func writeRoutesArray(ctx context.Context, db *sql.DB, w io.Writer) error {
 	for rows.Next() {
 		var r Route
 		var pb, gb, ab, sb, acb, rb []byte
+		var source, externalSig sql.NullString
+		var tessieAP sql.NullFloat64
 		if err := rows.Scan(
 			&r.File, &r.Date, &r.RawParkCount, &r.RawFrameCount,
 			&pb, &gb, &ab, &sb, &acb, &rb,
+			&source, &externalSig, &tessieAP,
 		); err != nil {
 			return err
 		}
@@ -182,6 +186,18 @@ func writeRoutesArray(ctx context.Context, db *sql.DB, w io.Writer) error {
 			return fmt.Errorf("route %q: %w", r.File, err)
 		}
 		r.GearRuns = runs
+		// v3 provenance — only emit when non-default so SEI-only files
+		// stay byte-identical to pre-v3 exports (omitempty on the JSON
+		// tag handles the actual marshaling).
+		if source.Valid && source.String != "sei" && source.String != "" {
+			r.Source = source.String
+		}
+		if externalSig.Valid {
+			r.ExternalSignature = externalSig.String
+		}
+		if tessieAP.Valid {
+			r.TessieAutopilotPercent = tessieAP.Float64
+		}
 
 		if !first {
 			if _, err := io.WriteString(w, ","); err != nil {

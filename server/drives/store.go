@@ -447,6 +447,9 @@ func (s *Store) AddRoute(
 		}
 
 		if len(points) > 0 {
+			// AddRoute is the live ingest path from the SEI processor —
+			// callers don't pass a Source, so default to "sei". Tessie
+			// clips arrive via importJSON, which sets source explicitly.
 			if _, err := tx.ExecContext(ctx, `
 				INSERT INTO routes(
 				file, date_dir, point_count, raw_park_count, raw_frame_count,
@@ -457,7 +460,8 @@ func (s *Store) AddRoute(
 				fsd_engaged_ms, autosteer_engaged_ms, tacc_engaged_ms,
 				fsd_distance_m, autosteer_distance_m, tacc_distance_m, assisted_distance_m,
 				fsd_disengagements, fsd_accel_pushes,
-				start_lat, start_lon, end_lat, end_lon)
+				start_lat, start_lon, end_lat, end_lon,
+				source)
 			VALUES(
 				?, ?, ?, ?, ?,
 				NULL, NULL, ?, ?, ?,
@@ -466,7 +470,8 @@ func (s *Store) AddRoute(
 				?, ?, ?,
 				?, ?, ?, ?,
 				?, ?,
-				?, ?, ?, ?)
+				?, ?, ?, ?,
+				'sei')
 			ON CONFLICT(file) DO UPDATE SET
 				date_dir            = excluded.date_dir,
 				point_count         = excluded.point_count,
@@ -498,7 +503,8 @@ func (s *Store) AddRoute(
 				start_lat           = excluded.start_lat,
 				start_lon           = excluded.start_lon,
 				end_lat             = excluded.end_lat,
-				end_lon             = excluded.end_lon`,
+				end_lon             = excluded.end_lon,
+				source              = excluded.source`,
 			norm, dateDir, len(points), rawParkCount, rawFrameCount,
 			agg.DistanceM, firstLat, firstLon,
 			pb, gb, ab, sb, acb, rb, time.Now().Unix(),
@@ -982,7 +988,8 @@ func (s *Store) selectAllRoutesLocked(ctx context.Context) ([]Route, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT file, date_dir, raw_park_count, raw_frame_count,
 		       points_blob, gear_states_blob, ap_states_blob,
-		       speeds_blob, accel_blob, gear_runs_blob
+		       speeds_blob, accel_blob, gear_runs_blob,
+		       source, external_signature, tessie_autopilot_percent
 		FROM routes
 		ORDER BY file`)
 	if err != nil {
@@ -994,9 +1001,12 @@ func (s *Store) selectAllRoutesLocked(ctx context.Context) ([]Route, error) {
 	for rows.Next() {
 		var r Route
 		var pb, gb, ab, sb, acb, rb []byte
+		var source, externalSig sql.NullString
+		var tessieAP sql.NullFloat64
 		if err := rows.Scan(
 			&r.File, &r.Date, &r.RawParkCount, &r.RawFrameCount,
 			&pb, &gb, &ab, &sb, &acb, &rb,
+			&source, &externalSig, &tessieAP,
 		); err != nil {
 			return nil, err
 		}
@@ -1022,6 +1032,17 @@ func (s *Store) selectAllRoutesLocked(ctx context.Context) ([]Route, error) {
 			return nil, fmt.Errorf("decode gear_runs for %q: %w", r.File, err)
 		}
 		r.GearRuns = runs
+		if source.Valid && source.String != "" {
+			r.Source = source.String
+		} else {
+			r.Source = "sei"
+		}
+		if externalSig.Valid {
+			r.ExternalSignature = externalSig.String
+		}
+		if tessieAP.Valid {
+			r.TessieAutopilotPercent = tessieAP.Float64
+		}
 		out = append(out, r)
 	}
 	return out, rows.Err()
@@ -1044,7 +1065,8 @@ func (s *Store) selectAllRouteSummariesLocked(ctx context.Context) ([]RouteSumma
 		       tacc_engaged_ms, fsd_distance_m, autosteer_distance_m,
 		       tacc_distance_m, assisted_distance_m,
 		       fsd_disengagements, fsd_accel_pushes,
-		       start_lat, start_lon, end_lat, end_lon
+		       start_lat, start_lon, end_lat, end_lon,
+		       source, external_signature, tessie_autopilot_percent
 		FROM routes
 		ORDER BY file`)
 	if err != nil {
@@ -1063,6 +1085,8 @@ func (s *Store) selectAllRouteSummariesLocked(ctx context.Context) ([]RouteSumma
 			fsdEngagedMs, autosteerEngagedMs, taccEngagedMs     sql.NullInt64
 			fsdDisengagements, fsdAccelPushes                   sql.NullInt64
 			startLat, startLon, endLat, endLon                  sql.NullFloat64
+			source, externalSig                                 sql.NullString
+			tessieAP                                            sql.NullFloat64
 		)
 		if err := rows.Scan(
 			&sum.File, &sum.Date, &sum.RawParkCount, &sum.RawFrameCount, &rb,
@@ -1072,6 +1096,7 @@ func (s *Store) selectAllRouteSummariesLocked(ctx context.Context) ([]RouteSumma
 			&taccDistM, &assistedDistM,
 			&fsdDisengagements, &fsdAccelPushes,
 			&startLat, &startLon, &endLat, &endLon,
+			&source, &externalSig, &tessieAP,
 		); err != nil {
 			return nil, err
 		}
@@ -1113,6 +1138,20 @@ func (s *Store) selectAllRouteSummariesLocked(ctx context.Context) ([]RouteSumma
 		if endLon.Valid {
 			v := endLon.Float64
 			sum.EndLng = &v
+		}
+		// v3 provenance fields. Empty source coerces to "sei" so
+		// downstream comparisons (`s.Source != "tessie"`) work even
+		// against pre-migration rows.
+		if source.Valid && source.String != "" {
+			sum.Source = source.String
+		} else {
+			sum.Source = "sei"
+		}
+		if externalSig.Valid {
+			sum.ExternalSignature = externalSig.String
+		}
+		if tessieAP.Valid {
+			sum.TessieAutopilotPercent = tessieAP.Float64
 		}
 		out = append(out, sum)
 	}

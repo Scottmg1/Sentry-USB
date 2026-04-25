@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -207,6 +208,11 @@ func (dh *DriveHandlers) Processor() *drives.Processor {
 // endpoint -- the highest-traffic caller on the Drives page -- does
 // not decode any BLOBs. Peak heap on a 5500-route rig drops from
 // ~300 MB (old WithRoutes path) to ~5 MB.
+//
+// SEI-overlap hide: any Tessie-imported drive whose time window overlaps
+// a native dashcam drive is hidden from the list. The clips remain in
+// the DB so the Tessie drive resurfaces if the SEI drive is later
+// removed. Mirrors Sentry-Drive's load-time filter.
 func (dh *DriveHandlers) listDrives(w http.ResponseWriter, r *http.Request) {
 	var summaries []drives.DriveSummary
 	dh.store.WithRouteSummaries(func(summariesIn []drives.RouteSummary) {
@@ -214,6 +220,8 @@ func (dh *DriveHandlers) listDrives(w http.ResponseWriter, r *http.Request) {
 	})
 	runtime.GC()
 	drives.ApplySummaryTags(summaries, dh.store.GetAllDriveTags())
+
+	summaries = hideTessieOverlappingSEI(summaries)
 
 	// Filter by tag if requested
 	if tagFilter := r.URL.Query().Get("tag"); tagFilter != "" {
@@ -230,6 +238,60 @@ func (dh *DriveHandlers) listDrives(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, summaries)
+}
+
+// hideTessieOverlappingSEI filters out Tessie drives whose [startTime,
+// endTime] window overlaps any SEI drive. Tessie drives that fall in
+// SEI gaps are kept. Operates on the DriveSummary slice in O(n + m log m)
+// after sorting SEI ranges.
+func hideTessieOverlappingSEI(summaries []drives.DriveSummary) []drives.DriveSummary {
+	type rng struct{ s, e int64 }
+	var seiRanges []rng
+	for _, d := range summaries {
+		if d.Source == "tessie" {
+			continue
+		}
+		s, errS := time.Parse("2006-01-02T15:04:05", d.StartTime)
+		e, errE := time.Parse("2006-01-02T15:04:05", d.EndTime)
+		if errS != nil || errE != nil {
+			continue
+		}
+		seiRanges = append(seiRanges, rng{s: s.Unix(), e: e.Unix()})
+	}
+	if len(seiRanges) == 0 {
+		return summaries
+	}
+	sort.Slice(seiRanges, func(i, j int) bool { return seiRanges[i].s < seiRanges[j].s })
+
+	out := summaries[:0]
+	for _, d := range summaries {
+		if d.Source != "tessie" {
+			out = append(out, d)
+			continue
+		}
+		s, errS := time.Parse("2006-01-02T15:04:05", d.StartTime)
+		e, errE := time.Parse("2006-01-02T15:04:05", d.EndTime)
+		if errS != nil || errE != nil {
+			out = append(out, d)
+			continue
+		}
+		ts, te := s.Unix(), e.Unix()
+		hide := false
+		for _, r := range seiRanges {
+			if r.e <= ts {
+				continue
+			}
+			if r.s >= te {
+				break
+			}
+			hide = true
+			break
+		}
+		if !hide {
+			out = append(out, d)
+		}
+	}
+	return out
 }
 
 // GET /api/drives/routes — all routes downsampled for overview map
@@ -815,14 +877,21 @@ func (dh *DriveHandlers) exportForSync(w http.ResponseWriter, r *http.Request) {
 func (dh *DriveHandlers) driveStats(w http.ResponseWriter, r *http.Request) {
 	var stats drives.AggregateStats
 	var routeCount int
+	var tessieRouteCount int
 	dh.store.WithRouteSummaries(func(summaries []drives.RouteSummary) {
 		stats = drives.ComputeAggregateStatsFromSummaries(summaries)
 		routeCount = len(summaries)
+		for _, s := range summaries {
+			if s.Source == "tessie" {
+				tessieRouteCount++
+			}
+		}
 	})
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"drives_count":            stats.DrivesCount,
 		"routes_count":            routeCount,
+		"tessie_routes_count":     tessieRouteCount,
 		"processed_count":         dh.store.ProcessedCount(),
 		"total_distance_km":       math.Round(stats.TotalDistanceKm*100) / 100,
 		"total_distance_mi":       math.Round(stats.TotalDistanceMi*100) / 100,
@@ -873,9 +942,16 @@ func (dh *DriveHandlers) fsdAnalytics(w http.ResponseWriter, r *http.Request) {
 		periodStart = time.Time{} // all time for "trip" or unknown
 	}
 
-	// Filter drives in period
+	// Filter drives in period.
+	// Tessie-imported drives are excluded from the FSD analytics dashboard
+	// entirely — their per-point autopilot data is fuzzier than dashcam SEI
+	// and the disengagement / accel-push counts aren't meaningful (Tessie
+	// has no accel-pedal stream).
 	var periodDrives []drives.DriveSummary
 	for _, d := range allSummaries {
+		if d.Source == "tessie" {
+			continue
+		}
 		dt, err := time.Parse("2006-01-02T15:04:05", d.StartTime)
 		if err != nil {
 			continue
