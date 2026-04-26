@@ -5,6 +5,14 @@ After=bluetooth.target bluetooth.service dbus.service
 Requires=bluetooth.target dbus.service
 BindsTo=bluetooth.service
 ConditionPathExists=/usr/bin/python3
+# Defense in depth against the BLE adapter boot race: systemd defaults to
+# StartLimitBurst=5 within StartLimitIntervalSec=10s, which can be exhausted
+# if all 5 attempts hit the race within 30 seconds. Bumping to 20 attempts in
+# 120s gives systemd enough budget to recover before giving up. The Python
+# wait_for_adapter() handles 99% of cases on the first attempt; this is
+# insurance for unrelated future failure modes (BlueZ crash, OOM, etc.).
+StartLimitBurst=20
+StartLimitIntervalSec=120
 
 [Service]
 Type=simple

@@ -22,6 +22,7 @@ import os
 import sys
 import signal
 import logging
+import time
 import urllib.request
 import urllib.error
 import threading
@@ -1093,6 +1094,38 @@ def find_adapter(bus):
             return path
     return None
 
+
+def wait_for_adapter(bus, timeout_s=15, poll_interval_s=0.2):
+    """Wait for BlueZ to expose an LE adapter, polling up to `timeout_s`.
+
+    The systemd unit waits for the org.bluez D-Bus name to be claimed before
+    starting this script, but BlueZ exposes the adapter object asynchronously
+    after claiming the bus name. On a slow boot, busy SD card, or service
+    restart (after archiveloop's awake_stop, OOM kill, RuntimeMaxSec, etc.),
+    a single GetManagedObjects() call can race ahead of adapter enumeration
+    and find nothing. The script then exits 1, systemd retries up to
+    StartLimitBurst times, and if all retries hit the race the service stays
+    inactive until reboot.
+
+    First-principle fix: wait for the dependency we actually need (the LE
+    adapter object), not just the bus name. Polling once every 200ms for ~5
+    iterations is effectively free and simpler than D-Bus InterfacesAdded
+    signal subscription (which has its own race when the adapter already
+    exists at subscribe time).
+    """
+    deadline = time.time() + timeout_s
+    last_log = 0.0
+    while time.time() < deadline:
+        path = find_adapter(bus)
+        if path:
+            return path
+        if time.time() - last_log >= 1.0:
+            remaining = int(deadline - time.time())
+            log.info(f'Waiting for BlueZ adapter... ({remaining}s remaining)')
+            last_log = time.time()
+        time.sleep(poll_interval_s)
+    return None
+
 def register_ad_cb():
     log.info('Advertisement registered')
 
@@ -1219,9 +1252,12 @@ def main():
     # Detect which port the Go API server is on (80 production, 8788 dev)
     API_BASE = detect_api_base()
 
-    adapter_path = find_adapter(bus)
+    # Wait up to 15s for BlueZ to expose the LE adapter — see wait_for_adapter()
+    # docstring for race-condition rationale. Single-shot find_adapter() loses
+    # the race on slow boots, busy SD cards, or service restarts after archiveloop.
+    adapter_path = wait_for_adapter(bus, timeout_s=15)
     if not adapter_path:
-        log.error('No Bluetooth LE adapter found')
+        log.error('No Bluetooth LE adapter found after 15s — BlueZ may be misconfigured')
         sys.exit(1)
 
     log.info(f'Using adapter: {adapter_path}')
