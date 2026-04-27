@@ -245,6 +245,38 @@ func BuildSingleDrive(routes []Route, id int) (Drive, bool) {
 	return buildDriveStats(groups[id], id), true
 }
 
+// BuildDriveFromFiles builds a full Drive object from the routes whose
+// normalized file paths are in `files`. The caller determines which files
+// belong to a drive (e.g. via DriveClipFilesFromSummaries) so the grouping
+// is guaranteed to match the summary-path drive list. The resulting Drive
+// uses `id` as its ID field.
+func BuildDriveFromFiles(routes []Route, files map[string]bool, id int) (Drive, bool) {
+	var matched []Route
+	for _, r := range routes {
+		norm := strings.ReplaceAll(r.File, "\\", "/")
+		if files[norm] {
+			matched = append(matched, r)
+		}
+	}
+	if len(matched) == 0 {
+		return Drive{}, false
+	}
+
+	var timed []timedRoute
+	for _, r := range matched {
+		if t := parseFileTimestamp(r.File); !t.IsZero() {
+			timed = append(timed, timedRoute{Route: r, timestamp: t})
+		}
+	}
+	if len(timed) == 0 {
+		return Drive{}, false
+	}
+	sort.Slice(timed, func(i, j int) bool {
+		return timed[i].timestamp.Before(timed[j].timestamp)
+	})
+	return buildDriveStats(timed, id), true
+}
+
 // DriveStartTime returns the start time string for the drive at the given index.
 // Used for tag lookups without building full drive objects.
 func DriveStartTime(routes []Route, id int) (string, bool) {
@@ -950,6 +982,93 @@ func GroupRoutesOverview(routes []Route, maxPointsPerDrive int) []RouteOverview 
 		})
 	}
 
+	return result
+}
+
+// BuildRoutesOverviewFromClipSets produces overview polylines whose drive
+// IDs match the summary-path grouping. Each element in clipSets is the
+// set of normalized file paths for one drive (from AllDriveClipFilesFromSummaries).
+// Routes are indexed once, then each drive's files are collected and filtered
+// using the same outlier logic as GroupRoutesOverview.
+func BuildRoutesOverviewFromClipSets(routes []Route, clipSets []map[string]bool, maxPointsPerDrive int) []RouteOverview {
+	routeByFile := make(map[string]*Route, len(routes))
+	for i := range routes {
+		norm := strings.ReplaceAll(routes[i].File, "\\", "/")
+		routeByFile[norm] = &routes[i]
+	}
+
+	const maxFromMedianM = 1000000.0
+	const maxJumpM = 5000.0
+
+	result := make([]RouteOverview, 0, len(clipSets))
+	for idx, files := range clipSets {
+		var pts [][2]float64
+		source := "sei"
+		for f := range files {
+			r := routeByFile[f]
+			if r == nil {
+				continue
+			}
+			if r.Source != "" {
+				source = r.Source
+			}
+			for _, p := range r.Points {
+				if !(math.Abs(p[0]) < 1 && math.Abs(p[1]) < 1) {
+					pts = append(pts, [2]float64{p[0], p[1]})
+				}
+			}
+		}
+
+		if len(pts) > 2 {
+			q1 := len(pts) / 4
+			q3 := len(pts) * 3 / 4
+			var sumLat, sumLng float64
+			count := 0
+			for i := q1; i <= q3; i++ {
+				sumLat += pts[i][0]
+				sumLng += pts[i][1]
+				count++
+			}
+			medLat := sumLat / float64(count)
+			medLng := sumLng / float64(count)
+			n := 0
+			for _, p := range pts {
+				if haversineM(p[0], p[1], medLat, medLng) <= maxFromMedianM {
+					pts[n] = p
+					n++
+				}
+			}
+			pts = pts[:n]
+		}
+		if len(pts) > 2 {
+			remove := make([]bool, len(pts))
+			for i := range pts {
+				hasPrev := i > 0
+				hasNext := i < len(pts)-1
+				farFromPrev := hasPrev && haversineM(pts[i-1][0], pts[i-1][1], pts[i][0], pts[i][1]) > maxJumpM
+				farFromNext := hasNext && haversineM(pts[i][0], pts[i][1], pts[i+1][0], pts[i+1][1]) > maxJumpM
+				if (hasPrev && hasNext && farFromPrev && farFromNext) ||
+					(!hasPrev && farFromNext) ||
+					(!hasNext && farFromPrev) {
+					remove[i] = true
+				}
+			}
+			n := 0
+			for i, p := range pts {
+				if !remove[i] {
+					pts[n] = p
+					n++
+				}
+			}
+			pts = pts[:n]
+		}
+
+		result = append(result, RouteOverview{
+			ID:     idx,
+			Points: Downsample(pts, maxPointsPerDrive),
+			Source: source,
+		})
+	}
 	return result
 }
 

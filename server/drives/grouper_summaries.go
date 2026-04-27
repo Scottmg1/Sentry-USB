@@ -332,6 +332,39 @@ func DriveStartTimeFromSummaries(summaries []RouteSummary, id int) (string, bool
 	return groups[id][0].timestamp.Format("2006-01-02T15:04:05"), true
 }
 
+// DriveClipFilesFromSummaries returns the set of normalized file paths
+// that belong to drive `id` according to the summary-path grouping.
+// The returned set uses forward-slash-normalized paths for matching
+// against Route.File (which may contain backslashes from Windows imports).
+func DriveClipFilesFromSummaries(summaries []RouteSummary, id int) (map[string]bool, bool) {
+	groups := groupSummaryClips(summaries)
+	if id < 0 || id >= len(groups) {
+		return nil, false
+	}
+	files := make(map[string]bool, len(groups[id]))
+	for _, clip := range groups[id] {
+		files[strings.ReplaceAll(clip.File, "\\", "/")] = true
+	}
+	return files, true
+}
+
+// AllDriveClipFilesFromSummaries returns the clip file sets for every
+// drive in the summary grouping. Each element is a map of normalized
+// file paths belonging to that drive. Index in the returned slice is
+// the canonical drive ID that matches GroupSummariesFromSummaries.
+func AllDriveClipFilesFromSummaries(summaries []RouteSummary) []map[string]bool {
+	groups := groupSummaryClips(summaries)
+	result := make([]map[string]bool, len(groups))
+	for i, group := range groups {
+		files := make(map[string]bool, len(group))
+		for _, clip := range group {
+			files[strings.ReplaceAll(clip.File, "\\", "/")] = true
+		}
+		result[i] = files
+	}
+	return result
+}
+
 // ComputeAggregateStatsFromSummaries is the BLOB-free analogue of
 // ComputeAggregateStatsFromRoutes. It reads pre-computed aggregate
 // scalars from each RouteSummary (populated at AddRoute time or by

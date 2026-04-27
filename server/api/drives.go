@@ -298,19 +298,23 @@ func hideTessieOverlappingSEI(summaries []drives.DriveSummary) []drives.DriveSum
 //
 // Tessie-imported routes whose drive [start,end] overlaps a native SEI
 // drive are filtered out — same hide policy as listDrives — so the map
-// stays consistent with what the drive list shows. The match is by
-// drive ID (GroupRoutesOverview and GroupSummaries use the same
-// groupClips path so IDs align 1:1).
+// stays consistent with what the drive list shows. Drive boundaries
+// come from the summary-path grouping (same as GET /api/drives) so
+// route IDs on the map match the drive IDs in the list.
 func (dh *DriveHandlers) allRoutes(w http.ResponseWriter, r *http.Request) {
-	var result []drives.RouteOverview
 	var summaries []drives.DriveSummary
+	var clipSets []map[string]bool
+	dh.store.WithRouteSummaries(func(summariesIn []drives.RouteSummary) {
+		summaries = drives.GroupSummariesFromSummaries(summariesIn)
+		clipSets = drives.AllDriveClipFilesFromSummaries(summariesIn)
+	})
+
+	var result []drives.RouteOverview
 	dh.store.WithRoutes(func(routes []drives.Route) {
-		result = drives.GroupRoutesOverview(routes, 500)
-		summaries = drives.GroupSummaries(routes)
+		result = drives.BuildRoutesOverviewFromClipSets(routes, clipSets, 500)
 	})
 	runtime.GC()
 
-	// Build set of drive IDs that should be hidden (Tessie overlapping SEI).
 	visible := hideTessieOverlappingSEI(summaries)
 	visibleIDs := make(map[int]bool, len(visible))
 	for _, d := range visible {
@@ -327,6 +331,11 @@ func (dh *DriveHandlers) allRoutes(w http.ResponseWriter, r *http.Request) {
 }
 
 // GET /api/drives/{id} — full drive data including all points
+//
+// Uses the summary-path grouping (DriveClipFilesFromSummaries) to identify
+// which clips belong to drive `id`, then builds the full Drive from those
+// routes. This guarantees the drive boundaries match the list endpoint
+// (GET /api/drives) which also uses the summary grouping.
 func (dh *DriveHandlers) singleDrive(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
 	id, err := strconv.Atoi(idStr)
@@ -335,10 +344,20 @@ func (dh *DriveHandlers) singleDrive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var clipFiles map[string]bool
+	var found bool
+	dh.store.WithRouteSummaries(func(summaries []drives.RouteSummary) {
+		clipFiles, found = drives.DriveClipFilesFromSummaries(summaries, id)
+	})
+	if !found {
+		writeError(w, http.StatusNotFound, "drive not found")
+		return
+	}
+
 	var d drives.Drive
 	var ok bool
 	dh.store.WithRoutes(func(routes []drives.Route) {
-		d, ok = drives.BuildSingleDrive(routes, id)
+		d, ok = drives.BuildDriveFromFiles(routes, clipFiles, id)
 	})
 	runtime.GC()
 	if !ok {
@@ -346,7 +365,6 @@ func (dh *DriveHandlers) singleDrive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Apply tags to the single drive
 	tagMap := dh.store.GetAllDriveTags()
 	if tags, exists := tagMap[d.StartTime]; exists {
 		d.Tags = tags
