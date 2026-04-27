@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Shield, Upload, FileText, CheckCircle, X, ChevronDown, ChevronUp, RotateCcw, Loader2, Archive } from "lucide-react"
+import { Shield, Upload, FileText, CheckCircle, X, ChevronDown, ChevronUp, RotateCcw, Loader2, Archive, HardDriveUpload } from "lucide-react"
 import type { StepProps } from "../SetupWizard"
 import { cn } from "@/lib/utils"
 
@@ -135,11 +135,15 @@ export function WelcomeStep({ data: _data, onChange: _onChange, onBatchChange }:
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [dragOver, setDragOver] = useState(false)
 
+  const backupFileInputRef = useRef<HTMLInputElement>(null)
+
   // Restore from backup state
   const [showRestore, setShowRestore] = useState(false)
   const [backups, setBackups] = useState<BackupEntry[]>([])
   const [loadingBackups, setLoadingBackups] = useState(false)
   const [restoringDate, setRestoringDate] = useState<string | null>(null)
+  const [restoringUpload, setRestoringUpload] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
   const [restoreSource, setRestoreSource] = useState<string | null>(null)
 
   const handleFile = useCallback(
@@ -253,6 +257,60 @@ export function WelcomeStep({ data: _data, onChange: _onChange, onBatchChange }:
     }
   }
 
+  // Handle uploading a backup JSON file from the user's local machine
+  async function handleBackupFileUpload(file: File) {
+    if (!file.name.endsWith(".json")) {
+      setUploadError("Please select a .json backup file")
+      return
+    }
+    setRestoringUpload(true)
+    setUploadError(null)
+    try {
+      const text = await file.text()
+
+      let backupData: Record<string, unknown>
+      try {
+        backupData = JSON.parse(text)
+      } catch {
+        setUploadError("File is not valid JSON")
+        return
+      }
+
+      if (!backupData.version || !backupData.config) {
+        setUploadError("Invalid backup file — missing version or config data")
+        return
+      }
+
+      const restoreRes = await fetch("/api/system/restore", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: text,
+      })
+      if (!restoreRes.ok) throw new Error("Restore failed")
+      const result = await restoreRes.json()
+
+      const parsed = result.config as Record<string, string>
+      setImported(parsed)
+      setFileName(null)
+      setRestoreSource((backupData.date as string) || "uploaded file")
+      setShowRestore(false)
+      onBatchChange({ ...parsed, _restore_baseline: "true" })
+
+      const groups = new Set<string>()
+      for (const [groupId, group] of Object.entries(CONFIG_GROUPS)) {
+        if (group.keys.some((k) => k in parsed)) {
+          groups.add(groupId)
+        }
+      }
+      setExpandedGroups(groups)
+    } catch {
+      setUploadError("Failed to restore from uploaded backup")
+    } finally {
+      setRestoringUpload(false)
+      if (backupFileInputRef.current) backupFileInputRef.current.value = ""
+    }
+  }
+
   // Categorize imported keys
   const groupedEntries: { groupId: string; label: string; entries: [string, string][] }[] = []
   const ungroupedEntries: [string, string][] = []
@@ -363,47 +421,96 @@ export function WelcomeStep({ data: _data, onChange: _onChange, onBatchChange }:
                     <span className="ml-2 text-xs text-slate-500">Scanning for backups...</span>
                   </div>
                 ) : backups.length === 0 ? (
-                  <p className="py-3 text-center text-xs text-slate-500">
-                    No backups found. Backups are created automatically after each archive.
-                  </p>
+                  <div className="space-y-3">
+                    <p className="py-1 text-center text-xs text-slate-500">
+                      No backups found on this device.
+                    </p>
+                    <button
+                      onClick={() => backupFileInputRef.current?.click()}
+                      disabled={restoringUpload}
+                      className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-blue-400/30 bg-blue-500/5 px-3 py-3 text-sm text-blue-300 transition-colors hover:border-blue-400/50 hover:bg-blue-500/10 disabled:opacity-50"
+                    >
+                      {restoringUpload ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <HardDriveUpload className="h-4 w-4" />
+                      )}
+                      {restoringUpload ? "Restoring..." : "Upload backup file from your computer"}
+                    </button>
+                    <p className="text-center text-[10px] text-slate-600">
+                      Select a <code className="rounded bg-white/5 px-1 py-0.5 text-slate-500">sentryusb-backup-*.json</code> file
+                    </p>
+                    {uploadError && (
+                      <p className="text-center text-xs text-red-400">{uploadError}</p>
+                    )}
+                  </div>
                 ) : (
-                  <div className="max-h-48 space-y-1.5 overflow-y-auto">
-                    {backups.map((b) => (
+                  <div className="space-y-3">
+                    <div className="max-h-48 space-y-1.5 overflow-y-auto">
+                      {backups.map((b) => (
+                        <button
+                          key={b.date}
+                          onClick={() => handleRestore(b)}
+                          disabled={restoringDate !== null || restoringUpload}
+                          className="flex w-full items-center justify-between rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2.5 text-left transition-colors hover:bg-white/[0.05] hover:border-white/10 disabled:opacity-50"
+                        >
+                          <div>
+                            <p className="text-xs font-medium text-slate-300">
+                              {new Date(b.timestamp).toLocaleDateString(undefined, {
+                                weekday: "short",
+                                month: "short",
+                                day: "numeric",
+                                year: "numeric",
+                              })}
+                            </p>
+                            <p className="text-[10px] text-slate-500">
+                              {new Date(b.timestamp).toLocaleTimeString(undefined, {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                              {" · "}
+                              {b.location === "archive" ? "Archive server" : "Local SSD"}
+                              {" · "}
+                              {(b.size / 1024).toFixed(1)} KB
+                            </p>
+                          </div>
+                          {restoringDate === b.date ? (
+                            <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
+                          ) : (
+                            <RotateCcw className="h-3.5 w-3.5 text-slate-500" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="border-t border-white/5 pt-2">
                       <button
-                        key={b.date}
-                        onClick={() => handleRestore(b)}
-                        disabled={restoringDate !== null}
-                        className="flex w-full items-center justify-between rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2.5 text-left transition-colors hover:bg-white/[0.05] hover:border-white/10 disabled:opacity-50"
+                        onClick={() => backupFileInputRef.current?.click()}
+                        disabled={restoringUpload || restoringDate !== null}
+                        className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-white/10 px-3 py-2 text-xs text-slate-500 transition-colors hover:border-white/20 hover:text-slate-400 disabled:opacity-50"
                       >
-                        <div>
-                          <p className="text-xs font-medium text-slate-300">
-                            {new Date(b.timestamp).toLocaleDateString(undefined, {
-                              weekday: "short",
-                              month: "short",
-                              day: "numeric",
-                              year: "numeric",
-                            })}
-                          </p>
-                          <p className="text-[10px] text-slate-500">
-                            {new Date(b.timestamp).toLocaleTimeString(undefined, {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
-                            {" · "}
-                            {b.location === "archive" ? "Archive server" : "Local SSD"}
-                            {" · "}
-                            {(b.size / 1024).toFixed(1)} KB
-                          </p>
-                        </div>
-                        {restoringDate === b.date ? (
-                          <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
+                        {restoringUpload ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
                         ) : (
-                          <RotateCcw className="h-3.5 w-3.5 text-slate-500" />
+                          <HardDriveUpload className="h-3.5 w-3.5" />
                         )}
+                        {restoringUpload ? "Restoring..." : "Or upload a backup file from your computer"}
                       </button>
-                    ))}
+                    </div>
+                    {uploadError && (
+                      <p className="text-center text-xs text-red-400">{uploadError}</p>
+                    )}
                   </div>
                 )}
+                <input
+                  ref={backupFileInputRef}
+                  type="file"
+                  accept=".json"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (file) handleBackupFileUpload(file)
+                  }}
+                />
               </div>
             )}
           </div>
