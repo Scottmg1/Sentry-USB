@@ -344,7 +344,7 @@ export default function Drives() {
         const isTessie = r.source === "tessie"
         // Split polyline at large gaps so multi-cluster drives don't render
         // long straight lines connecting distant geographic clusters.
-        const segments = splitAtGaps(r.points as [number, number][], 2.0)
+        const segments = splitAtGaps(r.points as [number, number][], 0.5)
         for (const seg of segments) {
           if (seg.length < 2) continue
           const line = L.polyline(seg as L.LatLngExpression[], {
