@@ -171,6 +171,42 @@ const TILE_LAYERS: Record<MapStyle, { url: string; attribution: string; subdomai
   },
 }
 
+// ── Helpers ────────────────────────────────────────────────────────
+
+function haversineKm(a: [number, number], b: [number, number]): number {
+  const R = 6371
+  const dLat = ((b[0] - a[0]) * Math.PI) / 180
+  const dLon = ((b[1] - a[1]) * Math.PI) / 180
+  const aLat = (a[0] * Math.PI) / 180
+  const bLat = (b[0] * Math.PI) / 180
+  const s =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(aLat) * Math.cos(bLat) * Math.sin(dLon / 2) ** 2
+  return 2 * R * Math.asin(Math.sqrt(s))
+}
+
+/**
+ * Split a route's GPS path into separate polyline segments at large gaps,
+ * preventing the overview map from drawing long straight lines connecting
+ * geographically distant clip clusters.
+ */
+function splitAtGaps(points: [number, number][], gapKm: number): [number, number][][] {
+  if (points.length === 0) return []
+  const segments: [number, number][][] = []
+  let current: [number, number][] = []
+  let prev: [number, number] | null = null
+  for (const p of points) {
+    if (prev !== null && haversineKm(prev, p) > gapKm) {
+      if (current.length >= 2) segments.push(current)
+      current = []
+    }
+    current.push(p)
+    prev = p
+  }
+  if (current.length >= 2) segments.push(current)
+  return segments
+}
+
 // ── Component ──────────────────────────────────────────────────────
 
 export default function Drives() {
@@ -306,16 +342,22 @@ export default function Drives() {
         // tell at a glance which routes came from the API import vs the
         // dashcam SEI stream.
         const isTessie = r.source === "tessie"
-        const line = L.polyline(r.points as L.LatLngExpression[], {
-          color: isTessie ? "#a855f7" : "#3b82f6",
-          weight: 2,
-          opacity: isTessie ? 0.55 : 0.4,
-          smoothFactor: 1.2,
-          ...(isTessie ? { dashArray: "6 4" } : {}),
-        }).addTo(map)
-          ; (line as any)._driveId = r.id
-        line.on("click", () => selectDrive(r.id))
-        overviewLayers.current.push(line)
+        // Split polyline at large gaps so multi-cluster drives don't render
+        // long straight lines connecting distant geographic clusters.
+        const segments = splitAtGaps(r.points as [number, number][], 2.0)
+        for (const seg of segments) {
+          if (seg.length < 2) continue
+          const line = L.polyline(seg as L.LatLngExpression[], {
+            color: isTessie ? "#a855f7" : "#3b82f6",
+            weight: 2,
+            opacity: isTessie ? 0.55 : 0.4,
+            smoothFactor: 1.2,
+            ...(isTessie ? { dashArray: "6 4" } : {}),
+          }).addTo(map)
+            ; (line as any)._driveId = r.id
+          line.on("click", () => selectDrive(r.id))
+          overviewLayers.current.push(line)
+        }
       }
     }
     if (overviewLayers.current.length > 0) {
