@@ -328,22 +328,53 @@ if [ "$BINARY_INSTALLED" = false ]; then
     if ! command -v go &> /dev/null; then
         info "Installing Go ${GO_VERSION}..."
         GO_TAR="go${GO_VERSION}.linux-${GO_ARCH}.tar.gz"
-        curl -fsSL "https://go.dev/dl/${GO_TAR}" -o "/tmp/${GO_TAR}" || error_exit "Failed to download Go"
+        GO_TMP_ARCHIVE="/tmp/${GO_TAR}.$$"
+        GO_TMP_DIR="/usr/local/go.new.$$"
+        # Download, extract, then atomically rename so a failed download
+        # never leaves the system without a working /usr/local/go.
+        trap 'rm -rf "$GO_TMP_ARCHIVE" "$GO_TMP_DIR"' EXIT
+        curl -fsSL "https://go.dev/dl/${GO_TAR}" -o "$GO_TMP_ARCHIVE" \
+            || error_exit "Failed to download Go"
+        mkdir -p "$GO_TMP_DIR"
+        tar -C "$GO_TMP_DIR" --strip-components=1 -xzf "$GO_TMP_ARCHIVE" \
+            || error_exit "Failed to extract Go archive"
+        if [ ! -x "$GO_TMP_DIR/bin/go" ]; then
+            error_exit "Go archive extracted but bin/go is missing"
+        fi
         rm -rf /usr/local/go
-        tar -C /usr/local -xzf "/tmp/${GO_TAR}"
-        rm "/tmp/${GO_TAR}"
+        mv "$GO_TMP_DIR" /usr/local/go
+        rm -f "$GO_TMP_ARCHIVE"
+        trap - EXIT
         export PATH="/usr/local/go/bin:$PATH"
         ok "Go ${GO_VERSION} installed"
     fi
 
     if ! command -v node &> /dev/null; then
         info "Installing Node.js..."
-        curl -fsSL https://deb.nodesource.com/setup_20.x | bash - 2>/dev/null
-        apt-get install -y nodejs 2>/dev/null || {
-            warn "NodeSource setup failed, trying apt default..."
-            apt-get install -y nodejs npm 2>/dev/null || error_exit "Failed to install Node.js"
-        }
-        ok "Node.js installed: $(node --version)"
+        # Prefer the distro-packaged nodejs -- it has a maintainer,
+        # signed packages, and no third-party shell script runs as root.
+        # Only fall back to the NodeSource pipe-to-bash if the distro
+        # version is too old to build the frontend.
+        if apt-get install -y nodejs npm 2>/dev/null && \
+           node -e 'process.exit(parseInt(process.versions.node) >= 18 ? 0 : 1)' 2>/dev/null; then
+            ok "Node.js installed from distro packages: $(node --version)"
+        else
+            warn "Distro nodejs missing or too old; falling back to NodeSource."
+            warn "This runs a third-party setup script as root. Review https://deb.nodesource.com/setup_20.x if that is a concern."
+            # Download the setup script to a file before executing so it can
+            # be logged/inspected rather than piped straight into bash.
+            NS_SETUP="/tmp/nodesource-setup.$$"
+            trap 'rm -f "$NS_SETUP"' EXIT
+            if ! curl -fsSL https://deb.nodesource.com/setup_20.x -o "$NS_SETUP"; then
+                error_exit "Failed to download NodeSource setup script"
+            fi
+            bash "$NS_SETUP" 2>/dev/null
+            rm -f "$NS_SETUP"
+            trap - EXIT
+            apt-get install -y nodejs 2>/dev/null \
+                || error_exit "Failed to install Node.js"
+            ok "Node.js installed: $(node --version)"
+        fi
     fi
 
     BUILD_DIR="/tmp/sentryusb-build"

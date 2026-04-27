@@ -4,6 +4,7 @@ import { Menu } from "lucide-react"
 import { Sidebar } from "./Sidebar"
 import { MobileNav } from "./MobileNav"
 import { ConnectionBanner } from "./ConnectionBanner"
+import { MigrationBanner } from "./MigrationBanner"
 import { cn } from "@/lib/utils"
 import { KeepAwakeProvider } from "@/hooks/useKeepAwake"
 import { AwayModeProvider } from "@/hooks/useAwayMode"
@@ -50,6 +51,7 @@ export function AppShell() {
 
             <div className="p-4 pb-safe md:p-6">
               <ConnectionBanner />
+              <MigrationBanner />
               <Outlet />
             </div>
           </main>

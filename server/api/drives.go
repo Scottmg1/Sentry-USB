@@ -4,12 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
+	"sort"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/Scottmg1/Sentry-USB/server/drives"
@@ -25,9 +30,20 @@ type DriveHandlers struct {
 	store     *drives.Store
 	processor *drives.Processor
 	hub       broadcaster
+
+	importMu  sync.Mutex
+	importing bool
+
+	// backfillCancel stops the background aggregate backfill on server
+	// shutdown.
+	backfillCancel context.CancelFunc
 }
 
 // NewDriveHandlers creates handlers with a store at the given data path.
+// If a background aggregate backfill is kicked off it owns the nudge loop
+// directly via startKeepAwake/stopKeepAwake, so the webui KeepAwakeManager
+// stays out of its way (migration is treated as a system operation, same
+// tier as Archive and Drive Processing).
 func NewDriveHandlers(dataPath string, hub broadcaster) *DriveHandlers {
 	store := drives.NewStore(dataPath)
 	if err := store.RestoreFromArchive(); err != nil {
@@ -36,10 +52,85 @@ func NewDriveHandlers(dataPath string, hub broadcaster) *DriveHandlers {
 	if err := store.Load(); err != nil {
 		log.Printf("[drives] Warning: failed to load drive data: %v", err)
 	}
-	return &DriveHandlers{
-		store:     store,
-		processor: drives.NewProcessor(store),
-		hub:       hub,
+	ctx, cancel := context.WithCancel(context.Background())
+	dh := &DriveHandlers{
+		store:          store,
+		processor:      drives.NewProcessor(store),
+		hub:            hub,
+		backfillCancel: cancel,
+	}
+
+	// Kick off the async aggregate backfill. On fresh installs this
+	// is a no-op (StartBackgroundBackfill returns false when no NULL
+	// aggregate rows exist). On a first-boot-after-upgrade from a
+	// pre-v2 binary it starts the long backfill in a goroutine so the
+	// HTTP server can answer requests immediately.
+	started := dh.store.StartBackgroundBackfill(ctx, func(done, total int) {
+		if dh.hub != nil {
+			dh.hub.Broadcast("drives.migration.progress", map[string]interface{}{
+				"active": true,
+				"done":   done,
+				"total":  total,
+			})
+		}
+	})
+	if started {
+		log.Printf("[drives] Background aggregate backfill started; UI will show migration banner")
+		go dh.driveMigrationKeepAwakeLoop(ctx)
+	}
+	return dh
+}
+
+// driveMigrationKeepAwakeLoop owns the nudge loop while the aggregate
+// backfill is running, so the Tesla (and the Pi's power) stays up.
+// Same tier as Archive / Drive Processing: it calls startKeepAwake /
+// stopKeepAwake directly rather than going through the webui
+// KeepAwakeManager.
+//
+// The 5-minute tick re-asserts ownership. awake_start is idempotent
+// (kills any existing PID in /tmp/keep_awake_nudge_pid and spawns a
+// fresh nudge with our label), so if another system op ends mid-
+// migration and its defer-stopKeepAwake kills our nudge, we reclaim it
+// within one tick.
+func (dh *DriveHandlers) driveMigrationKeepAwakeLoop(ctx context.Context) {
+	registerKeepAwakeWant("migration")
+	startKeepAwake("Migration", time.Time{})
+
+	tick := time.NewTicker(5 * time.Minute)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			dh.finishMigrationBroadcast()
+			return
+		case <-tick.C:
+			status := dh.store.MigrationStatus()
+			if !status.Active {
+				dh.finishMigrationBroadcast()
+				return
+			}
+			startKeepAwake("Migration", time.Time{})
+		}
+	}
+}
+
+// finishMigrationBroadcast fires the one-shot "migration done" WS event
+// and releases migration's claim on the nudge loop. awake_stop's handoff
+// guard checks both our registry flag (webui/processor) and the bash-side
+// /tmp/archive_status.json; if anyone else still wants keep-awake the
+// stop is a no-op there. Safe to call multiple times.
+func (dh *DriveHandlers) finishMigrationBroadcast() {
+	status := dh.store.MigrationStatus()
+	releaseKeepAwakeWant("migration")
+	stopKeepAwake()
+	if dh.hub != nil {
+		dh.hub.Broadcast("drives.migration.progress", map[string]interface{}{
+			"active":    false,
+			"done":      status.Done,
+			"total":     status.Total,
+			"error":     status.Error,
+			"disk_full": status.DiskFull,
+		})
 	}
 }
 
@@ -54,10 +145,50 @@ func RegisterDriveRoutes(mux *http.ServeMux, dh *DriveHandlers) {
 	mux.HandleFunc("GET /api/drives/status", dh.processingStatus)
 	mux.HandleFunc("GET /api/drives/data/download", dh.downloadData)
 	mux.HandleFunc("POST /api/drives/data/upload", dh.uploadData)
+	mux.HandleFunc("POST /api/drives/data/export-for-sync", dh.exportForSync)
 	mux.HandleFunc("GET /api/drives/stats", dh.driveStats)
 	mux.HandleFunc("GET /api/drives/fsd-analytics", dh.fsdAnalytics)
+	mux.HandleFunc("GET /api/drives/migration-status", dh.migrationStatus)
 	mux.HandleFunc("PUT /api/drives/{id}/tags", dh.setDriveTags)
 	mux.HandleFunc("GET /api/drives/{id}", dh.singleDrive)
+}
+
+// GET /api/drives/migration-status — returns the async aggregate backfill
+// state so the UI can render a "Migrating drive data..." banner + progress
+// bar during a first-boot-after-upgrade. Safe to poll at 2-3s cadence;
+// the handler just reads an atomic.Value snapshot.
+//
+// Response shape:
+//
+//	{
+//	  "active": true,
+//	  "done": 1234,
+//	  "total": 5500,
+//	  "pct": 22.4,
+//	  "error": "",
+//	  "disk_full": false
+//	}
+//
+// "active=false" + "error=''" + "done==total" means migration finished
+// cleanly. "active=false" + "error!=''" is a failed/paused run the user
+// should act on (e.g., disk_full=true means free space then reboot).
+func (dh *DriveHandlers) migrationStatus(w http.ResponseWriter, r *http.Request) {
+	s := dh.store.MigrationStatus()
+	pct := 0.0
+	if s.Total > 0 {
+		pct = 100 * float64(s.Done) / float64(s.Total)
+		if pct > 100 {
+			pct = 100
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"active":    s.Active,
+		"done":      s.Done,
+		"total":     s.Total,
+		"pct":       pct,
+		"error":     s.Error,
+		"disk_full": s.DiskFull,
+	})
 }
 
 // Store returns the underlying drive store (for external integration like post-archive hooks).
@@ -72,10 +203,25 @@ func (dh *DriveHandlers) Processor() *drives.Processor {
 
 // GET /api/drives — list all drives (summaries, no full point data)
 // Query params: ?tag=Work (filter by tag)
+//
+// Uses WithRouteSummaries + GroupSummariesFromSummaries so this list
+// endpoint -- the highest-traffic caller on the Drives page -- does
+// not decode any BLOBs. Peak heap on a 5500-route rig drops from
+// ~300 MB (old WithRoutes path) to ~5 MB.
+//
+// SEI-overlap hide: any Tessie-imported drive whose time window overlaps
+// a native dashcam drive is hidden from the list. The clips remain in
+// the DB so the Tessie drive resurfaces if the SEI drive is later
+// removed. Mirrors Sentry-Drive's load-time filter.
 func (dh *DriveHandlers) listDrives(w http.ResponseWriter, r *http.Request) {
-	routes := dh.store.GetRoutes()
-	summaries := drives.GroupSummaries(routes)
+	var summaries []drives.DriveSummary
+	dh.store.WithRouteSummaries(func(summariesIn []drives.RouteSummary) {
+		summaries = drives.GroupSummariesFromSummaries(summariesIn)
+	})
+	runtime.GC()
 	drives.ApplySummaryTags(summaries, dh.store.GetAllDriveTags())
+
+	summaries = hideTessieOverlappingSEI(summaries)
 
 	// Filter by tag if requested
 	if tagFilter := r.URL.Query().Get("tag"); tagFilter != "" {
@@ -94,29 +240,90 @@ func (dh *DriveHandlers) listDrives(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, summaries)
 }
 
-// GET /api/drives/routes — all routes downsampled for overview map
-func (dh *DriveHandlers) allRoutes(w http.ResponseWriter, r *http.Request) {
-	routes := dh.store.GetRoutes()
-	allDrives := drives.GroupIntoDrives(routes)
-
-	type routeOverview struct {
-		ID     int          `json:"id"`
-		Points [][2]float64 `json:"points"`
-	}
-
-	result := make([]routeOverview, 0, len(allDrives))
-	for _, d := range allDrives {
-		pts := make([][2]float64, len(d.Points))
-		for i, p := range d.Points {
-			pts[i] = [2]float64{p[0], p[1]}
+// hideTessieOverlappingSEI filters out Tessie drives whose [startTime,
+// endTime] window overlaps any SEI drive. Tessie drives that fall in
+// SEI gaps are kept. Operates on the DriveSummary slice in O(n + m log m)
+// after sorting SEI ranges.
+func hideTessieOverlappingSEI(summaries []drives.DriveSummary) []drives.DriveSummary {
+	type rng struct{ s, e int64 }
+	var seiRanges []rng
+	for _, d := range summaries {
+		if d.Source == "tessie" {
+			continue
 		}
-		result = append(result, routeOverview{
-			ID:     d.ID,
-			Points: drives.Downsample(pts, 200),
-		})
+		s, errS := time.Parse("2006-01-02T15:04:05", d.StartTime)
+		e, errE := time.Parse("2006-01-02T15:04:05", d.EndTime)
+		if errS != nil || errE != nil {
+			continue
+		}
+		seiRanges = append(seiRanges, rng{s: s.Unix(), e: e.Unix()})
+	}
+	if len(seiRanges) == 0 {
+		return summaries
+	}
+	sort.Slice(seiRanges, func(i, j int) bool { return seiRanges[i].s < seiRanges[j].s })
+
+	out := summaries[:0]
+	for _, d := range summaries {
+		if d.Source != "tessie" {
+			out = append(out, d)
+			continue
+		}
+		s, errS := time.Parse("2006-01-02T15:04:05", d.StartTime)
+		e, errE := time.Parse("2006-01-02T15:04:05", d.EndTime)
+		if errS != nil || errE != nil {
+			out = append(out, d)
+			continue
+		}
+		ts, te := s.Unix(), e.Unix()
+		hide := false
+		for _, r := range seiRanges {
+			if r.e <= ts {
+				continue
+			}
+			if r.s >= te {
+				break
+			}
+			hide = true
+			break
+		}
+		if !hide {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// GET /api/drives/routes — all routes downsampled for overview map.
+//
+// Tessie-imported routes whose drive [start,end] overlaps a native SEI
+// drive are filtered out — same hide policy as listDrives — so the map
+// stays consistent with what the drive list shows. The match is by
+// drive ID (GroupRoutesOverview and GroupSummaries use the same
+// groupClips path so IDs align 1:1).
+func (dh *DriveHandlers) allRoutes(w http.ResponseWriter, r *http.Request) {
+	var result []drives.RouteOverview
+	var summaries []drives.DriveSummary
+	dh.store.WithRoutes(func(routes []drives.Route) {
+		result = drives.GroupRoutesOverview(routes, 500)
+		summaries = drives.GroupSummaries(routes)
+	})
+	runtime.GC()
+
+	// Build set of drive IDs that should be hidden (Tessie overlapping SEI).
+	visible := hideTessieOverlappingSEI(summaries)
+	visibleIDs := make(map[int]bool, len(visible))
+	for _, d := range visible {
+		visibleIDs[d.ID] = true
+	}
+	filtered := make([]drives.RouteOverview, 0, len(result))
+	for _, ro := range result {
+		if visibleIDs[ro.ID] {
+			filtered = append(filtered, ro)
+		}
 	}
 
-	writeJSON(w, http.StatusOK, result)
+	writeJSON(w, http.StatusOK, filtered)
 }
 
 // GET /api/drives/{id} — full drive data including all points
@@ -128,22 +335,30 @@ func (dh *DriveHandlers) singleDrive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	routes := dh.store.GetRoutes()
-	allDrives := drives.GroupIntoDrives(routes)
-	drives.ApplyTags(allDrives, dh.store.GetAllDriveTags())
-
-	if id < 0 || id >= len(allDrives) {
+	var d drives.Drive
+	var ok bool
+	dh.store.WithRoutes(func(routes []drives.Route) {
+		d, ok = drives.BuildSingleDrive(routes, id)
+	})
+	runtime.GC()
+	if !ok {
 		writeError(w, http.StatusNotFound, "drive not found")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, allDrives[id])
+	// Apply tags to the single drive
+	tagMap := dh.store.GetAllDriveTags()
+	if tags, exists := tagMap[d.StartTime]; exists {
+		d.Tags = tags
+	}
+
+	writeJSON(w, http.StatusOK, d)
 }
 
 // PUT /api/drives/{id}/tags — set tags for a drive
 // Body: { "tags": ["Work", "Commute"], "start_time": "2025-03-10T08:30:00" }
 // If start_time is provided, it is used directly as the drive key (fast path).
-// Otherwise falls back to looking up the drive by index (slow — calls GroupIntoDrives).
+// Otherwise falls back to looking up the drive by index via DriveStartTime.
 func (dh *DriveHandlers) setDriveTags(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
 	id, err := strconv.Atoi(idStr)
@@ -163,14 +378,18 @@ func (dh *DriveHandlers) setDriveTags(w http.ResponseWriter, r *http.Request) {
 
 	driveKey := body.StartTime
 	if driveKey == "" {
-		// Slow fallback: look up drive by index
-		routes := dh.store.GetRoutes()
-		allDrives := drives.GroupIntoDrives(routes)
-		if id < 0 || id >= len(allDrives) {
+		// Fallback: look up drive start time by index. Uses the
+		// summary path -- DriveStartTime only needs clip metadata
+		// (file timestamps) so there is no reason to pay for full
+		// BLOB decoding here.
+		var ok bool
+		dh.store.WithRouteSummaries(func(summaries []drives.RouteSummary) {
+			driveKey, ok = drives.DriveStartTimeFromSummaries(summaries, id)
+		})
+		if !ok {
 			writeError(w, http.StatusNotFound, "drive not found")
 			return
 		}
-		driveKey = allDrives[id].StartTime
 	}
 
 	dh.store.SetDriveTags(driveKey, body.Tags)
@@ -202,7 +421,7 @@ func archiveLog(format string, args ...interface{}) {
 	}
 	defer f.Close()
 	msg := fmt.Sprintf(format, args...)
-	fmt.Fprintf(f, "%s: [drive-map] %s\n", time.Now().Format("Mon Jan _2 15:04:05 MST 2006"), msg)
+	fmt.Fprintf(f, "%s: [drive-map] %s\n", time.Now().Format("Mon _2 Jan 15:04:05 MST 2006"), msg)
 }
 
 // IsArchiving returns true if the archiveloop is currently archiving files.
@@ -277,6 +496,13 @@ func (dh *DriveHandlers) processFiles(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "processing already in progress")
 		return
 	}
+	dh.importMu.Lock()
+	importing := dh.importing
+	dh.importMu.Unlock()
+	if importing {
+		writeError(w, http.StatusConflict, "drive data import in progress — please wait until it finishes")
+		return
+	}
 	// post_archive=1 is set by post-archive-process.sh which runs after
 	// archiving is complete.  Skip the stale-file check in that case.
 	postArchive := r.URL.Query().Get("post_archive") == "1"
@@ -316,8 +542,17 @@ func (dh *DriveHandlers) processFiles(w http.ResponseWriter, r *http.Request) {
 	// sleep after archiving; archiveloop will stop its own keep-awake task.
 	go func() {
 		if !postArchive {
+			registerKeepAwakeWant("processor")
 			startKeepAwake("Drive Processing", time.Time{})
-			defer stopKeepAwake()
+			defer func() {
+				// Release before stopKeepAwake so awake_stop sees a
+				// cleared flag (when we're the last wanter) and proceeds
+				// normally. If another Go-side caller still wants keep-
+				// awake, the flag stays and awake_stop's handoff guard
+				// defers — correct.
+				releaseKeepAwakeWant("processor")
+				stopKeepAwake()
+			}()
 		}
 
 		dh.hub.Broadcast("drive_process", map[string]interface{}{
@@ -342,8 +577,8 @@ func (dh *DriveHandlers) processFiles(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		archiveLog("Drive processing complete. Files: %d, GPS: %d, Drives: %d, Errors: %d (%s)",
-			result.FilesNew, result.FilesWithGPS, result.DrivesFound, result.Errors, result.Duration)
+		archiveLog("Drive processing complete. Files: %d, GPS: %d, Routes: %d, Errors: %d (%s)",
+			result.FilesNew, result.FilesWithGPS, result.RoutesFound, result.Errors, result.Duration)
 
 		dh.hub.Broadcast("drive_process", map[string]interface{}{
 			"status": "complete", "result": result,
@@ -362,6 +597,13 @@ func (dh *DriveHandlers) processFiles(w http.ResponseWriter, r *http.Request) {
 func (dh *DriveHandlers) reprocessAll(w http.ResponseWriter, r *http.Request) {
 	if dh.processor.IsRunning() {
 		writeError(w, http.StatusConflict, "processing already in progress")
+		return
+	}
+	dh.importMu.Lock()
+	importing := dh.importing
+	dh.importMu.Unlock()
+	if importing {
+		writeError(w, http.StatusConflict, "drive data import in progress — please wait until it finishes")
 		return
 	}
 	if IsArchiving() {
@@ -383,8 +625,12 @@ func (dh *DriveHandlers) reprocessAll(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go func() {
+		registerKeepAwakeWant("processor")
 		startKeepAwake("Drive Processing", time.Time{})
-		defer stopKeepAwake()
+		defer func() {
+			releaseKeepAwakeWant("processor")
+			stopKeepAwake()
+		}()
 
 		archiveLog("Starting reprocess (all) on %s", clipsDir)
 		dh.hub.Broadcast("drive_process", map[string]interface{}{
@@ -407,8 +653,8 @@ func (dh *DriveHandlers) reprocessAll(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		archiveLog("Reprocess complete. Files: %d, GPS: %d, Drives: %d, Errors: %d (%s)",
-			result.FilesNew, result.FilesWithGPS, result.DrivesFound, result.Errors, result.Duration)
+		archiveLog("Reprocess complete. Files: %d, GPS: %d, Routes: %d, Errors: %d (%s)",
+			result.FilesNew, result.FilesWithGPS, result.RoutesFound, result.Errors, result.Duration)
 
 		dh.hub.Broadcast("drive_process", map[string]interface{}{
 			"status": "complete", "result": result,
@@ -423,8 +669,13 @@ func (dh *DriveHandlers) reprocessAll(w http.ResponseWriter, r *http.Request) {
 
 // GET /api/drives/status — check if processing is running
 func (dh *DriveHandlers) processingStatus(w http.ResponseWriter, r *http.Request) {
+	dh.importMu.Lock()
+	importing := dh.importing
+	dh.importMu.Unlock()
+
 	resp := map[string]interface{}{
 		"running":         dh.processor.IsRunning(),
+		"importing":       importing,
 		"routes_count":    dh.store.RouteCount(),
 		"processed_count": dh.store.ProcessedCount(),
 		"archiving":       IsArchiving(),
@@ -472,105 +723,229 @@ func (dh *DriveHandlers) downloadData(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(&data)
 }
 
-// POST /api/drives/data/upload — upload a drive-data.json file to replace current data
+// POST /api/drives/data/upload — upload a drive-data.json file.
+// The file is streamed to disk and decoded in the background so the Pi
+// can handle arbitrarily large files without OOMing on the HTTP request.
+// While importing, drive processing is blocked and the status endpoint
+// reports importing=true so the frontend can show progress.
 func (dh *DriveHandlers) uploadData(w http.ResponseWriter, r *http.Request) {
 	if dh.processor.IsRunning() {
 		writeError(w, http.StatusConflict, "cannot upload while processing is running")
 		return
 	}
+	dh.importMu.Lock()
+	if dh.importing {
+		dh.importMu.Unlock()
+		writeError(w, http.StatusConflict, "import already in progress")
+		return
+	}
+	dh.importMu.Unlock()
 
-	// Limit to 100MB
-	r.Body = http.MaxBytesReader(w, r.Body, 100*1024*1024)
-
-	var data drives.StoreData
-	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
-		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
+	// Stream the request body to a temp file on the writable partition.
+	// This uses minimal RAM regardless of file size.
+	tmpPath := filepath.Join(filepath.Dir(dh.store.Path()), "drive-data-import.tmp")
+	f, err := os.Create(tmpPath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create temp file: %v", err))
+		return
+	}
+	n, err := io.Copy(f, r.Body)
+	f.Close()
+	if err != nil {
+		os.Remove(tmpPath)
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to save upload: %v", err))
 		return
 	}
 
-	dh.store.ReplaceData(data)
-	if err := dh.store.Save(); err != nil {
-		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to save: %v", err))
+	log.Printf("[drives] Received drive-data upload (%d bytes), starting background import", n)
+
+	dh.importMu.Lock()
+	dh.importing = true
+	dh.importMu.Unlock()
+
+	// Decode and replace store data in the background.
+	go func() {
+		defer func() {
+			os.Remove(tmpPath)
+			dh.importMu.Lock()
+			dh.importing = false
+			dh.importMu.Unlock()
+		}()
+
+		archiveLog("Drive data import started (%d bytes)", n)
+		dh.hub.Broadcast("drive_import", map[string]interface{}{
+			"status": "started",
+		})
+
+		f, err := os.Open(tmpPath)
+		if err != nil {
+			archiveLog("Drive data import error: failed to open temp file: %v", err)
+			log.Printf("[drives] Import error: failed to open temp file: %v", err)
+			dh.hub.Broadcast("drive_import", map[string]interface{}{
+				"status": "error", "error": err.Error(),
+			})
+			return
+		}
+
+		// Stream directly from the temp file into the per-batch SQLite
+		// importer. Previously the handler json.Decode'd the whole payload
+		// into a drives.StoreData struct, which OOMed a 512MB Pi on
+		// multi-GB backups. ReplaceDataFromReader commits every ~200 routes
+		// so peak heap stays ~10MB regardless of upload size.
+		stats, err := dh.store.ReplaceDataFromReader(context.Background(), f,
+			func(routesImported int) {
+				dh.hub.Broadcast("drive_import", map[string]interface{}{
+					"status":         "progress",
+					"routes_written": routesImported,
+				})
+			})
+		f.Close()
+		if err != nil {
+			archiveLog("Drive data import error: %v", err)
+			log.Printf("[drives] Import error: %v", err)
+			dh.hub.Broadcast("drive_import", map[string]interface{}{
+				"status": "error", "error": err.Error(),
+			})
+			return
+		}
+
+		if stats.Routes == 0 && stats.ProcessedFiles == 0 {
+			archiveLog("Drive data import error: file contains no routes or processed files")
+			log.Printf("[drives] Import error: decoded file contains no routes or processed files")
+			dh.hub.Broadcast("drive_import", map[string]interface{}{
+				"status": "error", "error": "file contains no drive data — import aborted",
+			})
+			return
+		}
+
+		if err := dh.store.Save(); err != nil {
+			archiveLog("Drive data import error: failed to save: %v", err)
+			log.Printf("[drives] Import error: failed to save: %v", err)
+			dh.hub.Broadcast("drive_import", map[string]interface{}{
+				"status": "error", "error": fmt.Sprintf("failed to save: %v", err),
+			})
+			return
+		}
+
+		archiveLog("Drive data import complete: %d routes, %d processed files",
+			stats.Routes, stats.ProcessedFiles)
+		log.Printf("[drives] Import complete: %d routes, %d processed files",
+			stats.Routes, stats.ProcessedFiles)
+		dh.hub.Broadcast("drive_import", map[string]interface{}{
+			"status":          "complete",
+			"routes_count":    stats.Routes,
+			"processed_count": stats.ProcessedFiles,
+		})
+	}()
+
+	writeJSON(w, http.StatusAccepted, map[string]interface{}{
+		"status": "importing",
+	})
+}
+
+// POST /api/drives/data/export-for-sync — regenerates the canonical
+// /mutable/drive-data.json mirror from the SQLite store so
+// post-archive-process.sh's rsync/rclone block can ship it to the
+// archive server.
+//
+// This is the small "make the archive copy current" hook the shell
+// script calls before each remote sync. The Go-side SyncToArchive
+// (CIFS/NFS users) regenerates the mirror itself; this endpoint exists
+// for the rsync/rclone shell paths that don't go through Go to copy
+// the file.
+//
+// Returns 200 + the new file size on success, 500 on export failure.
+// Refuses (409) if processing or import is currently running so we
+// don't snapshot a half-written DB during a heavy AddRoute burst.
+func (dh *DriveHandlers) exportForSync(w http.ResponseWriter, r *http.Request) {
+	if dh.processor.IsRunning() {
+		writeError(w, http.StatusConflict, "drive processing in progress; export-for-sync deferred")
+		return
+	}
+	dh.importMu.Lock()
+	importing := dh.importing
+	dh.importMu.Unlock()
+	if importing {
+		writeError(w, http.StatusConflict, "drive data import in progress; export-for-sync deferred")
 		return
 	}
 
+	if err := dh.store.ExportJSONForSync(); err != nil {
+		archiveLog("Export-for-sync failed: %v", err)
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("export failed: %v", err))
+		return
+	}
+
+	// Stat the resulting file to report size back to the shell script
+	// (used in log lines and could feed an additional pre-rsync sanity
+	// check at the shell layer).
+	var size int64
+	if info, err := os.Stat("/mutable/drive-data.json"); err == nil {
+		size = info.Size()
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"success":         true,
-		"routes_count":    len(data.Routes),
-		"processed_count": len(data.ProcessedFiles),
+		"status": "exported",
+		"path":   "/mutable/drive-data.json",
+		"bytes":  size,
 	})
 }
 
 // GET /api/drives/stats — aggregate statistics
+//
+// Uses WithRouteSummaries so the endpoint reads the pre-computed
+// aggregate columns rather than decoding every route's BLOBs. On a
+// 5500-route rig this drops peak heap from ~300 MB to ~5 MB, which is
+// what makes the migration useful on a 512 MB Pi Zero 2 W.
 func (dh *DriveHandlers) driveStats(w http.ResponseWriter, r *http.Request) {
-	routes := dh.store.GetRoutes()
-	allDrives := drives.GroupIntoDrives(routes)
-
-	var totalDistKm, totalDistMi float64
-	var totalDurationMs int64
-	var totalFSDEngagedMs int64
-	var totalFSDDistKm, totalFSDDistMi float64
-	var totalDisengagements, totalAccelPushes int
-	var totalAutosteerEngagedMs, totalTACCEngagedMs int64
-	var totalAutosteerDistKm, totalAutosteerDistMi float64
-	var totalTACCDistKm, totalTACCDistMi float64
-	for _, d := range allDrives {
-		totalDistKm += d.DistanceKm
-		totalDistMi += d.DistanceMi
-		totalDurationMs += d.DurationMs
-		totalFSDEngagedMs += d.FSDEngagedMs
-		totalFSDDistKm += d.FSDDistanceKm
-		totalFSDDistMi += d.FSDDistanceMi
-		totalDisengagements += d.FSDDisengagements
-		totalAccelPushes += d.FSDAccelPushes
-		totalAutosteerEngagedMs += d.AutosteerEngagedMs
-		totalAutosteerDistKm += d.AutosteerDistanceKm
-		totalAutosteerDistMi += d.AutosteerDistanceMi
-		totalTACCEngagedMs += d.TACCEngagedMs
-		totalTACCDistKm += d.TACCDistanceKm
-		totalTACCDistMi += d.TACCDistanceMi
-	}
-
-	var fsdPercent float64
-	if totalDistKm > 0 {
-		fsdPercent = math.Round(totalFSDDistKm/totalDistKm*1000) / 10
-	}
-
-	// Assisted = FSD + Autosteer + TACC
-	totalAssistedDistKm := totalFSDDistKm + totalAutosteerDistKm + totalTACCDistKm
-	var assistedPercent float64
-	if totalDistKm > 0 {
-		assistedPercent = math.Round(totalAssistedDistKm/totalDistKm*1000) / 10
-	}
+	var stats drives.AggregateStats
+	var routeCount int
+	var tessieRouteCount int
+	dh.store.WithRouteSummaries(func(summaries []drives.RouteSummary) {
+		stats = drives.ComputeAggregateStatsFromSummaries(summaries)
+		routeCount = len(summaries)
+		for _, s := range summaries {
+			if s.Source == "tessie" {
+				tessieRouteCount++
+			}
+		}
+	})
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"drives_count":            len(allDrives),
-		"routes_count":            len(routes),
+		"drives_count":            stats.DrivesCount,
+		"routes_count":            routeCount,
+		"tessie_routes_count":     tessieRouteCount,
 		"processed_count":         dh.store.ProcessedCount(),
-		"total_distance_km":       math.Round(totalDistKm*100) / 100,
-		"total_distance_mi":       math.Round(totalDistMi*100) / 100,
-		"total_duration_ms":       totalDurationMs,
-		"fsd_engaged_ms":          totalFSDEngagedMs,
-		"fsd_distance_km":         math.Round(totalFSDDistKm*100) / 100,
-		"fsd_distance_mi":         math.Round(totalFSDDistMi*100) / 100,
-		"fsd_percent":             fsdPercent,
-		"fsd_disengagements":      totalDisengagements,
-		"fsd_accel_pushes":        totalAccelPushes,
-		"autosteer_engaged_ms":    totalAutosteerEngagedMs,
-		"autosteer_distance_km":   math.Round(totalAutosteerDistKm*100) / 100,
-		"autosteer_distance_mi":   math.Round(totalAutosteerDistMi*100) / 100,
-		"tacc_engaged_ms":         totalTACCEngagedMs,
-		"tacc_distance_km":        math.Round(totalTACCDistKm*100) / 100,
-		"tacc_distance_mi":        math.Round(totalTACCDistMi*100) / 100,
-		"assisted_percent":        assistedPercent,
+		"total_distance_km":       math.Round(stats.TotalDistanceKm*100) / 100,
+		"total_distance_mi":       math.Round(stats.TotalDistanceMi*100) / 100,
+		"total_duration_ms":       stats.TotalDurationMs,
+		"fsd_engaged_ms":          stats.FSDEngagedMs,
+		"fsd_distance_km":         math.Round(stats.FSDDistanceKm*100) / 100,
+		"fsd_distance_mi":         math.Round(stats.FSDDistanceMi*100) / 100,
+		"fsd_percent":             stats.FSDPercent,
+		"fsd_disengagements":      stats.FSDDisengagements,
+		"fsd_accel_pushes":        stats.FSDAccelPushes,
+		"autosteer_engaged_ms":    stats.AutosteerEngagedMs,
+		"autosteer_distance_km":   math.Round(stats.AutosteerDistanceKm*100) / 100,
+		"autosteer_distance_mi":   math.Round(stats.AutosteerDistanceMi*100) / 100,
+		"tacc_engaged_ms":         stats.TACCEngagedMs,
+		"tacc_distance_km":        math.Round(stats.TACCDistanceKm*100) / 100,
+		"tacc_distance_mi":        math.Round(stats.TACCDistanceMi*100) / 100,
+		"assisted_percent":        stats.AssistedPercent,
 	})
 }
 
 // GET /api/drives/fsd-analytics — FSD analytics with daily/weekly breakdowns
 // Query params: ?period=week (default), ?period=day, ?period=trip
+//
+// Summary-only path: FSD analytics only needs the per-drive scalars
+// (distance, FSD engaged ms, disengagements, etc.), all of which are
+// cached columns now. No BLOB decoding on this endpoint either.
 func (dh *DriveHandlers) fsdAnalytics(w http.ResponseWriter, r *http.Request) {
-	routes := dh.store.GetRoutes()
-	allDrives := drives.GroupIntoDrives(routes)
+	var allSummaries []drives.DriveSummary
+	dh.store.WithRouteSummaries(func(summariesIn []drives.RouteSummary) {
+		allSummaries = drives.GroupSummariesFromSummaries(summariesIn)
+	})
+	runtime.GC()
 
 	now := time.Now()
 	period := r.URL.Query().Get("period")
@@ -589,9 +964,16 @@ func (dh *DriveHandlers) fsdAnalytics(w http.ResponseWriter, r *http.Request) {
 		periodStart = time.Time{} // all time for "trip" or unknown
 	}
 
-	// Filter drives in period
-	var periodDrives []drives.Drive
-	for _, d := range allDrives {
+	// Filter drives in period.
+	// Tessie-imported drives are excluded from the FSD analytics dashboard
+	// entirely — their per-point autopilot data is fuzzier than dashcam SEI
+	// and the disengagement / accel-push counts aren't meaningful (Tessie
+	// has no accel-pedal stream).
+	var periodDrives []drives.DriveSummary
+	for _, d := range allSummaries {
+		if d.Source == "tessie" {
+			continue
+		}
 		dt, err := time.Parse("2006-01-02T15:04:05", d.StartTime)
 		if err != nil {
 			continue

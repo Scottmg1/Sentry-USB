@@ -44,6 +44,10 @@ interface DriveSummary {
   taccDistanceKm: number
   taccDistanceMi: number
   assistedPercent: number
+  // Provenance: "sei" (default) or "tessie". Tessie-imported drives are
+  // counted in totals but excluded from FSD score / disengagement counts.
+  source?: "sei" | "tessie"
+  tessieAutopilotPercent?: number
 }
 
 interface FSDEventPoint {
@@ -63,12 +67,14 @@ interface DriveDetail extends Omit<DriveSummary, "startPoint" | "endPoint"> {
 interface RouteOverview {
   id: number
   points: [number, number][]
+  source?: "sei" | "tessie"
 }
 
 interface DriveStats {
   drives_count: number
   routes_count: number
   processed_count: number
+  tessie_routes_count?: number
   total_distance_km: number
   total_distance_mi: number
   total_duration_ms: number
@@ -221,6 +227,8 @@ export default function Drives() {
   const [showProcessMenu, setShowProcessMenu] = useState(false)
   const [archiving, setArchiving] = useState(false)
   const [showFSDMarkers, setShowFSDMarkers] = useState(true)
+  const [importing, setImporting] = useState(false)
+  const [importMsg, setImportMsg] = useState("")
   const fsdEventLayers = useRef<L.Layer[]>([])
 
   // ── Init map ──
@@ -294,8 +302,16 @@ export default function Drives() {
 
     for (const r of routes) {
       if (r.points && r.points.length > 1) {
+        // Tessie-imported drives render in dashed purple so the user can
+        // tell at a glance which routes came from the API import vs the
+        // dashcam SEI stream.
+        const isTessie = r.source === "tessie"
         const line = L.polyline(r.points as L.LatLngExpression[], {
-          color: "#3b82f6", weight: 2, opacity: 0.4, smoothFactor: 1.5,
+          color: isTessie ? "#a855f7" : "#3b82f6",
+          weight: 2,
+          opacity: isTessie ? 0.55 : 0.4,
+          smoothFactor: 1.2,
+          ...(isTessie ? { dashArray: "6 4" } : {}),
         }).addTo(map)
           ; (line as any)._driveId = r.id
         line.on("click", () => selectDrive(r.id))
@@ -380,14 +396,14 @@ export default function Drives() {
             const segPts = latlngs.slice(segStart, i)
             if (segPts.length >= 2) {
               const color = prevEngaged ? "#22c55e" : "#3b82f6" // green for FSD, blue for manual
-              const line = L.polyline(segPts, { color, weight: 4, opacity: 1, smoothFactor: 1 }).addTo(map)
+              const line = L.polyline(segPts, { color, weight: 4, opacity: 1, smoothFactor: 1.2 }).addTo(map)
               selectionLayers.current.push(line)
             }
             segStart = Math.max(i - 1, 0) // overlap by 1 point for continuity
           }
         }
       } else {
-        const route = L.polyline(latlngs, { color: "#3b82f6", weight: 4, opacity: 1, smoothFactor: 1 }).addTo(map)
+        const route = L.polyline(latlngs, { color: "#3b82f6", weight: 4, opacity: 1, smoothFactor: 1.2 }).addTo(map)
         selectionLayers.current.push(route)
       }
 
@@ -523,6 +539,16 @@ export default function Drives() {
         const s = await fetch("/api/drives/status")
         const data = await s.json()
         setArchiving(!!data.archiving)
+        setProcessing((prev) => {
+          if (!prev && data.running) return true
+          if (prev && !data.running) { loadDrives(); return false }
+          return prev
+        })
+        setImporting((prev) => {
+          if (!prev && data.importing) return true
+          if (prev && !data.importing) { loadDrives(); return false }
+          return prev
+        })
       } catch { /* ignore */ }
     }
     checkArchive()
@@ -571,15 +597,42 @@ export default function Drives() {
 
   // ── Upload / Download ──
   async function handleUpload(file: File) {
+    setImporting(true)
+    setImportMsg("Uploading…")
     try {
-      const text = await file.text()
       const res = await fetch("/api/drives/data/upload", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: text,
+        body: file,
       })
-      if (res.ok) loadDrives()
-    } catch { /* ignore */ }
+      if (!res.ok) {
+        const err = await res.json().catch(() => null)
+        setImportMsg(err?.error || `Upload failed (${res.status})`)
+        setImporting(false)
+        setTimeout(() => setImportMsg(""), 5000)
+        return
+      }
+      // File is on the Pi — poll until background decode finishes
+      setImportMsg("Processing import on device…")
+      const poll = setInterval(async () => {
+        try {
+          const s = await fetch("/api/drives/status")
+          const data = await s.json()
+          if (!data.importing) {
+            clearInterval(poll)
+            setImporting(false)
+            const count = data.routes_count ?? 0
+            setImportMsg(`Import complete — ${count} drive${count !== 1 ? "s" : ""} loaded`)
+            loadDrives()
+            setTimeout(() => setImportMsg(""), 5000)
+          }
+        } catch { /* keep polling */ }
+      }, 3000)
+    } catch (err) {
+      setImportMsg(`Upload failed — ${err instanceof Error ? err.message : "could not reach server"}`)
+      setImporting(false)
+      setTimeout(() => setImportMsg(""), 5000)
+    }
   }
 
   // ── Derived ──
@@ -684,11 +737,11 @@ export default function Drives() {
           <div className="relative">
             <button
               onClick={() => setShowProcessMenu(!showProcessMenu)}
-              disabled={processing}
+              disabled={processing || importing}
               className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-white/10 disabled:opacity-50"
             >
               {processing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
-              Process
+              {processing ? "Processing…" : "Process"}
             </button>
             {showProcessMenu && !processing && (
               <div className="absolute right-0 z-[1100] mt-1 w-56 rounded-lg border border-white/10 bg-slate-950/95 py-1 shadow-xl backdrop-blur-sm">
@@ -730,14 +783,15 @@ export default function Drives() {
             <Download className="h-3 w-3" /> Export
           </a>
           {/* Upload */}
-          <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-white/10">
-            <Upload className="h-3 w-3" /> Import
+          <button onClick={() => fileInputRef.current?.click()} disabled={importing} className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-white/10 disabled:opacity-50 disabled:pointer-events-none">
+            {importing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Upload className="h-3 w-3" />} {importing ? "Importing…" : "Import"}
           </button>
           <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(f) }} />
         </div>
       </div>
 
       {processMsg && <p className="text-xs text-amber-400">{processMsg}</p>}
+      {importMsg && <p className={cn("text-xs", importMsg.startsWith("Import complete") ? "text-emerald-400" : importMsg.startsWith("Upload failed") || importMsg.startsWith("Import failed") ? "text-red-400" : "text-amber-400")}>{importMsg}</p>}
 
       {/* Main content: sidebar + map */}
       <div className="relative flex flex-1 gap-4 overflow-hidden rounded-xl border border-white/5">
@@ -823,6 +877,13 @@ export default function Drives() {
                             </span>
                           )}
                         </div>
+                        {d.source === "tessie" && (
+                          <div className="mt-0.5">
+                            <span className="inline-block rounded-full bg-purple-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-purple-300">
+                              Tessie
+                            </span>
+                          </div>
+                        )}
                         <div className="mt-1 flex gap-x-3 text-[11px] text-slate-500">
                           <span>{dist(d)}</span>
                           <span>{formatDuration(d.durationMs)}</span>
@@ -969,6 +1030,13 @@ export default function Drives() {
                           </span>
                         )}
                       </div>
+                      {d.source === "tessie" && (
+                        <div className="mt-0.5">
+                          <span className="inline-block rounded-full bg-purple-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-purple-300">
+                            Tessie
+                          </span>
+                        </div>
+                      )}
                       <div className="mt-1 flex gap-x-3 text-[11px] text-slate-500">
                         <span>{dist(d)}</span>
                         <span>{formatDuration(d.durationMs)}</span>

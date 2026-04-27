@@ -63,6 +63,35 @@ function update_fstab {
 # Will check for USB Drive before running sd card
 if [ -n "$DATA_DRIVE" ]
 then
+  # Safety guards before we get anywhere near parted/wipefs/mkfs.
+  # DATA_DRIVE comes from the setup wizard; a misconfigured wizard or
+  # direct invocation with a stale env var has already nuked user data
+  # more than once in similar projects. Refuse clearly instead of
+  # silently aiming destructive tools at the wrong device.
+  if [ ! -b "$DATA_DRIVE" ]; then
+    log_progress "STOP: DATA_DRIVE ($DATA_DRIVE) is not a block device. Refusing to continue."
+    exit 1
+  fi
+  # Resolve the disk currently holding /, and compare against BOOT_DISK
+  # (set by setup-sentryusb). If DATA_DRIVE equals either, bail out.
+  ROOT_SOURCE=$(findmnt -no SOURCE / 2>/dev/null || true)
+  ROOT_DISK=""
+  if [ -n "$ROOT_SOURCE" ]; then
+    ROOT_PKNAME=$(lsblk -no PKNAME "$ROOT_SOURCE" 2>/dev/null | head -n1 || true)
+    if [ -n "$ROOT_PKNAME" ]; then
+      ROOT_DISK="/dev/$ROOT_PKNAME"
+    else
+      # $ROOT_SOURCE is already a whole disk (loop/nbd/etc.)
+      ROOT_DISK="$ROOT_SOURCE"
+    fi
+  fi
+  for protected in "${BOOT_DISK:-}" "$ROOT_DISK"; do
+    [ -z "$protected" ] && continue
+    if [ "$DATA_DRIVE" = "$protected" ]; then
+      log_progress "STOP: DATA_DRIVE ($DATA_DRIVE) is the boot/OS disk ($protected). Refusing to wipe."
+      exit 1
+    fi
+  done
   log_progress "DATA_DRIVE is set to $DATA_DRIVE"
   PARTITION_PREFIX=$(partition_prefix_for "$DATA_DRIVE")
   P1="${DATA_DRIVE}${PARTITION_PREFIX}1"

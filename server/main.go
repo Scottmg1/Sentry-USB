@@ -7,7 +7,9 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
+	"runtime/debug"
 
 	"github.com/Scottmg1/Sentry-USB/server/api"
 	"github.com/Scottmg1/Sentry-USB/server/drives"
@@ -22,6 +24,23 @@ func main() {
 	dev := flag.Bool("dev", false, "Development mode (don't serve embedded static files)")
 	staticDir := flag.String("static", "", "Path to static files directory (overrides embedded)")
 	flag.Parse()
+
+	// Set a soft memory limit to help the GC be more aggressive on
+	// memory-constrained Pis (512MB–1GB RAM). GOMEMLIMIT is a soft
+	// target — the runtime will try harder to return memory to the OS
+	// before reaching this limit, reducing OOM risk.
+	if os.Getenv("GOMEMLIMIT") == "" {
+		debug.SetMemoryLimit(200 * 1024 * 1024) // 200MB soft limit
+	}
+
+	// pprof debug endpoint — localhost only so it's not exposed on the network.
+	// Access via: curl http://localhost:6060/debug/pprof/heap > heap.prof
+	go func() {
+		log.Printf("pprof listening on localhost:6060")
+		if err := http.ListenAndServe("127.0.0.1:6060", nil); err != nil {
+			log.Printf("pprof server failed: %v", err)
+		}
+	}()
 
 	// Self-heal: update peripheral files (scripts, BLE daemon, etc.) if the
 	// binary is newer than the last migration.  Runs in the background so the
@@ -40,13 +59,22 @@ func main() {
 	// API routes
 	api.RegisterRoutes(mux, hub)
 
-	// Drive map routes
+	// Drive map routes. The drive aggregate backfill on a first-boot-
+	// after-upgrade can take 10+ minutes on a 512MB Pi; it owns the
+	// nudge loop directly (same tier as Archive / Drive Processing) and
+	// is reflected in the webui manager's isBusy predicate below so
+	// user Stop / timer expiry cannot interrupt it.
 	driveHandlers := api.NewDriveHandlers(drives.DefaultDataPath, hub)
 	api.RegisterDriveRoutes(mux, driveHandlers)
 
-	// Keep-awake manager (user-controlled from web UI)
+	// Keep-awake manager (user-controlled from web UI). isBusy returns
+	// true whenever a higher-priority system op owns the nudge loop;
+	// webui Start queues as pending, and webui Stop / expiry leaves the
+	// nudge alone.
 	kam := api.NewKeepAwakeManager(func() bool {
-		return api.IsArchiving() || driveHandlers.Processor().IsRunning()
+		return api.IsArchiving() ||
+			driveHandlers.Processor().IsRunning() ||
+			driveHandlers.Store().MigrationStatus().Active
 	})
 	api.RegisterKeepAwakeRoutes(mux, kam)
 
@@ -54,6 +82,9 @@ func main() {
 	awm := api.NewAwayModeManager()
 	awm.RestoreFromFile()
 	api.RegisterAwayModeRoutes(mux, awm)
+
+	// Memory debug page (sentryusb.local/memory)
+	mux.HandleFunc("GET /memory", api.MemoryPage)
 
 	// WebSocket endpoint
 	mux.HandleFunc("/api/ws", func(w http.ResponseWriter, r *http.Request) {

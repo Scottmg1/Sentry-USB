@@ -14,6 +14,73 @@ import (
 	"strings"
 )
 
+// Limits for zip downloads. Depth guards against pathological trees
+// (including bind-mount loops filepath.Walk will happily descend).
+// Entry/byte caps guard against runaway output if the source grows
+// mid-walk or the user aims the endpoint at an unexpectedly huge tree.
+const (
+	maxZipDepth         = 64
+	maxZipEntries       = 200000
+	maxZipBytes   int64 = 50 << 30 // 50 GiB — typed so it doesn't overflow 32-bit int on armv7
+)
+
+// writeZipTree walks root, adding every regular file to zw under
+// paths relative to relBase. It enforces depth/entry/byte limits and
+// surfaces io.Copy errors instead of silently producing a truncated
+// archive. Errors are returned once the caller has already started
+// streaming headers, so the best we can do is abort the walk and log;
+// the zip.Writer close will then emit a truncated central directory
+// that clients will reject rather than silently accept as "success".
+func writeZipTree(zw *zip.Writer, root, relBase string) error {
+	entries := 0
+	var bytesWritten int64
+	rootDepth := strings.Count(filepath.Clean(root), string(filepath.Separator))
+
+	return filepath.Walk(root, func(path string, fi os.FileInfo, err error) error {
+		if err != nil {
+			log.Printf("[zip] walk error at %s: %v", path, err)
+			return nil
+		}
+		depth := strings.Count(filepath.Clean(path), string(filepath.Separator)) - rootDepth
+		if depth > maxZipDepth {
+			log.Printf("[zip] depth limit (%d) exceeded at %s; skipping", maxZipDepth, path)
+			return filepath.SkipDir
+		}
+		if fi.IsDir() {
+			return nil
+		}
+		if entries >= maxZipEntries {
+			return fmt.Errorf("zip entry limit (%d) exceeded", maxZipEntries)
+		}
+		if bytesWritten >= maxZipBytes {
+			return fmt.Errorf("zip byte limit (%d) exceeded", maxZipBytes)
+		}
+
+		rel, err := filepath.Rel(relBase, path)
+		if err != nil {
+			log.Printf("[zip] rel error for %s: %v", path, err)
+			return nil
+		}
+		zf, err := zw.Create(rel)
+		if err != nil {
+			return fmt.Errorf("zip create %s: %w", rel, err)
+		}
+		f, err := os.Open(path)
+		if err != nil {
+			log.Printf("[zip] open %s: %v", path, err)
+			return nil
+		}
+		n, copyErr := io.Copy(zf, f)
+		f.Close()
+		bytesWritten += n
+		entries++
+		if copyErr != nil {
+			return fmt.Errorf("zip copy %s: %w", rel, copyErr)
+		}
+		return nil
+	})
+}
+
 type fileEntry struct {
 	Name    string `json:"name"`
 	Path    string `json:"path"`
@@ -295,6 +362,16 @@ func (h *handlers) deleteFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// If the deleted path was under /mutable/Wraps, create a tombstone so
+	// archiveloop's reverse-sync doesn't resurrect it from the wraps disk.
+	if strings.HasPrefix(cleanPath, "/mutable/Wraps/") {
+		tombstoneDir := "/mutable/.wraps_deleted"
+		if err := os.MkdirAll(tombstoneDir, 0755); err == nil {
+			baseName := filepath.Base(cleanPath)
+			_ = os.WriteFile(filepath.Join(tombstoneDir, baseName), nil, 0644)
+		}
+	}
+
 	// If deleted path was under SavedClips or SentryClips, clean up
 	// matching symlinks in snapshot directories so those clips won't
 	// be re-synced on next archive. RecentClips are left untouched.
@@ -306,7 +383,9 @@ func (h *handlers) deleteFile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) uploadFile(w http.ResponseWriter, r *http.Request) {
-	r.ParseMultipartForm(500 << 20) // 500MB max
+	// 10MB in-memory limit — Go temp-files anything beyond this.
+	// Keeps RAM safe on 512MB Pi devices while still allowing large uploads.
+	r.ParseMultipartForm(10 << 20)
 
 	file, header, err := r.FormFile("file")
 	if err != nil {
@@ -410,26 +489,9 @@ func (h *handlers) downloadZip(w http.ResponseWriter, r *http.Request) {
 	zw := zip.NewWriter(w)
 	defer zw.Close()
 
-	filepath.Walk(cleanPath, func(path string, fi os.FileInfo, err error) error {
-		if err != nil || fi.IsDir() {
-			return nil
-		}
-		rel, err := filepath.Rel(cleanPath, path)
-		if err != nil {
-			return nil
-		}
-		zf, err := zw.Create(rel)
-		if err != nil {
-			return nil
-		}
-		f, err := os.Open(path)
-		if err != nil {
-			return nil
-		}
-		defer f.Close()
-		io.Copy(zf, f)
-		return nil
-	})
+	if err := writeZipTree(zw, cleanPath, cleanPath); err != nil {
+		log.Printf("[zip] %s aborted: %v", cleanPath, err)
+	}
 }
 
 func (h *handlers) downloadZipMulti(w http.ResponseWriter, r *http.Request) {
@@ -471,36 +533,26 @@ func (h *handlers) downloadZipMulti(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if info.IsDir() {
-			filepath.Walk(cp, func(path string, fi os.FileInfo, err error) error {
-				if err != nil || fi.IsDir() {
-					return nil
-				}
-				rel, err := filepath.Rel(filepath.Dir(cp), path)
-				if err != nil {
-					return nil
-				}
-				zf, err := zw.Create(rel)
-				if err != nil {
-					return nil
-				}
-				f, err := os.Open(path)
-				if err != nil {
-					return nil
-				}
-				defer f.Close()
-				io.Copy(zf, f)
-				return nil
-			})
+			if err := writeZipTree(zw, cp, filepath.Dir(cp)); err != nil {
+				log.Printf("[zip] %s aborted: %v", cp, err)
+				return
+			}
 		} else {
 			zf, err := zw.Create(filepath.Base(cp))
 			if err != nil {
-				continue
+				log.Printf("[zip] create %s: %v", cp, err)
+				return
 			}
 			f, err := os.Open(cp)
 			if err != nil {
+				log.Printf("[zip] open %s: %v", cp, err)
 				continue
 			}
-			io.Copy(zf, f)
+			if _, err := io.Copy(zf, f); err != nil {
+				f.Close()
+				log.Printf("[zip] copy %s: %v", cp, err)
+				return
+			}
 			f.Close()
 		}
 	}

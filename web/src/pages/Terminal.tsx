@@ -236,8 +236,10 @@ export default function TerminalPage() {
 
                     <form onSubmit={handleSubmit} className="space-y-3">
                         <div>
-                            <label className="mb-1 block text-xs font-medium text-slate-400">Username</label>
+                            <label htmlFor="ssh-username" className="mb-1 block text-xs font-medium text-slate-400">Username</label>
                             <input
+                                id="ssh-username"
+                                name="username"
                                 type="text"
                                 value={username}
                                 onChange={(e) => setUsername(e.target.value)}
@@ -248,8 +250,10 @@ export default function TerminalPage() {
                             />
                         </div>
                         <div>
-                            <label className="mb-1 block text-xs font-medium text-slate-400">Password</label>
+                            <label htmlFor="ssh-password" className="mb-1 block text-xs font-medium text-slate-400">Password</label>
                             <input
+                                id="ssh-password"
+                                name="password"
                                 type="password"
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}

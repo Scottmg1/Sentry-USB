@@ -15,6 +15,7 @@ const SCROLL_THRESHOLD = 60
 //
 // Shell logs:  "Fri 20 Mar 21:27:22 PDT 2026: some message"
 // Go logs:     "Mon 21 Mar 14:30:45 UTC 2026: [drive-map] message"
+// Format:       Day DD Mon HH:MM:SS TZ YYYY:
 //
 // We extract the time portion (HH:MM:SS), an optional [tag], and the message,
 // then classify the level by keywords so we can color-code it.

@@ -57,6 +57,7 @@ func RegisterRoutes(mux *http.ServeMux, hub *ws.Hub) {
 
 	// System actions
 	mux.HandleFunc("POST /api/system/reboot", h.reboot)
+	mux.HandleFunc("POST /api/system/shutdown", h.shutdown)
 	mux.HandleFunc("POST /api/system/toggle-drives", h.toggleDrives)
 	mux.HandleFunc("POST /api/system/trigger-sync", h.triggerSync)
 	mux.HandleFunc("POST /api/system/ble-pair", h.blePair)
@@ -138,6 +139,9 @@ func RegisterRoutes(mux *http.ServeMux, hub *ws.Hub) {
 	mux.HandleFunc("POST /api/wraps/admin/validate", h.communityWrapsAdminValidate)
 	mux.HandleFunc("PUT /api/wraps/admin/edit/{code}", h.communityWrapsAdminEdit)
 	mux.HandleFunc("DELETE /api/wraps/admin/delete/{code}", h.communityWrapsAdminDelete)
+
+	// Memory debug
+	mux.HandleFunc("GET /api/memory", h.memoryStats)
 
 	// Config backup & restore
 	mux.HandleFunc("POST /api/system/backup", h.createBackup)

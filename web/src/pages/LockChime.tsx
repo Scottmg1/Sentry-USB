@@ -23,11 +23,12 @@ import {
   Pencil,
   Unplug,
 } from "lucide-react"
+import MultiFileUploader, { type FileEntry, useObjectUrl } from "../components/upload/MultiFileUploader"
 
 const API_BASE = "/api"
-const MAX_DURATION_SECONDS = 7
-const MAX_FILE_BYTES = 5 * 1024 * 1024 // 5 MB
-const COMMUNITY_PAGE_SIZE = 20
+const MAX_DURATION_SECONDS = 5
+const MAX_FILE_BYTES = 1 * 1024 * 1024 // 1 MB
+const COMMUNITY_PAGE_SIZE = 18
 const LIBRARY_PAGE_SIZE = 15
 
 interface SoundEntry {
@@ -81,25 +82,115 @@ function formatDuration(seconds: number): string {
   return `${seconds.toFixed(1)}s`
 }
 
-async function getWavDuration(file: File): Promise<number> {
+async function decodeAudio(file: File): Promise<AudioBuffer> {
   const buffer = await file.arrayBuffer()
   const ctx = new AudioContext()
   try {
-    const decoded = await ctx.decodeAudioData(buffer)
-    return decoded.duration
+    return await ctx.decodeAudioData(buffer)
   } finally {
     ctx.close()
   }
+}
+
+async function getAudioDuration(file: File): Promise<number> {
+  const decoded = await decodeAudio(file)
+  return decoded.duration
+}
+
+const TARGET_SAMPLE_RATE = 44100
+
+// Mix down to mono by averaging all channels
+function mixToMono(audioBuffer: AudioBuffer): Float32Array {
+  const length = audioBuffer.length
+  const mono = new Float32Array(length)
+  const numChannels = audioBuffer.numberOfChannels
+  for (let ch = 0; ch < numChannels; ch++) {
+    const channelData = audioBuffer.getChannelData(ch)
+    for (let i = 0; i < length; i++) {
+      mono[i] += channelData[i]
+    }
+  }
+  if (numChannels > 1) {
+    for (let i = 0; i < length; i++) {
+      mono[i] /= numChannels
+    }
+  }
+  return mono
+}
+
+// Resample mono audio to target sample rate using OfflineAudioContext
+async function resampleMono(samples: Float32Array, srcRate: number, targetRate: number): Promise<Float32Array> {
+  if (srcRate === targetRate) return samples
+
+  const duration = samples.length / srcRate
+  const offlineCtx = new OfflineAudioContext(1, Math.ceil(duration * targetRate), targetRate)
+  const buf = offlineCtx.createBuffer(1, samples.length, srcRate)
+  buf.getChannelData(0).set(samples)
+  const src = offlineCtx.createBufferSource()
+  src.buffer = buf
+  src.connect(offlineCtx.destination)
+  src.start()
+  const rendered = await offlineCtx.startRendering()
+  return rendered.getChannelData(0)
+}
+
+// Encode mono Float32Array samples to 16-bit PCM WAV at given sample rate
+function encodeMonoWav(samples: Float32Array, sampleRate: number): Blob {
+  const bitsPerSample = 16
+  const numChannels = 1
+  const pcm = new Int16Array(samples.length)
+  for (let i = 0; i < samples.length; i++) {
+    const s = Math.max(-1, Math.min(1, samples[i]))
+    pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff
+  }
+
+  const dataSize = pcm.length * 2
+  const buffer = new ArrayBuffer(44 + dataSize)
+  const v = new DataView(buffer)
+
+  // RIFF header
+  writeStr(v, 0, "RIFF")
+  v.setUint32(4, 36 + dataSize, true)
+  writeStr(v, 8, "WAVE")
+  // fmt chunk
+  writeStr(v, 12, "fmt ")
+  v.setUint32(16, 16, true)
+  v.setUint16(20, 1, true) // PCM
+  v.setUint16(22, numChannels, true)
+  v.setUint32(24, sampleRate, true)
+  v.setUint32(28, sampleRate * numChannels * bitsPerSample / 8, true)
+  v.setUint16(32, numChannels * bitsPerSample / 8, true)
+  v.setUint16(34, bitsPerSample, true)
+  // data chunk
+  writeStr(v, 36, "data")
+  v.setUint32(40, dataSize, true)
+  new Int16Array(buffer, 44).set(pcm)
+
+  return new Blob([buffer], { type: "audio/wav" })
+}
+
+function writeStr(view: DataView, offset: number, str: string) {
+  for (let i = 0; i < str.length; i++) {
+    view.setUint8(offset + i, str.charCodeAt(i))
+  }
+}
+
+// Convert any audio file to mono 44.1kHz 16-bit WAV
+async function convertToWav(file: File): Promise<File> {
+  const audioBuffer = await decodeAudio(file)
+  const mono = mixToMono(audioBuffer)
+  const resampled = await resampleMono(mono, audioBuffer.sampleRate, TARGET_SAMPLE_RATE)
+  const wavBlob = encodeMonoWav(resampled, TARGET_SAMPLE_RATE)
+  const baseName = file.name.replace(/\.[^/.]+$/, "")
+  return new File([wavBlob], baseName + ".wav", { type: "audio/wav" })
 }
 
 // ─────────────────────────────────────────────────────────────
 // Main component
 // ─────────────────────────────────────────────────────────────
 
-export default function LockChime() {
+export default function LockChime({ adminPasscode }: { adminPasscode: string | null; onAdminPasscodeChange: (v: string | null) => void }) {
   const [tab, setTab] = useState<Tab>("library")
-  const [adminPasscode, setAdminPasscode] = useState<string | null>(null)
-  const [showPasscodePrompt, setShowPasscodePrompt] = useState(false)
   const [volume, setVolume] = useState(() => {
     const saved = localStorage.getItem("lockchime-preview-volume")
     return saved !== null ? Number(saved) : 0.5
@@ -134,15 +225,6 @@ export default function LockChime() {
           Community
         </button>
 
-        {adminPasscode && (
-          <div className="ml-auto flex items-center gap-1.5 rounded bg-red-500/10 border border-red-500/20 px-2.5 py-1 text-xs text-red-400">
-            <Shield className="h-3 w-3" />
-            Admin Mode
-            <button onClick={() => setAdminPasscode(null)} className="ml-1 hover:text-red-300">
-              <X className="h-3 w-3" />
-            </button>
-          </div>
-        )}
       </div>
 
       {/* USB Disconnect Notice */}
@@ -178,89 +260,10 @@ export default function LockChime() {
         <CommunityTab adminPasscode={adminPasscode} volume={volume} />
       )}
 
-      {/* Passcode modal */}
-      {showPasscodePrompt && (
-        <PasscodeModal
-          onSuccess={(passcode) => {
-            setAdminPasscode(passcode)
-            setShowPasscodePrompt(false)
-          }}
-          onClose={() => setShowPasscodePrompt(false)}
-        />
-      )}
     </div>
   )
 }
 
-// ─────────────────────────────────────────────────────────────
-// Passcode modal (reuses the same pattern as Community Wraps)
-// ─────────────────────────────────────────────────────────────
-
-function PasscodeModal({ onSuccess, onClose }: { onSuccess: (passcode: string) => void; onClose: () => void }) {
-  const [input, setInput] = useState("")
-  const [error, setError] = useState<string | null>(null)
-  const [validating, setValidating] = useState(false)
-
-  const handleValidate = async () => {
-    if (!input.trim()) return
-    setValidating(true)
-    setError(null)
-    try {
-      const res = await fetch(`${API_BASE}/lockchime/community/admin/validate`, {
-        method: "POST",
-        headers: { "x-passcode": input.trim() },
-      })
-      if (res.ok) {
-        onSuccess(input.trim())
-      } else {
-        setError("Invalid passcode")
-        setInput("")
-      }
-    } catch {
-      setError("Connection failed")
-    } finally {
-      setValidating(false)
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
-      <div
-        className="w-full max-w-sm overflow-hidden rounded-2xl border border-white/10 bg-slate-900 p-6"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="text-lg font-semibold text-slate-100">Admin Access</h3>
-        <p className="mt-1 text-xs text-slate-500">Enter the admin passcode to continue</p>
-        <input
-          type="password"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleValidate()}
-          placeholder="Passcode"
-          autoFocus
-          className="mt-4 w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:border-violet-500/50 focus:outline-none"
-        />
-        {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
-        <div className="mt-4 flex gap-3">
-          <button
-            onClick={handleValidate}
-            disabled={!input.trim() || validating}
-            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-violet-500 disabled:opacity-50"
-          >
-            {validating && <Loader2 className="h-4 w-4 animate-spin" />}
-            Validate
-          </button>
-          <button
-            onClick={onClose}
-            className="rounded-lg border border-white/10 px-4 py-2.5 text-sm text-slate-400 transition-colors hover:bg-white/5"
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
 
 // ─────────────────────────────────────────────────────────────
 // Toast component (shared)
@@ -387,14 +390,17 @@ function MyLibraryTab({ volume }: { volume: number }) {
     }
     audioRef.current?.pause()
     const url = `${API_BASE}/files/download?path=/mutable/LockChime/${encodeURIComponent(name)}`
-    const audio = new Audio(url)
-    audio.volume = volume
-    audioRef.current = audio
+    // Reuse a single Audio element — creating new Audio() on each tap breaks the
+    // user-gesture chain on mobile Safari, causing play() to be rejected.
+    if (!audioRef.current) audioRef.current = new Audio()
+    const audio = audioRef.current
     audio.onended = () => setPlayingName(null)
     audio.onerror = () => {
       setPlayingName(null)
       showToast("Could not play sound", "error")
     }
+    audio.src = url
+    audio.volume = volume
     audio.play().catch(() => {
       setPlayingName(null)
       showToast("Could not play sound", "error")
@@ -403,27 +409,33 @@ function MyLibraryTab({ volume }: { volume: number }) {
   }
 
   async function handleFileSelected(file: File) {
-    if (!file.name.toLowerCase().endsWith(".wav")) {
-      showToast("Only .wav files are supported", "error")
-      return
-    }
-    if (file.size > MAX_FILE_BYTES) {
-      showToast("File is too large (max 5 MB)", "error")
+    if (!file.type.startsWith("audio/")) {
+      showToast("Only audio files are supported", "error")
       return
     }
     try {
-      const duration = await getWavDuration(file)
+      const duration = await getAudioDuration(file)
       if (duration > MAX_DURATION_SECONDS) {
-        showToast(`Sound is ${duration.toFixed(1)}s — Tesla requires ${MAX_DURATION_SECONDS}s or less`, "error")
+        showToast(`Sound is ${duration.toFixed(1)}s — must be ${MAX_DURATION_SECONDS}s or less`, "error")
         return
       }
     } catch {
-      showToast("Could not read WAV file — is it a valid .wav?", "error")
+      showToast("Unsupported audio format", "error")
       return
     }
-    // Show rename dialog before uploading
-    setPendingFile(file)
-    setPendingName(file.name.replace(/\.wav$/i, ""))
+    // Convert to WAV if needed, then check converted size
+    try {
+      const wavFile = await convertToWav(file)
+      if (wavFile.size > MAX_FILE_BYTES) {
+        showToast(`Converted WAV is too large (${(wavFile.size / 1024).toFixed(0)} KB) — max 1 MB`, "error")
+        return
+      }
+      setPendingFile(wavFile)
+    } catch {
+      showToast("Failed to convert audio to WAV", "error")
+      return
+    }
+    setPendingName(file.name.replace(/\.[^/.]+$/, ""))
   }
 
   async function handleUploadConfirm() {
@@ -1130,8 +1142,8 @@ function MyLibraryTab({ volume }: { volume: number }) {
               <>
                 <Upload className="h-8 w-8 text-slate-600" />
                 <div>
-                  <p className="text-sm font-medium text-slate-300">Drop a .wav file or click to browse</p>
-                  <p className="mt-1 text-xs text-slate-500">WAV only · max {MAX_DURATION_SECONDS}s · max 5 MB</p>
+                  <p className="text-sm font-medium text-slate-300">Drop an audio file or click to browse</p>
+                  <p className="mt-1 text-xs text-slate-500">Any audio format · max {MAX_DURATION_SECONDS}s · max 1 MB WAV · auto-converted</p>
                 </div>
               </>
             )}
@@ -1141,7 +1153,7 @@ function MyLibraryTab({ volume }: { volume: number }) {
       <input
         ref={fileInputRef}
         type="file"
-        accept=".wav,audio/wav,audio/x-wav"
+        accept="audio/*"
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0]
@@ -1274,6 +1286,26 @@ function CommunityTab({ adminPasscode, volume }: { adminPasscode: string | null;
   )
 }
 
+function useFullRows<T>(items: T[], gridRef: React.RefObject<HTMLDivElement | null>): T[] {
+  const [cols, setCols] = useState(0)
+  useEffect(() => {
+    const el = gridRef.current
+    if (!el) return
+    const detect = () => {
+      const style = getComputedStyle(el)
+      const c = style.gridTemplateColumns.split(" ").length
+      setCols(c)
+    }
+    detect()
+    const ro = new ResizeObserver(detect)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [gridRef])
+  if (cols === 0 || items.length === 0) return items
+  const fullRowCount = Math.floor(items.length / cols) * cols
+  return fullRowCount > 0 ? items.slice(0, fullRowCount) : items
+}
+
 function CommunityBrowse({ adminPasscode, volume }: { adminPasscode: string | null; volume: number }) {
   const [sounds, setSounds] = useState<CommunitySound[]>([])
   const [total, setTotal] = useState(0)
@@ -1288,6 +1320,8 @@ function CommunityBrowse({ adminPasscode, volume }: { adminPasscode: string | nu
   const [editingSound, setEditingSound] = useState<CommunitySound | null>(null)
   const [deletingSound, setDeletingSound] = useState<CommunitySound | null>(null)
   const { showToast, ToastView } = useToast()
+  const gridRef = useRef<HTMLDivElement>(null)
+  const visibleSounds = useFullRows(sounds, gridRef)
 
   useEffect(() => {
     return () => { audioRef.current?.pause() }
@@ -1301,14 +1335,17 @@ function CommunityBrowse({ adminPasscode, volume }: { adminPasscode: string | nu
     }
     audioRef.current?.pause()
     const url = `${API_BASE}/lockchime/community/stream/${code}`
-    const audio = new Audio(url)
-    audio.volume = volume
-    audioRef.current = audio
+    // Reuse a single Audio element — creating new Audio() on each tap breaks the
+    // user-gesture chain on mobile Safari, causing play() to be rejected.
+    if (!audioRef.current) audioRef.current = new Audio()
+    const audio = audioRef.current
     audio.onended = () => setPlayingCode(null)
     audio.onerror = () => {
       setPlayingCode(null)
       showToast("Could not play preview", "error")
     }
+    audio.src = url
+    audio.volume = volume
     audio.play().catch(() => {
       setPlayingCode(null)
       showToast("Could not play preview", "error")
@@ -1352,7 +1389,9 @@ function CommunityBrowse({ adminPasscode, volume }: { adminPasscode: string | nu
   async function handleDownload(sound: CommunitySound) {
     setDownloadingCode(sound.code)
     try {
-      const res = await fetch(`${API_BASE}/lockchime/community/download/${sound.code}`, { method: "POST" })
+      const headers: Record<string, string> = {}
+      if (adminPasscode) headers["x-passcode"] = adminPasscode
+      const res = await fetch(`${API_BASE}/lockchime/community/download/${sound.code}`, { method: "POST", headers })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
       showToast(`Downloaded "${sound.name}" to your library`, "success")
@@ -1447,8 +1486,8 @@ function CommunityBrowse({ adminPasscode, volume }: { adminPasscode: string | nu
       )}
 
       {!loading && !error && sounds.length > 0 && (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {sounds.map((sound) => (
+        <div ref={gridRef} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {visibleSounds.map((sound) => (
             <div
               key={sound.code}
               className="group relative rounded-xl border border-white/10 bg-white/[0.02] p-4 transition-colors hover:bg-white/[0.04]"
@@ -1609,158 +1648,136 @@ function EditSoundModal({ sound, onSave, onClose }: { sound: CommunitySound; onS
 }
 
 function CommunityUpload({ adminPasscode }: { adminPasscode: string | null }) {
-  const [file, setFile] = useState<File | null>(null)
-  const [name, setName] = useState("")
-  const [uploading, setUploading] = useState(false)
-  const [duration, setDuration] = useState<number | null>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const { showToast, ToastView } = useToast()
+  const { ToastView } = useToast()
 
-  async function handleFile(f: File) {
-    if (!f.name.toLowerCase().endsWith(".wav")) {
-      showToast("Only .wav files are supported", "error")
-      return
-    }
-    if (f.size > MAX_FILE_BYTES) {
-      showToast("File is too large (max 5 MB)", "error")
-      return
+  const validateFile = useCallback(async (file: File) => {
+    if (!file.type.startsWith("audio/")) {
+      return { ok: false, error: "Only audio files are supported" }
     }
     try {
-      const dur = await getWavDuration(f)
-      if (dur > MAX_DURATION_SECONDS) {
-        showToast(`Sound is ${dur.toFixed(1)}s — Tesla requires ${MAX_DURATION_SECONDS}s or less`, "error")
-        return
+      const duration = await getAudioDuration(file)
+      if (duration > MAX_DURATION_SECONDS) {
+        return { ok: false, error: `Sound is ${duration.toFixed(1)}s — must be ${MAX_DURATION_SECONDS}s or less` }
       }
-      setDuration(dur)
     } catch {
-      showToast("Could not read WAV file", "error")
-      return
+      return { ok: false, error: "Unsupported audio format" }
     }
-    setFile(f)
-    setName(f.name.replace(/\.wav$/i, ""))
-  }
+    return { ok: true }
+  }, [])
 
-  async function handleSubmit() {
-    if (!file || !name.trim()) return
-    if (name.trim().toLowerCase().replace(/\.wav$/i, "") === "lockchime") {
-      showToast("Sound name cannot be \"lockchime\" — please choose a different name", "error")
-      return
+  const handleUpload = useCallback(async (
+    entry: FileEntry,
+    onStep: (step: string) => void
+  ): Promise<{ success: boolean; message: string }> => {
+    if (!entry.name.trim()) return { success: false, message: "Name is required" }
+    if (entry.name.trim().toLowerCase() === "lockchime") {
+      return { success: false, message: 'Sound name cannot be "lockchime"' }
     }
-    setUploading(true)
+
+    onStep("Converting to WAV...")
+    let wavFile: File
     try {
-      const form = new FormData()
-      form.append("sound", file)
-      form.append("name", name.trim())
-
-      const headers: HeadersInit = {}
-      if (adminPasscode) headers["x-passcode"] = adminPasscode
-
-      const res = await fetch(`${API_BASE}/lockchime/community/upload`, {
-        method: "POST",
-        headers,
-        body: form,
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-      showToast("Sound submitted! It will appear in the library after review.", "success")
-      setFile(null)
-      setName("")
-      setDuration(null)
-      if (fileInputRef.current) fileInputRef.current.value = ""
-    } catch (e: unknown) {
-      showToast(e instanceof Error ? e.message : "Upload failed", "error")
-    } finally {
-      setUploading(false)
+      wavFile = await convertToWav(entry.file)
+    } catch {
+      return { success: false, message: "Failed to convert audio to WAV" }
     }
-  }
+    if (wavFile.size > MAX_FILE_BYTES) {
+      return { success: false, message: `Converted WAV is too large (${(wavFile.size / 1024).toFixed(0)} KB) — max 1 MB` }
+    }
+
+    onStep("Uploading sound...")
+
+    const form = new FormData()
+    form.append("sound", wavFile)
+    form.append("name", entry.name.trim())
+
+    const headers: HeadersInit = {}
+    if (adminPasscode) headers["x-passcode"] = adminPasscode
+
+    const res = await fetch(`${API_BASE}/lockchime/community/upload`, {
+      method: "POST",
+      headers,
+      body: form,
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      return { success: false, message: data.error || `HTTP ${res.status}` }
+    }
+    return { success: true, message: "Sound submitted!" }
+  }, [adminPasscode])
 
   return (
     <div className="space-y-5">
       <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 space-y-4">
-        <h3 className="text-sm font-medium text-slate-200">Share a Lock Sound</h3>
+        <h3 className="text-sm font-medium text-slate-200">Share Lock Sounds</h3>
         <p className="text-xs text-slate-500">
-          Upload a .wav file to share with the Sentry USB community. Submissions are reviewed before appearing in the library.
+          Upload audio files to share with the Sentry USB community. Any format is accepted and automatically converted to WAV. Submissions are reviewed before appearing in the library.
         </p>
 
-        {/* File selection */}
-        {!file ? (
-          <div
-            className="rounded-xl border-2 border-dashed border-white/10 hover:border-white/20 bg-white/[0.01] cursor-pointer transition-colors"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <div className="flex flex-col items-center gap-2 py-10 text-center">
-              <Upload className="h-6 w-6 text-slate-600" />
-              <p className="text-sm text-slate-400">Click to select a .wav file</p>
-              <p className="text-xs text-slate-600">Max {MAX_DURATION_SECONDS}s · max 5 MB</p>
+        <MultiFileUploader
+          accept="audio/*"
+          maxFiles={5}
+          rateLimitText="Up to 5 sounds per hour. Any audio format accepted — converted to WAV automatically."
+          accentColor="violet"
+          validateFile={validateFile}
+          renderPreview={(file) => <AudioPreview file={file} />}
+          renderFields={(entry, onChange) => (
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-400">Sound Name</label>
+              <input
+                type="text"
+                value={entry.name}
+                onChange={(e) => onChange({ name: e.target.value.slice(0, 50) })}
+                placeholder="e.g. Sci-Fi Beep"
+                className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:border-violet-500/50 focus:outline-none"
+              />
+              <p className="mt-1 text-xs text-slate-600">
+                Will be saved as <code className="text-slate-400">{entry.name.trim() || "..."}.wav</code> · {entry.name.length}/50
+              </p>
             </div>
-          </div>
-        ) : (
-          <div className="rounded-xl border border-violet-500/30 bg-violet-500/[0.06] p-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-violet-500/20">
-                <Music className="h-5 w-5 text-violet-400" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="truncate text-sm font-medium text-slate-200">{file.name}</p>
-                <p className="text-xs text-slate-500">
-                  {formatSize(file.size)}{duration !== null ? ` · ${formatDuration(duration)}` : ""}
-                </p>
-              </div>
-              <button
-                onClick={() => { setFile(null); setDuration(null); if (fileInputRef.current) fileInputRef.current.value = "" }}
-                className="text-slate-500 hover:text-slate-300"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        )}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".wav,audio/wav,audio/x-wav"
-          className="hidden"
-          onChange={(e) => {
-            const f = e.target.files?.[0]
-            if (f) handleFile(f)
-          }}
-        />
-
-        {/* Name */}
-        <div>
-          <label className="text-xs font-medium text-slate-400">Sound name</label>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            maxLength={50}
-            placeholder="e.g. Sci-Fi Beep"
-            className="mt-1 w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:border-violet-500/50 focus:outline-none"
-          />
-          <p className="mt-1 text-xs text-slate-600">{name.length}/50 characters</p>
-        </div>
-
-        {/* Submit */}
-        <button
-          onClick={handleSubmit}
-          disabled={!file || !name.trim() || uploading}
-          className="flex w-full items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-violet-500 disabled:opacity-50"
-        >
-          {uploading ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Submitting...
-            </>
-          ) : (
-            <>
-              <Upload className="h-4 w-4" />
-              Submit Sound
-            </>
           )}
-        </button>
+          isEntryReady={(entry) => entry.name.trim().length > 0}
+          onUpload={handleUpload}
+        />
       </div>
 
       {ToastView}
+    </div>
+  )
+}
+
+function AudioPreview({ file }: { file: File }) {
+  const [playing, setPlaying] = useState(false)
+  const audioRef = useRef<HTMLAudioElement>(null)
+  const url = useObjectUrl(file)
+
+  const togglePlay = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation()
+    const audio = audioRef.current
+    if (!audio) return
+    if (playing) {
+      audio.pause()
+      audio.currentTime = 0
+      setPlaying(false)
+    } else {
+      audio.play()
+      setPlaying(true)
+    }
+  }, [playing])
+
+  return (
+    <div className="flex flex-col items-center justify-center gap-1.5 p-2">
+      <button
+        onClick={togglePlay}
+        className="flex h-10 w-10 items-center justify-center rounded-full bg-violet-500/20 text-violet-400 transition-colors hover:bg-violet-500/30"
+      >
+        {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+      </button>
+      <audio
+        ref={audioRef}
+        src={url}
+        onEnded={() => setPlaying(false)}
+      />
     </div>
   )
 }

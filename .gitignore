@@ -20,4 +20,9 @@ internal/
 cmd/
 internal/
 .claude
+.worktrees/
+.superpowers/
 videos
+docs
+.gstack/
+server/sentryusb-arm64

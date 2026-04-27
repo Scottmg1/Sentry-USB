@@ -72,8 +72,14 @@ else
   }
 
   # If Tesla BLE is configured, disable the GATT daemon once for the session.
+  # Guard: only if tesla-control is actually installed — without it there is no
+  # reason to stop the GATT daemon, and doing so would break BLE connectivity.
   if [[ -n "${TESLA_BLE_VIN:+x}" ]]; then
-    ble_disable_gatt_daemon
+    if [ -x /root/bin/tesla-control ]; then
+      ble_disable_gatt_daemon
+    else
+      log "Tesla BLE: tesla-control not found at /root/bin/tesla-control — GATT daemon stays up."
+    fi
   fi
 
   # Returns a label like "Archive", "Drive Processing", "Manual (8m left)"

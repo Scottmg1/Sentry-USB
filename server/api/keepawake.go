@@ -10,6 +10,80 @@ import (
 	"time"
 )
 
+// Indirection for tests: swap these to avoid shelling out to awake_start / awake_stop.
+var (
+	startKeepAwakeFn = startKeepAwake
+	stopKeepAwakeFn  = stopKeepAwake
+
+	// expirationTickInterval drives both the expire check and the
+	// busy→idle re-arm detection. 5s keeps the handoff gap (archive /
+	// processing ending → webui nudge coming back) short enough that
+	// the car's 300s nudge cadence never notices.
+	expirationTickInterval = 5 * time.Second
+
+	// idleCheckInterval polls isBusy() while a webui request is queued
+	// waiting for archive / processing / migration to finish. Poll
+	// cadence doesn't affect correctness — 30s keeps the cost low.
+	idleCheckInterval = 30 * time.Second
+
+	// keepAwakeWantedFlagPath signals to awake_stop that at least one
+	// Go-side caller (webui / processor / migration) still wants keep-
+	// awake to stay on. awake_stop exits early when this flag is present
+	// so we don't churn Sentry Mode (Case 1/2) or the nudge / GATT radio
+	// (Case 3) during handoffs. Path kept stable for forward compat.
+	keepAwakeWantedFlagPath = "/tmp/keep_awake_webui_wanted"
+)
+
+// keepAwakeRegistry is a reference-counted set of Go-side keep-awake
+// wanters. Owners are opaque strings ("webui", "processor", "migration").
+// While the set is non-empty, keepAwakeWantedFlagPath exists and awake_stop
+// defers. Archive (bash-side) signals its presence separately via
+// /tmp/archive_status.json; awake_stop checks both.
+var (
+	keepAwakeRegistryMu sync.Mutex
+	keepAwakeRegistry   = map[string]bool{}
+)
+
+// registerKeepAwakeWant marks owner as wanting keep-awake. Idempotent per
+// owner. Creates the flag on the 0→1 transition.
+func registerKeepAwakeWant(owner string) {
+	keepAwakeRegistryMu.Lock()
+	defer keepAwakeRegistryMu.Unlock()
+	if !keepAwakeRegistry[owner] {
+		keepAwakeRegistry[owner] = true
+		if len(keepAwakeRegistry) == 1 {
+			_ = os.WriteFile(keepAwakeWantedFlagPath, []byte("1"), 0644)
+		}
+	}
+}
+
+// releaseKeepAwakeWant drops owner's want. Returns true if this was the
+// last holder (refcount reached 0) — callers use this to decide whether
+// to shell out to awake_stop at all. Idempotent per owner.
+func releaseKeepAwakeWant(owner string) (wasLast bool) {
+	keepAwakeRegistryMu.Lock()
+	defer keepAwakeRegistryMu.Unlock()
+	if !keepAwakeRegistry[owner] {
+		return len(keepAwakeRegistry) == 0
+	}
+	delete(keepAwakeRegistry, owner)
+	if len(keepAwakeRegistry) == 0 {
+		_ = os.Remove(keepAwakeWantedFlagPath)
+		return true
+	}
+	return false
+}
+
+// resetKeepAwakeRegistry clears all registrations and the flag. Called
+// from NewKeepAwakeManager on process start to wipe any stale state from
+// a crashed prior run.
+func resetKeepAwakeRegistry() {
+	keepAwakeRegistryMu.Lock()
+	defer keepAwakeRegistryMu.Unlock()
+	keepAwakeRegistry = map[string]bool{}
+	_ = os.Remove(keepAwakeWantedFlagPath)
+}
+
 // KeepAwakeState represents the current state of the webui keep-awake manager.
 type KeepAwakeState string
 
@@ -53,11 +127,24 @@ func keepAwakeReasonLabel(mode string) string {
 }
 
 // NewKeepAwakeManager creates a new manager with a function to check if the
-// system is busy (archiving or processing drives).
+// system is busy (archiving or processing drives). Also clears any stale
+// registry state left by a crashed prior run.
 func NewKeepAwakeManager(isBusy func() bool) *KeepAwakeManager {
+	resetKeepAwakeRegistry()
 	return &KeepAwakeManager{
 		state:  KeepAwakeIdle,
 		isBusy: isBusy,
+	}
+}
+
+// setState updates the state and registers / releases the "webui" slot
+// in the keep-awake registry. Must be called with m.mu held.
+func (m *KeepAwakeManager) setState(s KeepAwakeState) {
+	m.state = s
+	if s == KeepAwakeActive || s == KeepAwakePending {
+		registerKeepAwakeWant("webui")
+	} else {
+		releaseKeepAwakeWant("webui")
 	}
 }
 
@@ -70,7 +157,7 @@ func keepAwakeLog(format string, args ...interface{}) {
 	}
 	defer f.Close()
 	msg := fmt.Sprintf(format, args...)
-	fmt.Fprintf(f, "%s: [keep-awake-webui] %s\n", time.Now().Format("Mon Jan _2 15:04:05 MST 2006"), msg)
+	fmt.Fprintf(f, "%s: [keep-awake-webui] %s\n", time.Now().Format("Mon _2 Jan 15:04:05 MST 2006"), msg)
 }
 
 // Start initiates a keep-awake session. If the system is busy, it queues the
@@ -100,17 +187,17 @@ func (m *KeepAwakeManager) Start(mode string, duration time.Duration) error {
 	m.doneCh = make(chan struct{})
 
 	if m.isBusy() {
-		m.state = KeepAwakePending
+		m.setState(KeepAwakePending)
 		keepAwakeLog("Queued (mode: %s, duration: %s) — waiting for archive/processing to finish", mode, duration)
 		log.Printf("[keep-awake] Queued (mode: %s) — system busy", mode)
 		go m.waitForIdleThenStart()
 	} else {
-		m.state = KeepAwakeActive
+		m.setState(KeepAwakeActive)
 		m.startedAt = time.Now()
 		m.expiresAt = time.Now().Add(duration)
 		keepAwakeLog("Started (mode: %s, duration: %s)", mode, duration)
 		log.Printf("[keep-awake] Started (mode: %s, duration: %s)", mode, duration)
-		go startKeepAwake(keepAwakeReasonLabel(mode), m.expiresAt)
+		go startKeepAwakeFn(keepAwakeReasonLabel(mode), m.expiresAt)
 		go m.expirationWatcher()
 	}
 
@@ -147,13 +234,18 @@ func (m *KeepAwakeManager) Stop() {
 	defer m.mu.Unlock()
 
 	wasActive := m.state == KeepAwakeActive
+	busy := m.isBusy()
 	m.stopInternal()
 
-	if wasActive {
+	switch {
+	case wasActive && busy:
+		keepAwakeLog("Stopped by user — archive/processing still active, nudge left in archive's ownership")
+		log.Printf("[keep-awake] Stopped by user (busy — nudge left alone)")
+	case wasActive:
 		keepAwakeLog("Stopped by user")
 		log.Printf("[keep-awake] Stopped by user")
-		go stopKeepAwake()
-	} else {
+		go stopKeepAwakeFn()
+	default:
 		keepAwakeLog("Cancelled (was pending)")
 		log.Printf("[keep-awake] Cancelled (was pending)")
 	}
@@ -165,7 +257,7 @@ func (m *KeepAwakeManager) stopInternal() {
 		close(m.stopCh)
 		m.stopCh = nil
 	}
-	m.state = KeepAwakeIdle
+	m.setState(KeepAwakeIdle)
 	m.expiresAt = time.Time{}
 	m.startedAt = time.Time{}
 }
@@ -195,7 +287,7 @@ func (m *KeepAwakeManager) Status() map[string]interface{} {
 // waitForIdleThenStart polls until the system is no longer busy, then starts
 // the keep-awake.
 func (m *KeepAwakeManager) waitForIdleThenStart() {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(idleCheckInterval)
 	defer ticker.Stop()
 
 	for {
@@ -209,7 +301,7 @@ func (m *KeepAwakeManager) waitForIdleThenStart() {
 					m.mu.Unlock()
 					return
 				}
-				m.state = KeepAwakeActive
+				m.setState(KeepAwakeActive)
 				m.startedAt = time.Now()
 				m.expiresAt = time.Now().Add(m.pendingDuration)
 				mode := m.mode
@@ -218,7 +310,7 @@ func (m *KeepAwakeManager) waitForIdleThenStart() {
 
 				keepAwakeLog("Started (mode: %s, duration: %s) — archive/processing finished", mode, dur)
 				log.Printf("[keep-awake] Started (mode: %s) — system now idle", mode)
-				go startKeepAwake(keepAwakeReasonLabel(mode), m.expiresAt)
+				go startKeepAwakeFn(keepAwakeReasonLabel(mode), m.expiresAt)
 				go m.expirationWatcher()
 				return
 			}
@@ -230,7 +322,7 @@ func (m *KeepAwakeManager) waitForIdleThenStart() {
 // It also detects when archiving finishes (busy→idle) while keep-awake is still active
 // and re-launches the nudge loop, because archiveloop's awake_stop kills our nudge.
 func (m *KeepAwakeManager) expirationWatcher() {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(expirationTickInterval)
 	defer ticker.Stop()
 
 	wasBusy := m.isBusy()
@@ -250,12 +342,20 @@ func (m *KeepAwakeManager) expirationWatcher() {
 			if expired {
 				m.mu.Lock()
 				if m.state == KeepAwakeActive {
-					m.state = KeepAwakeIdle
+					busyNow := m.isBusy()
+					m.setState(KeepAwakeIdle)
 					m.expiresAt = time.Time{}
 					m.startedAt = time.Time{}
-					keepAwakeLog("Expired, stopping keep-awake")
-					log.Printf("[keep-awake] Expired")
-					go stopKeepAwake()
+					if busyNow {
+						// Archive/processing owns the nudge loop and will stop it
+						// when it finishes. Killing it now would interrupt archive.
+						keepAwakeLog("Expired while archive/processing active — leaving nudge alone (owned by archive)")
+						log.Printf("[keep-awake] Expired while busy — leaving nudge alone")
+					} else {
+						keepAwakeLog("Expired, stopping keep-awake")
+						log.Printf("[keep-awake] Expired")
+						go stopKeepAwakeFn()
+					}
 				}
 				if m.stopCh != nil {
 					close(m.stopCh)
@@ -271,7 +371,7 @@ func (m *KeepAwakeManager) expirationWatcher() {
 			if wasBusy && !nowBusy && active {
 				keepAwakeLog("Archive/processing finished — re-launching keep-awake (mode: %s)", mode)
 				log.Printf("[keep-awake] Re-arming nudge after archive finished (mode: %s)", mode)
-				go startKeepAwake(keepAwakeReasonLabel(mode), expiresAt)
+				go startKeepAwakeFn(keepAwakeReasonLabel(mode), expiresAt)
 			}
 			wasBusy = nowBusy
 		}
