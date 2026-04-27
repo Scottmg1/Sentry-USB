@@ -139,8 +139,7 @@ fi
 cat > "${ROOTFS_DIR}/lib/systemd/system/sentryusb.service" << 'SERVICEEOF'
 [Unit]
 Description=SentryUSB Web Server
-After=network-online.target
-Wants=network-online.target
+After=network.target
 
 [Service]
 Type=simple

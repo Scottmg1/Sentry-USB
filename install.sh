@@ -420,8 +420,7 @@ info "Installing systemd service..."
 cat > "/etc/systemd/system/$SERVICE_NAME.service" << EOF
 [Unit]
 Description=SentryUSB Web Server
-After=network-online.target
-Wants=network-online.target
+After=network.target
 Conflicts=nginx.service
 
 [Service]
