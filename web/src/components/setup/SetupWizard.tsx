@@ -215,14 +215,17 @@ export function SetupWizard({ initialData, onClose }: SetupWizardProps) {
     RTC_BATTERY_ENABLED: "false",
     RTC_TRICKLE_CHARGE: "false",
   }
-  const [formData, setFormData] = useState<SetupFormData>({ ...defaults, ...(initialData ?? {}) })
+  const mergedInitial = { ...defaults, ...(initialData ?? {}) }
+  const [formData, setFormData] = useState<SetupFormData>(mergedInitial)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [phase, setPhase] = useState<SetupPhase>("wizard")
   const [setupMessage, setSetupMessage] = useState("")
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  // Snapshot of the config as it was when the wizard opened (for detecting destructive changes)
-  const originalDataRef = useRef<SetupFormData | undefined>(initialData)
+  // Snapshot of the config as it was when the wizard opened (for detecting destructive changes).
+  // Must include defaults so that unchanged default values (like CAM_SIZE=40) aren't
+  // falsely detected as "changed from 0 to 40" when the config didn't have them.
+  const originalDataRef = useRef<SetupFormData | undefined>(initialData ? mergedInitial : undefined)
   const [destructiveWarning, setDestructiveWarning] = useState<DestructiveChange[] | null>(null)
   // Tracks whether the user restored from a backup (affects warning dialog wording)
   const isRestoreFlow = useRef(false)
