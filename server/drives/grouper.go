@@ -1002,13 +1002,31 @@ func BuildRoutesOverviewFromClipSets(routes []Route, clipSets []map[string]bool,
 
 	result := make([]RouteOverview, 0, len(clipSets))
 	for idx, files := range clipSets {
-		var pts [][2]float64
-		source := "sei"
+		// Iterating a map produces clips in non-deterministic order, which
+		// concatenates GPS point arrays out of timestamp order and turns the
+		// resulting polyline into a zigzag across the entire drive area
+		// (kilometer-scale jumps between clip clusters become visible after
+		// downsampling). Resolve each file to its Route, sort
+		// chronologically by parseFileTimestamp — same logic the detail
+		// endpoint uses via BuildDriveFromFiles — then concatenate points
+		// in time order.
+		ordered := make([]*Route, 0, len(files))
 		for f := range files {
 			r := routeByFile[f]
 			if r == nil {
 				continue
 			}
+			ordered = append(ordered, r)
+		}
+		sort.Slice(ordered, func(i, j int) bool {
+			ti := parseFileTimestamp(ordered[i].File)
+			tj := parseFileTimestamp(ordered[j].File)
+			return ti.Before(tj)
+		})
+
+		var pts [][2]float64
+		source := "sei"
+		for _, r := range ordered {
 			if r.Source != "" {
 				source = r.Source
 			}
