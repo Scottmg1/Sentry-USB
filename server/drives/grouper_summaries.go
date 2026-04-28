@@ -189,6 +189,29 @@ func clipIsParkDominant(r RouteSummary) bool {
 	return false
 }
 
+// avgEngagementFraction returns the average engagement (FSD/AS/TACC) fraction
+// across two adjacent clips, distance-weighted. Used to attribute a fraction
+// of cross-clip-boundary distance to FSD/AS/TACC totals so the summary
+// path's totals match the detail endpoint's per-pair walk.
+func avgEngagementFraction(prevDist, prevTotal, curDist, curTotal float64) float64 {
+	prevFrac := 0.0
+	if prevTotal > 0 {
+		prevFrac = prevDist / prevTotal
+	}
+	curFrac := 0.0
+	if curTotal > 0 {
+		curFrac = curDist / curTotal
+	}
+	frac := (prevFrac + curFrac) / 2.0
+	if frac < 0 {
+		frac = 0
+	}
+	if frac > 1 {
+		frac = 1
+	}
+	return frac
+}
+
 // GroupSummariesFromSummaries is the BLOB-free analogue of
 // GroupSummaries. It groups pre-computed RouteSummary rows into drives
 // and assembles a DriveSummary per drive, summing the cached
@@ -225,15 +248,41 @@ func GroupSummariesFromSummaries(summaries []RouteSummary) []DriveSummary {
 		// 0, but the actual mile traveled lives in the jump from this
 		// clip's lone point to the next clip's lone point).
 		var prevEndLat, prevEndLng *float64
+		var prevClip *RouteSummary
 
-		for _, c := range clips {
+		for ci := range clips {
+			c := clips[ci].RouteSummary
 			totalDistM += c.DistanceM
 			// Cross-clip boundary distance: haversine from the previous
 			// clip's last valid point to this clip's first valid point.
 			// Counted only when both points exist; clips with no valid
 			// GPS contribute nothing to the sum.
+			//
+			// Detail endpoint walks all merged points end-to-end so
+			// cross-clip pairs are included in fsdDistanceM/autosteer/etc
+			// when their AP state was active. The summary path summed
+			// per-clip aggregates, which excluded cross-clip distance from
+			// FSD/AS/TACC totals — producing a systematic +0.5 to +2.3%
+			// drift between list and detail fsdPercent. Distribute
+			// cross-clip distance proportionally to each adjacent clip's
+			// distance-weighted engagement fraction.
 			if prevEndLat != nil && prevEndLng != nil && c.StartLat != nil && c.StartLng != nil {
-				totalDistM += haversineM(*prevEndLat, *prevEndLng, *c.StartLat, *c.StartLng)
+				crossDist := haversineM(*prevEndLat, *prevEndLng, *c.StartLat, *c.StartLng)
+				totalDistM += crossDist
+				if prevClip != nil {
+					fsdFrac := avgEngagementFraction(prevClip.FSDDistanceM, prevClip.DistanceM,
+						c.FSDDistanceM, c.DistanceM)
+					asFrac := avgEngagementFraction(prevClip.AutosteerDistanceM, prevClip.DistanceM,
+						c.AutosteerDistanceM, c.DistanceM)
+					taccFrac := avgEngagementFraction(prevClip.TACCDistanceM, prevClip.DistanceM,
+						c.TACCDistanceM, c.DistanceM)
+					assistedFrac := avgEngagementFraction(prevClip.AssistedDistanceM, prevClip.DistanceM,
+						c.AssistedDistanceM, c.DistanceM)
+					fsdDistM += crossDist * fsdFrac
+					autosteerDistM += crossDist * asFrac
+					taccDistM += crossDist * taccFrac
+					assistedDistM += crossDist * assistedFrac
+				}
 			}
 			if c.MaxSpeedMps > maxSpeedMps {
 				maxSpeedMps = c.MaxSpeedMps
@@ -260,6 +309,9 @@ func GroupSummariesFromSummaries(summaries []RouteSummary) []DriveSummary {
 				prevEndLat = c.EndLat
 				prevEndLng = c.EndLng
 			}
+			cCopy := c
+			prevClip = &cCopy
+			_ = ci
 		}
 
 		var avgSpeedMps float64
