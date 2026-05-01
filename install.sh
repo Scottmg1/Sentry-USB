@@ -215,6 +215,13 @@ done
 if ! command -v sntp &> /dev/null && ! command -v ntpdig &> /dev/null; then
     apt-get install -y sntp 2>/dev/null || apt-get install -y ntpsec-ntpdig 2>/dev/null || true
 fi
+# Archive helpers: without these, the setup wizard's NFS/CIFS test mounts
+# fail with cryptic "didn't pass remote address" / missing-helper errors.
+for pkg in nfs-common cifs-utils; do
+    if ! dpkg-query -W --showformat='${db:Status-Status}\n' "$pkg" 2>/dev/null | grep -q '^installed$'; then
+        apt-get install -y "$pkg" 2>/dev/null || warn "Failed to install $pkg"
+    fi
+done
 ok "Prerequisites installed"
 
 # ── Set hostname early so sentryusb.local works before setup wizard ──
