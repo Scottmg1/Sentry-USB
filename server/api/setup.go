@@ -308,7 +308,8 @@ func (h *handlers) testArchive(w http.ResponseWriter, r *http.Request) {
 		defer os.Remove(tmpDir)
 
 		src := fmt.Sprintf("%s:%s", server, exportPath)
-		_, testErr = shell.RunWithTimeout(timeout, "mount", "-t", "nfs", src, tmpDir, "-o", "nolock,soft,timeo=50")
+		// vers=3 to match fstab/legacy script; v4 fails on NAS exports with deep real paths (UniFi UNAS).
+		_, testErr = shell.RunWithTimeout(timeout, "mount", "-t", "nfs", src, tmpDir, "-o", "nolock,soft,timeo=50,vers=3,proto=tcp")
 		if testErr == nil {
 			shell.RunWithTimeout(5*time.Second, "umount", tmpDir)
 		}
