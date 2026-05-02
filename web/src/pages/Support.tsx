@@ -511,9 +511,9 @@ export default function Support() {
                   {status.text}
                 </span>
               ) : (
-                <span className="text-[10px] text-slate-700">Shift+Enter for newline</span>
+                <span className="text-[10px] text-slate-500">Shift+Enter for newline</span>
               )}
-              <span className="text-[10px] text-slate-700">{message.length}/5000</span>
+              <span className="text-[10px] text-slate-500">{message.length}/5000</span>
             </div>
           </div>
         )}

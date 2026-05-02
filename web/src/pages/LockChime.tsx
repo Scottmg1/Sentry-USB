@@ -614,7 +614,7 @@ function MyLibraryTab({ volume }: { volume: number }) {
 
         {!loading && sounds.length === 0 && (
           <div className="flex flex-col items-center gap-3 rounded-xl border border-white/10 bg-white/[0.02] py-12 text-center">
-            <Music className="h-10 w-10 text-slate-700" />
+            <Music className="h-10 w-10 text-slate-500" />
             <div>
               <p className="text-sm font-medium text-slate-400">No sounds yet</p>
               <p className="mt-1 text-xs text-slate-600">Upload a .wav file or download from the Community tab</p>
@@ -1470,14 +1470,14 @@ function CommunityBrowse({ adminPasscode, volume }: { adminPasscode: string | nu
 
       {!loading && error && (
         <div className="flex flex-col items-center gap-3 rounded-xl border border-white/10 bg-white/[0.02] py-16 text-center">
-          <Music className="h-10 w-10 text-slate-700" />
+          <Music className="h-10 w-10 text-slate-500" />
           <p className="text-sm text-slate-400">{error}</p>
         </div>
       )}
 
       {!loading && !error && sounds.length === 0 && (
         <div className="flex flex-col items-center gap-3 rounded-xl border border-white/10 bg-white/[0.02] py-16 text-center">
-          <Music className="h-10 w-10 text-slate-700" />
+          <Music className="h-10 w-10 text-slate-500" />
           <div>
             <p className="text-sm font-medium text-slate-400">No community sounds yet</p>
             <p className="mt-1 text-xs text-slate-600">Be the first to share a lock chime!</p>

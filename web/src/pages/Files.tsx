@@ -548,12 +548,12 @@ export default function Files() {
             </div>
           ) : error ? (
             <div className="flex flex-col items-center justify-center p-8">
-              <FolderOpen className="mb-2 h-10 w-10 text-slate-700" />
+              <FolderOpen className="mb-2 h-10 w-10 text-slate-500" />
               <p className="text-sm text-slate-500">{error}</p>
             </div>
           ) : sortedFiles.length === 0 ? (
             <div className="flex flex-col items-center justify-center p-8">
-              {(() => { const Icon = TAB_ICONS[activeDrive.icon]; return <Icon className="mb-2 h-10 w-10 text-slate-700" /> })()}
+              {(() => { const Icon = TAB_ICONS[activeDrive.icon]; return <Icon className="mb-2 h-10 w-10 text-slate-500" /> })()}
               <p className="text-sm text-slate-500">{search ? "No matching files" : "Empty folder"}</p>
               <p className="mt-1 text-xs text-slate-600">
                 {search ? "Try a different search term" : activeDrive.icon === "cam" ? "No clips in this folder" : "Upload files to get started"}

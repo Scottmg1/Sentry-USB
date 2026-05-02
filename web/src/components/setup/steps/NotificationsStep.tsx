@@ -165,7 +165,7 @@ function ProviderCard({ provider, data, onChange, errorFields }: { provider: Not
                     className={inputCls}
                   />
                 )}
-                {f.hint && <p className="mt-0.5 text-xs text-slate-700">{f.hint}</p>}
+                {f.hint && <p className="mt-0.5 text-xs text-slate-500">{f.hint}</p>}
               </div>
             )
           })}

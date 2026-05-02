@@ -668,7 +668,7 @@ export default function Viewer() {
                 })
               ) : (
                 <div className="flex flex-col items-center justify-center py-8 text-center">
-                  <Video className="mb-2 h-8 w-8 text-slate-700" />
+                  <Video className="mb-2 h-8 w-8 text-slate-500" />
                   <p className="text-xs text-slate-600">No {categoryLabels[activeCategory]?.toLowerCase()} clips</p>
                 </div>
               )}
@@ -781,7 +781,7 @@ export default function Viewer() {
                         </div>
                       ) : (
                         <div className="flex h-full items-center justify-center">
-                          <Video className="h-6 w-6 text-slate-700" />
+                          <Video className="h-6 w-6 text-slate-500" />
                         </div>
                       )}
                       {/* Camera label */}
@@ -940,7 +940,7 @@ export default function Viewer() {
           ) : (
             <div className="glass-card flex flex-1 items-center justify-center">
               <div className="max-w-xs text-center">
-                <Video className="mx-auto mb-3 h-16 w-16 text-slate-700" />
+                <Video className="mx-auto mb-3 h-16 w-16 text-slate-500" />
                 <p className="text-sm font-medium text-slate-400">
                   {selectedClip ? "No video files found" : "Select a clip to begin playback"}
                 </p>
