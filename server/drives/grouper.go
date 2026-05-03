@@ -1002,7 +1002,14 @@ func BuildRoutesOverviewFromClipSets(routes []Route, clipSets []map[string]bool,
 
 	result := make([]RouteOverview, 0, len(clipSets))
 	for idx, files := range clipSets {
-		var pts [][2]float64
+		// Iterating `files` directly is non-deterministic (Go map order),
+		// which jumbles per-clip point segments within a drive and produces
+		// straight-line "teleportation" between non-adjacent clip endpoints
+		// in the overview polyline. Sort matched routes by file timestamp
+		// so points concatenate in chronological order, matching what
+		// BuildDriveFromFiles does for the single-drive endpoint.
+		var timed []timedRoute
+		var untimed []*Route
 		source := "sei"
 		for f := range files {
 			r := routeByFile[f]
@@ -1012,11 +1019,29 @@ func BuildRoutesOverviewFromClipSets(routes []Route, clipSets []map[string]bool,
 			if r.Source != "" {
 				source = r.Source
 			}
-			for _, p := range r.Points {
+			if t := parseFileTimestamp(r.File); !t.IsZero() {
+				timed = append(timed, timedRoute{Route: *r, timestamp: t})
+			} else {
+				untimed = append(untimed, r)
+			}
+		}
+		sort.Slice(timed, func(i, j int) bool {
+			return timed[i].timestamp.Before(timed[j].timestamp)
+		})
+
+		var pts [][2]float64
+		appendPoints := func(rPoints []GPSPoint) {
+			for _, p := range rPoints {
 				if !(math.Abs(p[0]) < 1 && math.Abs(p[1]) < 1) {
 					pts = append(pts, [2]float64{p[0], p[1]})
 				}
 			}
+		}
+		for _, tr := range timed {
+			appendPoints(tr.Points)
+		}
+		for _, r := range untimed {
+			appendPoints(r.Points)
 		}
 
 		if len(pts) > 2 {
