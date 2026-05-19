@@ -21,6 +21,18 @@ import (
 const telemetrySalt = "SENTRYUSB_2026_PROD"
 var telemetryURL = APIBaseURL + "/sentryusb/telemetry"
 
+// Terminal release: the Go server is being retired in favor of the Rust
+// rewrite ("Rusty"). Builds from this branch are the final Go release and
+// must NOT auto-update — the on-disk install layout, init scripts, and
+// service unit differ enough that pulling a Rusty binary into a Go-era
+// install bricks the device. Instead, the updater reports a fixed
+// "reinstall required" status and points users at the migration wiki.
+const (
+	terminalRelease   = true
+	reinstallURL      = "https://github.com/Scottmg1/Sentry-USB/wiki/Rusty-Migration"
+	reinstallMessage  = "SentryUSB has been rewritten in Rust. In-place updates are no longer supported — please flash the new image."
+)
+
 var (
 	cachedFingerprint string
 	fingerprintOnce   sync.Once
@@ -246,6 +258,21 @@ func (h *handlers) checkInternet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) runUpdate(w http.ResponseWriter, r *http.Request) {
+	if terminalRelease {
+		log.Printf("[update] runUpdate refused: terminal release, reinstall required")
+		h.hub.Broadcast("update_status", map[string]string{
+			"status":        "reinstall_required",
+			"error":         reinstallMessage,
+			"reinstall_url": reinstallURL,
+		})
+		writeJSON(w, http.StatusGone, map[string]interface{}{
+			"reinstall_required": true,
+			"reinstall_url":      reinstallURL,
+			"message":            reinstallMessage,
+		})
+		return
+	}
+
 	// Parse optional target version from request body.
 	// If empty, installs the latest stable release (backward-compatible).
 	var req struct {
@@ -533,6 +560,16 @@ func (h *handlers) checkForUpdate(w http.ResponseWriter, r *http.Request) {
 	result := map[string]interface{}{
 		"current_version": currentVersion,
 		"checked_at":      time.Now().UTC().Format(time.RFC3339),
+	}
+
+	// Terminal release: tell new frontends to render the reinstall banner
+	// instead of an install button. Old frontends ignore these fields and
+	// fall through to the normal update_available flow; the install click
+	// itself is refused by runUpdate.
+	if terminalRelease {
+		result["reinstall_required"] = true
+		result["reinstall_url"] = reinstallURL
+		result["reinstall_message"] = reinstallMessage
 	}
 
 	// Detect if user is currently on a prerelease
