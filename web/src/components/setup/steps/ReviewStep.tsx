@@ -120,6 +120,30 @@ export function ReviewStep({ data }: StepProps) {
           start the setup process. The device may reboot during setup.
         </p>
       </div>
+
+      <p className="text-xs leading-relaxed text-slate-500">
+        By continuing you agree to our{" "}
+        <a
+          href="https://sentry-six.com/terms"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-slate-400 underline hover:text-slate-300"
+        >
+          Terms of Service
+        </a>{" "}
+        and{" "}
+        <a
+          href="https://sentry-six.com/privacy"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-slate-400 underline hover:text-slate-300"
+        >
+          Privacy Policy
+        </a>
+        , including the mandatory security &amp; compatibility reporting sent on
+        update checks (a one-way hashed device ID, software version, architecture,
+        and model).
+      </p>
     </div>
   )
 }

@@ -649,6 +649,29 @@ export function WelcomeStep({ data: _data, onChange: _onChange, onBatchChange }:
         Click <span className="text-slate-400">Next</span> to begin
         {imported ? " — your imported settings are pre-filled in each step" : ""}.
       </p>
+      <p className="mt-4 max-w-md text-xs leading-relaxed text-slate-600">
+        On update checks, the device sends a one-way hashed identifier plus its
+        software version, architecture, and model for security and compatibility.
+        See our{" "}
+        <a
+          href="https://sentry-six.com/privacy"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-slate-400 underline hover:text-slate-300"
+        >
+          Privacy Policy
+        </a>{" "}
+        and{" "}
+        <a
+          href="https://sentry-six.com/terms"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-slate-400 underline hover:text-slate-300"
+        >
+          Terms of Service
+        </a>
+        .
+      </p>
     </div>
   )
 }
