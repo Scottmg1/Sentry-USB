@@ -732,6 +732,21 @@ function clean_cam_mount {
 # TeslaTrackMode/
 #   lapvideo.mp4
 #   laptelemetry.csv
+# Read the SoC temperature directly from the thermal zone, formatted to match the
+# temperature_monitor output (e.g. "84.512°C"). Echoes nothing on devices with no
+# thermal sensor. Called inline at the moment of an archive failure so the value
+# reflects the temperature *before* the chip cools: overheating (WiFi drop /
+# throttling) is a common cause of archive failures, and the periodic monitor only
+# samples once a minute, so by the time it logs the chip has already cooled.
+function soc_temperature () {
+  local zone=/sys/class/thermal/thermal_zone0/temp
+  [ -e "$zone" ] || return 0
+  local raw
+  raw=$(cat "$zone" 2>/dev/null) || return 0
+  [ -n "$raw" ] || return 0
+  echo "$((raw / 1000)).$((raw % 1000))°C"
+}
+
 function archive_teslacam_clips () {
   log "Checking saved folder count..."
 
@@ -834,6 +849,7 @@ function archive_teslacam_clips () {
     local -r start_ts=$(date --utc --date "now" +%s)
 
     local message="Archiving "
+    local fail_temp=""
     if [[ $sentry_count -gt 0 && $trackmode_count -gt 0 ]]
     then
       message+="$trackmode_count track mode file(s) and $sentry_count file(s) including $event_count event folder(s)"
@@ -891,6 +907,12 @@ function archive_teslacam_clips () {
       message="Error during archiving. "
       archive_success=false
       log "ERROR: archive-clips.sh failed with exit code $arc_exit"
+      # Capture SoC temperature immediately, before the chip cools, to help
+      # diagnose overheating-related archive failures.
+      fail_temp=$(soc_temperature)
+      if [ -n "$fail_temp" ]; then
+        log "SoC temperature at archive failure: $fail_temp"
+      fi
       if [ -e /tmp/rsynclog ]; then
         log "--- rsync output ---"
         tail -20 /tmp/rsynclog >> "$LOG_FILE"
@@ -945,6 +967,9 @@ function archive_teslacam_clips () {
     local -r end_ts=$(date --utc --date "now" +%s)
     local -r delta=$((end_ts - start_ts))
     message+=" in $(convert_seconds_to_nice_time $delta)"
+    if [ "$archive_success" = "false" ] && [ -n "$fail_temp" ]; then
+      message+=". SoC temp at failure: $fail_temp"
+    fi
     /root/bin/send-push-message "$NOTIFICATION_TITLE:" "${message}" finish archive_complete
     /root/bin/send-live-activity end complete || true
 
