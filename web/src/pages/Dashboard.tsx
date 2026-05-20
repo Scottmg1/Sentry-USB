@@ -15,6 +15,8 @@ import {
   ChevronRight,
   Download,
   AlertTriangle,
+  X,
+  Rocket,
 } from "lucide-react"
 import { api } from "@/lib/api"
 import { useKeepAwake } from "@/hooks/useKeepAwake"
@@ -52,6 +54,10 @@ interface ProgressSample {
 
 const RATE_WINDOW = 6 // ~30s at 5s poll interval
 
+// Bump the suffix if the announcement copy changes materially and you want
+// users who previously dismissed it to see the new version once.
+const RUSTY_NOTICE_LS_KEY = "sentryusb_rusty_migration_notice_dismissed_v1"
+
 // Computes ETA using a rolling window of recent samples for a responsive rate estimate.
 function computeETA(current: number, total: number, history: ProgressSample[]): string | null {
   if (history.length < 2) return null
@@ -80,6 +86,18 @@ export default function Dashboard() {
   const [metric, setMetric] = useState(false)
   const [useFahrenheit, setUseFahrenheit] = useState(false)
   const [rtcWarning, setRtcWarning] = useState<string | null>(null)
+  const [rustyNoticeDismissed, setRustyNoticeDismissed] = useState(
+    () => typeof localStorage !== "undefined" && localStorage.getItem(RUSTY_NOTICE_LS_KEY) === "true"
+  )
+
+  function dismissRustyNotice() {
+    setRustyNoticeDismissed(true)
+    try {
+      localStorage.setItem(RUSTY_NOTICE_LS_KEY, "true")
+    } catch {
+      // localStorage unavailable (private mode / quota) — dismissal is then session-only
+    }
+  }
 
   const archiveHistoryRef = useRef<ProgressSample[]>([])
   const processHistoryRef = useRef<ProgressSample[]>([])
@@ -272,6 +290,39 @@ export default function Dashboard() {
           System overview and status
         </p>
       </div>
+
+      {!rustyNoticeDismissed && (
+        <div className="glass-card relative flex items-start gap-3 border border-sky-500/20 bg-sky-500/5 p-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-500/20">
+            <Rocket className="h-4 w-4 text-sky-400" />
+          </div>
+          <div className="flex-1 pr-6">
+            <span className="text-sm font-semibold text-sky-200">
+              A new SentryUSB is coming
+            </span>
+            <p className="mt-1 text-xs leading-relaxed text-slate-400">
+              By the end of June 2026 (possibly sooner), SentryUSB will be replaced by an
+              improved version rewritten mostly in Rust — faster, lighter, and more reliable.
+              Active development on this Go version is essentially paused while we finish the
+              Rust rewrite and prepare it for release, so don't expect new features in the
+              meantime. When it lands, this Go version will stop receiving updates and fixes,
+              and the Rust version takes over.
+              {" "}
+              <span className="text-slate-300">
+                Upgrading will require a one-time reinstall (reflash), so plan to back up your
+                config first. More details will be shared closer to release.
+              </span>
+            </p>
+          </div>
+          <button
+            onClick={dismissRustyNotice}
+            aria-label="Dismiss announcement"
+            className="absolute right-2 top-2 rounded-md p-1 text-slate-500 transition-colors hover:bg-white/5 hover:text-slate-300"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       {updateInfo.available && (
         <Link
