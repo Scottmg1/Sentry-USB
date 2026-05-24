@@ -1377,7 +1377,8 @@ func (h *handlers) communityLockChimeUpload(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
-	req.Header.Set("X-Fingerprint", getFingerprint())
+	// Privacy: X-Fingerprint deliberately omitted. The backend rate-limits
+	// by IP and abuse moderation flows through the Discord queue.
 
 	// Forward passcode if present (admin bypasses rate limiting)
 	if passcode := r.Header.Get("X-Passcode"); passcode != "" {
@@ -1416,7 +1417,7 @@ func (h *handlers) communityLockChimeDownload(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusInternalServerError, "Failed to create request")
 		return
 	}
-	req.Header.Set("X-Fingerprint", getFingerprint())
+	// Privacy: X-Fingerprint deliberately omitted (see upload handler).
 
 	// Forward passcode if present (admin bypasses rate limiting)
 	if passcode := r.Header.Get("X-Passcode"); passcode != "" {

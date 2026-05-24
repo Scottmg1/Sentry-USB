@@ -22,6 +22,7 @@ Sentry USB turns a Raspberry Pi into a smart USB drive for your Tesla's dashcam 
 | [Setup Wizard Guide](SetupWizard) | Detailed walkthrough of all 9 wizard steps |
 | [Archive Methods](ArchiveMethods) | CIFS/SMB, rsync, rclone, and NFS configuration |
 | [Notifications](Notifications) | Configure push notifications (13+ providers) |
+| [Privacy](Privacy) | What we send, when, and why — and how to opt out |
 | [Troubleshooting](Troubleshooting) | Common issues and how to fix them |
 | [Sentry Connect (iOS)](SentryConnect) | Companion iPhone app — push notifications, Live Activities, BLE |
 | [FAQ](FAQ) | Frequently asked questions |

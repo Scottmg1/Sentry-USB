@@ -82,21 +82,46 @@ func getFingerprint() string {
 	return cachedFingerprint
 }
 
+// installBeaconMarker — once this file exists, the install beacon has fired
+// for this install and won't fire again until /mutable is wiped (e.g. SD
+// reflash). Mirrors the Rust client's marker location.
+const installBeaconMarker = "/mutable/.beaconed"
+
+var beaconURL = APIBaseURL + "/sentryusb/install-beacon"
+
+// analyticsOptIn reports whether the user has explicitly opted in to
+// device-level analytics tracking. Default is false — the consent gate
+// for sending a hardware-derived identifier to the telemetry endpoint.
+func analyticsOptIn() bool {
+	prefs := loadPreferences()
+	return prefs["analytics_opt_in"] == "true"
+}
+
 // doSendTelemetry performs the actual telemetry POST (blocking).
+//
+// The payload always carries version/arch/model. A device fingerprint is
+// included only when the user has explicitly opted in via the
+// `analytics_opt_in` preference (set by the Privacy step in the wizard
+// or Settings → Privacy). This is the GDPR Art. 6(1)(a) consent gate.
 func doSendTelemetry(currentVersion string, updateAvailable bool, newVersion string) {
-	fp := getFingerprint()
-	if fp == "" {
-		log.Printf("[telemetry] Skipped: no fingerprint available")
-		return
-	}
-	payload, _ := json.Marshal(map[string]interface{}{
-		"fingerprint":      fp,
+	body := map[string]interface{}{
 		"current_version":  currentVersion,
 		"update_available": updateAvailable,
 		"new_version":      newVersion,
 		"arch":             runtime.GOARCH,
 		"model":            getSBCModel(),
-	})
+	}
+
+	mode := "opted-out"
+	if analyticsOptIn() {
+		fp := getFingerprint()
+		if fp != "" {
+			body["fingerprint"] = fp
+			mode = "opt-in"
+		}
+	}
+
+	payload, _ := json.Marshal(body)
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Post(telemetryURL, "application/json", bytes.NewReader(payload))
 	if err != nil {
@@ -104,7 +129,7 @@ func doSendTelemetry(currentVersion string, updateAvailable bool, newVersion str
 		return
 	}
 	resp.Body.Close()
-	log.Printf("[telemetry] Sent (status %d)", resp.StatusCode)
+	log.Printf("[telemetry] Sent (status %d, mode=%s)", resp.StatusCode, mode)
 }
 
 // sendTelemetry fires and forgets a telemetry POST to the support server.
@@ -115,6 +140,53 @@ func sendTelemetry(currentVersion string, updateAvailable bool, newVersion strin
 // sendTelemetrySync sends telemetry and blocks until complete.
 func sendTelemetrySync(currentVersion string, updateAvailable bool, newVersion string) {
 	doSendTelemetry(currentVersion, updateAvailable, newVersion)
+}
+
+// SendInstallBeacon POSTs an empty body to the install-beacon endpoint
+// exactly once per install. Gated by the /mutable/.beaconed marker so
+// reinstalls don't double-count from the same SD card; a full reflash
+// (which wipes /mutable) resets the marker and counts as a new install.
+//
+// No identifier of any kind is sent — the backend just increments a
+// daily counter. This is the gross-install signal independent of the
+// opt-in analytics cohort.
+//
+// Exported so cmd/sentryusb (the main entrypoint) can call it during
+// daemon startup.
+func SendInstallBeacon() {
+	go func() {
+		if _, err := os.Stat(installBeaconMarker); err == nil {
+			return
+		}
+		client := &http.Client{Timeout: 10 * time.Second}
+		for attempt := 1; attempt <= 3; attempt++ {
+			req, err := http.NewRequest("POST", beaconURL, nil)
+			if err != nil {
+				return
+			}
+			req.ContentLength = 0
+			resp, err := client.Do(req)
+			if err != nil {
+				log.Printf("[beacon] attempt %d failed: %v", attempt, err)
+			} else {
+				status := resp.StatusCode
+				resp.Body.Close()
+				if status >= 200 && status < 300 {
+					_ = os.WriteFile(installBeaconMarker, []byte("1"), 0644)
+					log.Printf("[beacon] install counted")
+					return
+				}
+				log.Printf("[beacon] non-success status %d", status)
+				// 4xx won't fix with retry; 5xx might.
+				if status < 500 {
+					return
+				}
+			}
+			if attempt < 3 {
+				time.Sleep(time.Duration(5*attempt) * time.Second)
+			}
+		}
+	}()
 }
 
 // parseSemver extracts major, minor, patch from a version string like "v1.2.3" or "v1.2.3-beta.1".

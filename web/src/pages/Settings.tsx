@@ -26,6 +26,7 @@ import {
 import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { SetupWizard } from "@/components/setup/SetupWizard"
+import { PrivacyCard } from "@/components/settings/PrivacyCard"
 import { wsClient } from "@/lib/ws"
 import { useKeepAwake } from "@/hooks/useKeepAwake"
 import { useAwayMode } from "@/hooks/useAwayMode"
@@ -1956,6 +1957,9 @@ export default function Settings() {
           </div>
         </div>
       </div>
+
+      {/* Privacy disclosure + analytics opt-in */}
+      <PrivacyCard />
 
       {/* Setup Wizard Modal */}
       {wizardOpen && (

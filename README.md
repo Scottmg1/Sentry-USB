@@ -15,9 +15,27 @@ Sentry USB turns a Raspberry Pi (or compatible SBC) into a smart USB drive for y
 - **Keep-Awake** — BLE, TeslaFi, Tessie, and Webhook methods
 - **13+ Notification Providers** — Pushover, Discord, Telegram, Slack, Signal, Matrix, AWS SNS, IFTTT, Gotify, NTFY, Webhooks, Sentry Connect
 
+## Privacy
+
+By default, Sentry USB does **not** transmit any device identifier to our
+servers. Everything it sends out, listed in one place:
+
+| When | What | Identifier? |
+|---|---|---|
+| Daily update check | Software version, CPU arch, board model | None by default |
+| Once per install | Empty ping (no body) | None — anonymous counter |
+| Wraps / lock chime submissions | The file + your IP for rate-limiting | None (no device fingerprint) |
+| iOS push pairing (if enabled) | Random pairing ID | Not tied to hardware |
+
+The only way a device fingerprint is sent is if you explicitly opt in to
+**Settings → Privacy → Help us count new installs** (default: off). That's
+the GDPR Art. 21 right-to-object mechanism — it's a toggle, not an email,
+and the default is the opted-out state. Full details in
+[`wiki/Privacy.md`](wiki/Privacy.md).
+
 ## Documentation
 
-- **[Wiki](https://github.com/Scottmg1/Sentry-USB/wiki)** — Getting Started, Setup Wizard Guide, Archive Methods, Notifications, Troubleshooting, FAQ, Developer Guide
+- **[Wiki](https://github.com/Scottmg1/Sentry-USB/wiki)** — Getting Started, Setup Wizard Guide, Archive Methods, Notifications, Privacy, Troubleshooting, FAQ, Developer Guide
 - **[Build Guide](BUILD.md)** — Building from source
 
 ## Prerequisites

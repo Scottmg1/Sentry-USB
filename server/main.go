@@ -48,6 +48,12 @@ func main() {
 	// setup-wizard configuration.
 	go runStartupMigration()
 
+	// Fire the anonymous install beacon once per install (gated by
+	// /mutable/.beaconed). No fingerprint, no identifier — just an
+	// incrementing counter on the support server. The opted-in update-
+	// check telemetry is handled separately when checkForUpdate runs.
+	api.SendInstallBeacon()
+
 	// Load web auth credentials from config
 	api.InitAuth()
 

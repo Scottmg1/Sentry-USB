@@ -188,12 +188,15 @@ func (h *handlers) generateNotificationPairingCode(w http.ResponseWriter, r *htt
 	go enableMobilePushInConfig()
 }
 
-// registerCodeWithBackend sends the pairing code to the notification relay server
+// registerCodeWithBackend sends the pairing code to the notification relay server.
+//
+// Privacy: fingerprint deliberately omitted. The pairing identifies this
+// device via its randomly-generated DeviceID; we no longer cross-link it
+// to the telemetry-side hardware fingerprint.
 func registerCodeWithBackend(creds *NotificationCredentials, code string) error {
 	hostname, _ := os.Hostname()
-	fp := getFingerprint()
-	body := fmt.Sprintf(`{"device_id":"%s","device_secret":"%s","code":"%s","hostname":"%s","fingerprint":"%s"}`,
-		creds.DeviceID, creds.DeviceSecret, code, hostname, fp)
+	body := fmt.Sprintf(`{"device_id":"%s","device_secret":"%s","code":"%s","hostname":"%s"}`,
+		creds.DeviceID, creds.DeviceSecret, code, hostname)
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	req, err := http.NewRequest("POST", NotificationBaseURL+"/register-code", strings.NewReader(body))
