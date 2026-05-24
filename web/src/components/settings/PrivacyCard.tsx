@@ -160,7 +160,7 @@ export function PrivacyCard() {
             Full privacy policy ↗
           </a>
           <a
-            href="https://github.com/Scottmg1/Sentry-USB/blob/main/wiki/Privacy.md"
+            href="https://github.com/Scottmg1/Sentry-USB/wiki/Privacy"
             target="_blank"
             rel="noopener noreferrer"
             className="text-xs text-blue-400 hover:text-blue-300"
