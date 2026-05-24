@@ -1,0 +1,30 @@
+name: Sync wiki
+
+# Pushes the contents of `wiki/` (in main-dev) to the repo's GitHub wiki
+# (Sentry-USB.wiki.git). Runs on any push to main-dev that touches
+# `wiki/`, plus a manual trigger from the Actions tab.
+#
+# The wiki must already exist on GitHub — visit the Wiki tab once and
+# create any first page so the wiki repo gets initialized; after that
+# this action handles everything.
+
+on:
+  push:
+    branches: [main-dev]
+    paths: ['wiki/**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Push wiki/ to GitHub wiki
+        uses: Andrew-Chen-Wang/github-wiki-action@v4
+        with:
+          path: wiki/
+          token: ${{ secrets.GITHUB_TOKEN }}
