@@ -1,5 +1,12 @@
 # Sentry USB
 
+> [!IMPORTANT]
+> **This Go version has been replaced by [Sentry USB Rusty](https://github.com/Sentry-Six/Sentry-USB-Rusty)** — a Rust rewrite that's faster, lighter, and more reliable.
+>
+> - **Existing installs keep working and still receive updates** through the in-app updater.
+> - **New installs should use Rusty** — see the [Rusty installer](https://github.com/Sentry-Six/Sentry-USB-Rusty#install-fresh-pi).
+> - **Migrating from Go to Rusty is a one-time reflash.** Back up your `sentryusb.conf` first; the file is drop-in compatible.
+
 A modern, feature-rich USB drive manager for Tesla vehicles — built on the foundation of [TeslaUSB](https://github.com/marcone/teslausb), fully rebranded and revamped at [Scottmg1/Sentry-USB](https://github.com/Scottmg1/Sentry-USB).
 
 ## What is Sentry USB?

@@ -56,7 +56,7 @@ const RATE_WINDOW = 6 // ~30s at 5s poll interval
 
 // Bump the suffix if the announcement copy changes materially and you want
 // users who previously dismissed it to see the new version once.
-const RUSTY_NOTICE_LS_KEY = "sentryusb_rusty_migration_notice_dismissed_v1"
+const RUSTY_NOTICE_LS_KEY = "sentryusb_rusty_migration_notice_dismissed_v2"
 
 // Computes ETA using a rolling window of recent samples for a responsive rate estimate.
 function computeETA(current: number, total: number, history: ProgressSample[]): string | null {
@@ -298,19 +298,25 @@ export default function Dashboard() {
           </div>
           <div className="flex-1 pr-6">
             <span className="text-sm font-semibold text-sky-200">
-              A new SentryUSB is coming
+              Sentry USB has a successor
             </span>
             <p className="mt-1 text-xs leading-relaxed text-slate-400">
-              By the end of June 2026 (possibly sooner), SentryUSB will be replaced by an
-              improved version rewritten mostly in Rust — faster, lighter, and more reliable.
-              Active development on this Go version is essentially paused while we finish the
-              Rust rewrite and prepare it for release, so don't expect new features in the
-              meantime. When it lands, this Go version will stop receiving updates and fixes,
-              and the Rust version takes over.
+              This Go version has been replaced by{" "}
+              <a
+                href="https://github.com/Sentry-Six/Sentry-USB-Rusty"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sky-300 underline-offset-2 hover:underline"
+              >
+                Sentry USB Rusty
+              </a>
+              , a Rust rewrite that's faster, lighter, and more reliable. Your install keeps
+              working and still receives updates, but new features and fixes are shipping to
+              the Rust version.
               {" "}
               <span className="text-slate-300">
-                Upgrading will require a one-time reinstall (reflash), so plan to back up your
-                config first. More details will be shared closer to release.
+                Migrating is a one-time reinstall (reflash); your <code>sentryusb.conf</code>
+                {" "}is drop-in compatible, so back it up first.
               </span>
             </p>
           </div>
